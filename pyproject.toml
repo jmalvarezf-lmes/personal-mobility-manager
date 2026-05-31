@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mobility-manager"
+version = "0.1.0"
+description = "Personal mobility manager — multi-vendor, multi-city"
+requires-python = ">=3.12"
+dependencies = [
+    "pytoyoda",
+    "pydantic>=2.0",
+    "python-dotenv",
+    "click",
+    "httpx",
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "pyproj",
+    "apscheduler",
+]
+
+[project.scripts]
+mobility-manager = "mobility_manager.presentation.cli.commands:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

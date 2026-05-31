@@ -1,0 +1,11 @@
+pytoyoda
+pydantic>=2.0
+python-dotenv
+click
+httpx
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pyproj
+apscheduler

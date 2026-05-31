@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mobility_manager}
+      POSTGRES_USER: ${POSTGRES_USER:-mobility}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mobility}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    command: uvicorn mobility_manager.presentation.api.app:app --host 0.0.0.0 --port 8000
+
+volumes:
+  postgres_data:

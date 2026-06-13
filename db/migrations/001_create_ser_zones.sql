@@ -6,8 +6,10 @@ CREATE TABLE IF NOT EXISTS ser_zones (
     street_name  TEXT NOT NULL,
     zone_code    TEXT NOT NULL,
     zone_label   TEXT NOT NULL,
-    latitude     DOUBLE PRECISION NOT NULL,
-    longitude    DOUBLE PRECISION NOT NULL
+    latitude     DOUBLE PRECISION NOT NULL,  -- WGS84 latitude (bounding-box index)
+    longitude    DOUBLE PRECISION NOT NULL,  -- WGS84 longitude (bounding-box index)
+    utm_x        DOUBLE PRECISION NOT NULL,  -- EPSG:25830 easting (metres, Euclidean distance)
+    utm_y        DOUBLE PRECISION NOT NULL   -- EPSG:25830 northing (metres, Euclidean distance)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ser_zones_coords ON ser_zones (latitude, longitude);

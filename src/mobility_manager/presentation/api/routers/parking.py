@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
 from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
-    _haversine_m,
+    distance_m,
 )
 from mobility_manager.presentation.api.schemas import SerZoneResponse
 
@@ -31,7 +31,7 @@ def get_ser_zone(
         raise HTTPException(status_code=404, detail="No SER zone data available")
 
     distance = int(
-        _haversine_m(lat, lng, ser_zone.location.lat, ser_zone.location.lng)
+        distance_m(lat, lng, ser_zone.location.lat, ser_zone.location.lng)
     )
     return SerZoneResponse(
         street_name=ser_zone.street_name,

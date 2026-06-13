@@ -1,12 +1,13 @@
 """
 Infrastructure: PostgresSerZoneRepository.
 
-Implements SerZoneRepository using PostgreSQL with SQLAlchemy Core.
-Uses bounding-box SQL filter + Haversine Python sort for nearest zone lookup.
-Uses truncate-reload strategy for bulk ingestion.
+Uses UTM (EPSG:25830) Euclidean distance for maximum precision.
+Bounding-box SQL filter on WGS84 lat/lng narrows candidates; final sort uses
+Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
 """
 import math
 
+from pyproj import Transformer
 from sqlalchemy import Column, Float, Integer, MetaData, Table, Text, text
 from sqlalchemy.engine import Engine
 
@@ -23,22 +24,21 @@ ser_zones_table = Table(
     Column("street_name", Text, nullable=False),
     Column("zone_code", Text, nullable=False),
     Column("zone_label", Text, nullable=False),
-    Column("latitude", Float, nullable=False),
-    Column("longitude", Float, nullable=False),
+    Column("latitude", Float, nullable=False),   # WGS84 — bounding-box index
+    Column("longitude", Float, nullable=False),  # WGS84 — bounding-box index
+    Column("utm_x", Float, nullable=False),      # EPSG:25830 easting (metres)
+    Column("utm_y", Float, nullable=False),      # EPSG:25830 northing (metres)
 )
 
+# WGS84 → EPSG:25830; always_xy=True means transform(lng, lat) → (easting, northing)
+_wgs84_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
 
-def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Compute the great-circle distance in metres between two WGS84 points."""
-    R = 6_371_000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lng2 - lng1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
-    return 2 * R * math.asin(math.sqrt(a))
+
+def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Euclidean distance in metres between two WGS84 points via UTM Zone 30N."""
+    x1, y1 = _wgs84_to_utm.transform(lng1, lat1)
+    x2, y2 = _wgs84_to_utm.transform(lng2, lat2)
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
 class PostgresSerZoneRepository(SerZoneRepository):
@@ -55,8 +55,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         """
         Find the nearest SER zone within radius_deg degrees.
 
-        First queries with the given radius; doubles the radius once if no
-        results are returned.
+        Queries the bounding box; doubles the radius once if no results.
+        Ranks candidates by Euclidean distance in UTM space.
         """
         result = self._query_bbox(location, radius_deg)
         if not result:
@@ -64,13 +64,17 @@ class PostgresSerZoneRepository(SerZoneRepository):
         if not result:
             return None
 
-        # Sort by Haversine distance and return the closest
-        result.sort(key=lambda r: _haversine_m(location.lat, location.lng, r[0], r[1]))
+        # Convert query location to UTM once for distance ranking.
+        q_utm_x, q_utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
+        result.sort(
+            key=lambda r: math.sqrt((r[2] - q_utm_x) ** 2 + (r[3] - q_utm_y) ** 2)
+        )
+
         best = result[0]
         return SerZone(
-            street_name=best[2],
-            zone_code=best[3],
-            zone_label=best[4],
+            street_name=best[4],
+            zone_code=best[5],
+            zone_label=best[6],
             location=GeoLocation(lat=best[0], lng=best[1]),
         )
 
@@ -78,12 +82,12 @@ class PostgresSerZoneRepository(SerZoneRepository):
         self,
         location: GeoLocation,
         radius_deg: float,
-    ) -> list[tuple[float, float, str, str, str]]:
-        """Execute bounding-box query and return list of (lat, lng, street, code, label)."""
+    ) -> list[tuple[float, float, float, float, str, str, str]]:
+        """Execute bounding-box query; returns (lat, lng, utm_x, utm_y, street, code, label)."""
         lat, lng = location.lat, location.lng
         query = text(
             """
-            SELECT latitude, longitude, street_name, zone_code, zone_label
+            SELECT latitude, longitude, utm_x, utm_y, street_name, zone_code, zone_label
             FROM ser_zones
             WHERE latitude  BETWEEN :lat_min  AND :lat_max
               AND longitude BETWEEN :lng_min  AND :lng_max
@@ -97,14 +101,13 @@ class PostgresSerZoneRepository(SerZoneRepository):
         }
         with self._engine.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
+        return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
 
     def bulk_replace(self, records: list[dict]) -> int:
         """
         Replace all SER zone records in a single transaction.
 
-        Truncates the table and inserts all records; returns the number of
-        records inserted.
+        Truncates the table and inserts all records; returns the number inserted.
         """
         if not records:
             with self._engine.begin() as conn:

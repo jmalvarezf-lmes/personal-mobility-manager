@@ -1,32 +1,23 @@
 """
 Infrastructure: CallejeroCsvParser.
 
-Parses the Madrid Callejero CSV, reprojects coordinates from ETRS89 UTM Zone 30N
-(EPSG:25830) to WGS84 (EPSG:4326), and maps zone codes to human-readable labels.
+Parses the Madrid Callejero CSV (200075-1-callejero-csv.csv), extracts street
+names, SER zone codes, and UTM coordinates in EPSG:25830 (metres), then
+reprojects to WGS84 (EPSG:4326) for bounding-box storage.
+
+Coordinate columns in the real file are in centimetres; dividing by 100 gives
+EPSG:25830 metre values directly usable for Euclidean distance calculation.
 """
 import csv
 import io
 import logging
 import math
+import unicodedata
 from dataclasses import dataclass
 
 from pyproj import Transformer
 
 logger = logging.getLogger(__name__)
-
-# Mapping from raw SER zone codes found in the Madrid dataset to human-readable labels.
-# Codes follow the pattern used in the callejero CSV export.
-ZONE_LABELS: dict[str, str] = {
-    "SER-A": "Blue",         # Zona Azul
-    "SER-V": "Green",        # Zona Verde
-    "SER-N": "Residential",  # Zona Naranja (residents)
-    "SER-G": "Grey",
-    "A": "Blue",
-    "V": "Green",
-    "N": "Residential",
-    "G": "Grey",
-    # Add more as discovered from data
-}
 
 # Madrid bounding box (WGS84) — records outside this box are discarded.
 _MADRID_LAT_MIN = 39.8
@@ -35,28 +26,38 @@ _MADRID_LNG_MIN = -4.6
 _MADRID_LNG_MAX = -2.9
 
 
+def _norm(s: str) -> str:
+    """Strip accents and uppercase for accent-insensitive header matching."""
+    return (
+        unicodedata.normalize("NFKD", s)
+        .encode("ASCII", "ignore")
+        .decode()
+        .upper()
+    )
+
+
 @dataclass
 class SerZoneRecord:
     street_name: str
     zone_code: str
     zone_label: str
-    latitude: float
-    longitude: float
+    latitude: float   # WGS84 — stored for bounding-box index
+    longitude: float  # WGS84 — stored for bounding-box index
+    utm_x: float      # EPSG:25830 easting (metres) — used for Euclidean distance
+    utm_y: float      # EPSG:25830 northing (metres) — used for Euclidean distance
 
 
 class CallejeroCsvParser:
     """Parses the Madrid Callejero CSV and reprojects coordinates to WGS84."""
 
-    # Column names expected in the Madrid callejero CSV (case-insensitive lookup).
-    # These are configurable class attributes so they can be overridden if the
-    # actual CSV uses different header names.
-    STREET_COL = "NOMBRE_VIA"
-    ZONE_COL = "COD_SER"          # Preferred; alternatives tried if absent
-    X_COL = "COORD_X_ETRS89"      # UTM Easting EPSG:25830
-    Y_COL = "COORD_Y_ETRS89"      # UTM Northing EPSG:25830
+    # Exact column names from 200075-1-callejero-csv.csv (semicolon-delimited, quoted).
+    STREET_COL = "Nombre de la vía"
+    ZONE_COL = "Zona Servicio Estacionamiento Regulado"
+    X_COL = "Coordenada X (Guia Urbana) cm"   # UTM easting, EPSG:25830, centimetres
+    Y_COL = "Coordenada Y (Guia Urbana) cm"   # UTM northing, EPSG:25830, centimetres
 
-    # Alternative zone column names to try if ZONE_COL is not found
-    ZONE_COL_ALTERNATIVES = ["REGIMEN_SER", "TIPO_SER"]
+    # Zone code indicating no SER zone assigned — skip these rows.
+    _NO_ZONE = "000"
 
     def __init__(self) -> None:
         # always_xy=True: transform(easting, northing) → (lng, lat)
@@ -68,24 +69,25 @@ class CallejeroCsvParser:
     @classmethod
     def detect_columns(cls, headers: list[str]) -> dict[str, str | None]:
         """
-        Try to map expected column roles to actual header names.
+        Map expected column roles to actual header names using accent-insensitive matching.
 
-        Logs available headers at DEBUG level if expected columns are not found.
         Returns a dict of role → resolved_header (or None if not found).
         """
-        upper_headers = {h.strip().upper(): h for h in headers}
-        resolved: dict[str, str | None] = {}
+        norm_to_raw = {_norm(h.strip()): h for h in headers}
 
         def _resolve(candidates: list[str]) -> str | None:
             for candidate in candidates:
-                if candidate.upper() in upper_headers:
-                    return upper_headers[candidate.upper()]
+                key = _norm(candidate)
+                if key in norm_to_raw:
+                    return norm_to_raw[key]
             return None
 
-        resolved["street"] = _resolve([cls.STREET_COL])
-        resolved["zone"] = _resolve([cls.ZONE_COL] + cls.ZONE_COL_ALTERNATIVES)
-        resolved["x"] = _resolve([cls.X_COL])
-        resolved["y"] = _resolve([cls.Y_COL])
+        resolved: dict[str, str | None] = {
+            "street": _resolve([cls.STREET_COL]),
+            "zone": _resolve([cls.ZONE_COL]),
+            "x": _resolve([cls.X_COL]),
+            "y": _resolve([cls.Y_COL]),
+        }
 
         missing = [role for role, col in resolved.items() if col is None]
         if missing:
@@ -101,7 +103,8 @@ class CallejeroCsvParser:
         """
         Parse CSV text.
 
-        Returns (records, skipped_count).
+        Returns (records, skipped_count). Rows with zone code "000" (no SER
+        zone assigned) are counted as skipped.
         """
         reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
 
@@ -137,9 +140,15 @@ class CallejeroCsvParser:
                 skipped += 1
                 continue
 
+            # "000" means no SER zone is assigned to this address.
+            if zone == self._NO_ZONE:
+                skipped += 1
+                continue
+
             try:
-                x = float(x_raw.replace(",", "."))
-                y = float(y_raw.replace(",", "."))
+                # Coordinates are in centimetres; divide by 100 for metres.
+                utm_x = float(x_raw) / 100.0
+                utm_y = float(y_raw) / 100.0
             except ValueError:
                 logger.warning(
                     "Invalid UTM coordinates for row (street=%r): x=%r y=%r",
@@ -150,12 +159,12 @@ class CallejeroCsvParser:
                 skipped += 1
                 continue
 
-            if math.isnan(x) or math.isnan(y):
+            if math.isnan(utm_x) or math.isnan(utm_y):
                 skipped += 1
                 continue
 
-            # Reproject: EPSG:25830 (UTM easting/northing) → EPSG:4326 (lng, lat)
-            lng, lat = self._transformer.transform(x, y)
+            # Reproject: EPSG:25830 (UTM easting/northing, metres) → EPSG:4326 (lng, lat)
+            lng, lat = self._transformer.transform(utm_x, utm_y)
 
             # Validate Madrid bounding box
             if not (
@@ -165,15 +174,15 @@ class CallejeroCsvParser:
                 skipped += 1
                 continue
 
-            zone_label = ZONE_LABELS.get(zone, zone)
-
             records.append(
                 SerZoneRecord(
                     street_name=street,
                     zone_code=zone,
-                    zone_label=zone_label,
+                    zone_label=zone,  # numeric SER codes have no colour mapping; code is the label
                     latitude=lat,
                     longitude=lng,
+                    utm_x=utm_x,
+                    utm_y=utm_y,
                 )
             )
 

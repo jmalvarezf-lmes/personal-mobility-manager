@@ -23,7 +23,6 @@ def pg_engine():
     if not dsn:
         pytest.skip("POSTGRES_DSN environment variable not set — skipping integration test")
     engine = create_engine(dsn, pool_pre_ping=True)
-    # Ensure table exists
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -34,14 +33,15 @@ def pg_engine():
                     zone_code   TEXT NOT NULL,
                     zone_label  TEXT NOT NULL,
                     latitude    DOUBLE PRECISION NOT NULL,
-                    longitude   DOUBLE PRECISION NOT NULL
+                    longitude   DOUBLE PRECISION NOT NULL,
+                    utm_x       DOUBLE PRECISION NOT NULL,
+                    utm_y       DOUBLE PRECISION NOT NULL
                 )
                 """
             )
         )
         conn.execute(text("TRUNCATE ser_zones"))
     yield engine
-    # Cleanup
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE ser_zones"))
     engine.dispose()
@@ -54,10 +54,12 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
     records = [
         {
             "street_name": "Calle Mayor",
-            "zone_code": "SER-A",
-            "zone_label": "Blue",
+            "zone_code": "011",
+            "zone_label": "011",
             "latitude": 40.4168,
             "longitude": -3.7038,
+            "utm_x": 440594.0,   # EPSG:25830 easting near Puerta del Sol
+            "utm_y": 4474469.0,  # EPSG:25830 northing near Puerta del Sol
         }
     ]
     inserted = repo.bulk_replace(records)
@@ -68,8 +70,8 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
 
     assert zone is not None
     assert zone.street_name == "Calle Mayor"
-    assert zone.zone_code == "SER-A"
-    assert zone.zone_label == "Blue"
+    assert zone.zone_code == "011"
+    assert zone.zone_label == "011"
     assert abs(zone.location.lat - 40.4168) < 0.001
     assert abs(zone.location.lng - (-3.7038)) < 0.001
 
@@ -77,7 +79,7 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
 def test_find_nearest_returns_none_when_empty(pg_engine) -> None:
     """find_nearest returns None when the table is empty."""
     repo = PostgresSerZoneRepository(pg_engine)
-    repo.bulk_replace([])  # Ensures table is truncated
+    repo.bulk_replace([])
 
     location = GeoLocation(lat=40.4168, lng=-3.7038)
     zone = repo.find_nearest(location)
@@ -92,10 +94,12 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     first_batch = [
         {
             "street_name": "Old Street",
-            "zone_code": "SER-V",
-            "zone_label": "Green",
+            "zone_code": "021",
+            "zone_label": "021",
             "latitude": 40.4000,
             "longitude": -3.7000,
+            "utm_x": 441203.0,
+            "utm_y": 4472691.0,
         }
     ]
     repo.bulk_replace(first_batch)
@@ -103,10 +107,12 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     second_batch = [
         {
             "street_name": "New Street",
-            "zone_code": "SER-A",
-            "zone_label": "Blue",
+            "zone_code": "011",
+            "zone_label": "011",
             "latitude": 40.4168,
             "longitude": -3.7038,
+            "utm_x": 440594.0,
+            "utm_y": 4474469.0,
         }
     ]
     repo.bulk_replace(second_batch)
@@ -114,6 +120,6 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     location = GeoLocation(lat=40.4000, lng=-3.7000)
     zone = repo.find_nearest(location, radius_deg=0.1)
 
-    # Should find the New Street record, not Old Street
+    # Only New Street remains after the second bulk_replace.
     assert zone is not None
     assert zone.street_name == "New Street"

@@ -40,6 +40,8 @@ class IngestSerZones:
                 "zone_label": r.zone_label,
                 "latitude": r.latitude,
                 "longitude": r.longitude,
+                "utm_x": r.utm_x,
+                "utm_y": r.utm_y,
             }
             for r in records
         ]

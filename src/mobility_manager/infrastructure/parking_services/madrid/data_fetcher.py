@@ -34,4 +34,5 @@ class MadridCallejeroCsvFetcher:
         logger.info(
             "Fetched Madrid Callejero CSV (%d bytes)", len(response.content)
         )
-        return response.text
+        # The Madrid callejero CSV is encoded in Latin-1 (ISO-8859-1).
+        return response.content.decode("latin-1")

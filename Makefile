@@ -1,20 +1,24 @@
 .PHONY: install install-dev run test lint docker-build docker-run db-migrate api
 
+VENV    := .venv
+PYTHON  := $(VENV)/bin/python
+PIP     := $(VENV)/bin/pip
+
 install:
-	pip install -e .
+	$(PIP) install -e .
 
 install-dev:
-	pip install -r requirements-dev.txt && pip install -e .
+	$(PIP) install -r requirements-dev.txt && $(PIP) install -e .
 
 run:
-	mobility-manager
+	$(VENV)/bin/mobility-manager
 
 test:
-	pytest tests/ --cov=mobility_manager --cov-report=term-missing
+	$(PYTHON) -m pytest tests/ --cov=mobility_manager --cov-report=term-missing
 
 lint:
-	ruff check src/ tests/
-	mypy src/
+	$(VENV)/bin/ruff check src/ tests/
+	$(VENV)/bin/mypy src/
 
 docker-build:
 	docker build -t mobility-manager .
@@ -26,4 +30,4 @@ db-migrate:
 	psql $$POSTGRES_DSN -f db/migrations/001_create_ser_zones.sql
 
 api:
-	uvicorn mobility_manager.presentation.api.app:app --reload --host 0.0.0.0 --port 8000
+	$(VENV)/bin/uvicorn mobility_manager.presentation.api.app:app --reload --host 0.0.0.0 --port 8000

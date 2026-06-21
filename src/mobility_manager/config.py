@@ -2,6 +2,7 @@
 Application configuration loaded from environment variables.
 """
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -33,3 +34,14 @@ def get_ingestion_interval_hours() -> int:
         return int(raw)
     except ValueError:
         return 24
+
+
+def _mask_dsn_password(dsn: str) -> str:
+    """Replace password in DSN with *** for safe logging."""
+    return re.sub(r"(://[^:@/]+:)[^@]+(@)", r"\1***\2", dsn)
+
+
+def get_cors_origins() -> list[str]:
+    """Return allowed CORS origins from CORS_ORIGINS env var (comma-separated)."""
+    raw = os.environ.get("CORS_ORIGINS", "")
+    return [o.strip() for o in raw.split(",") if o.strip()]

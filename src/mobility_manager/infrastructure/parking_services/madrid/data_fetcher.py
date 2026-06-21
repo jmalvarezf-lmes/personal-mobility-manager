@@ -4,10 +4,13 @@ Infrastructure: MadridCallejeroCsvFetcher.
 Downloads the Madrid Callejero CSV from the Madrid open data portal.
 """
 import logging
+from urllib.parse import urlparse
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_HOSTNAMES = {"datos.madrid.es"}
 
 
 class MadridCallejeroCsvFetcher:
@@ -15,6 +18,11 @@ class MadridCallejeroCsvFetcher:
 
     def __init__(self, url: str) -> None:
         self._url = url
+        hostname = urlparse(url).hostname or ""
+        if hostname not in _ALLOWED_HOSTNAMES:
+            raise ValueError(
+                f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}"
+            )
 
     def fetch(self) -> str:
         """

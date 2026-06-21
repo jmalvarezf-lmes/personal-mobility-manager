@@ -6,6 +6,7 @@ Exposes GET /parking/ser-zone to find the nearest SER zone for a coordinate.
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
+from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     distance_m,
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/parking", tags=["parking"])
 
 
 @router.get("/ser-zone", response_model=SerZoneResponse)
+@limiter.limit("60/minute")
 def get_ser_zone(
     request: Request,
     lat: float = Query(..., ge=-90, le=90, description="Latitude (WGS84)"),

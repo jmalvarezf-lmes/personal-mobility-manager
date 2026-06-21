@@ -12,12 +12,17 @@ import csv
 import io
 import logging
 import math
+import re
 import unicodedata
 from dataclasses import dataclass
 
 from pyproj import Transformer
 
 logger = logging.getLogger(__name__)
+
+_MAX_STREET_LEN = 500
+_MAX_ZONE_LEN = 20
+_ZONE_CODE_RE = re.compile(r"^[A-Za-z0-9\-]+$")
 
 # Madrid bounding box (WGS84) — records outside this box are discarded.
 _MADRID_LAT_MIN = 39.8
@@ -135,6 +140,13 @@ class CallejeroCsvParser:
             zone = row.get(zone_col, "").strip()  # type: ignore[arg-type]
             x_raw = row.get(x_col, "").strip()  # type: ignore[arg-type]
             y_raw = row.get(y_col, "").strip()  # type: ignore[arg-type]
+
+            if len(street) > _MAX_STREET_LEN or len(zone) > _MAX_ZONE_LEN:
+                skipped += 1
+                continue
+            if not _ZONE_CODE_RE.match(zone):
+                skipped += 1
+                continue
 
             if not street or not zone or not x_raw or not y_raw:
                 skipped += 1

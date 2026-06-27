@@ -13,21 +13,21 @@ A GitHub Actions workflow file SHALL exist at `.github/workflows/ci.yml` and SHA
 
 ---
 
-### Requirement: Lint job runs ruff and mypy
-The CI workflow SHALL include a `lint` job that runs `ruff check src/ tests/` and `mypy src/`. Both tools SHALL be installed from `requirements-dev.txt`. The job SHALL fail if either tool reports errors.
+### Requirement: lint-backend job runs ruff and mypy
+The CI workflow SHALL include a `lint-backend` job that runs `ruff check src/ tests/` and `mypy src/`. Both tools SHALL be installed from `requirements-dev.txt`. The job SHALL fail if either tool reports errors.
 
 #### Scenario: Clean code passes lint
 - **WHEN** all source files conform to ruff and mypy rules
-- **THEN** the lint job exits with code 0
+- **THEN** the `lint-backend` job exits with code 0
 
 #### Scenario: Lint violation fails the job
 - **WHEN** a file contains a ruff or mypy error
-- **THEN** the lint job exits with a non-zero code and the PR check is marked failed
+- **THEN** the `lint-backend` job exits with a non-zero code and the PR check is marked failed
 
 ---
 
-### Requirement: Test job runs the full test suite with a live PostgreSQL instance
-The CI workflow SHALL include a `test` job that declares a `postgres:16-alpine` service container with health-check (`pg_isready`). The job SHALL set `POSTGRES_DSN` from the service container's connection details, run `alembic upgrade head` before executing `pytest`, and collect coverage output.
+### Requirement: test-backend job runs the full test suite with a live PostgreSQL instance
+The CI workflow SHALL include a `test-backend` job that declares a `postgres:16-alpine` service container with health-check (`pg_isready`). The job SHALL set `POSTGRES_DSN` from the service container's connection details, run `alembic upgrade head` before executing `pytest`, and collect coverage output.
 
 #### Scenario: All tests pass including integration
 - **WHEN** the PostgreSQL service is healthy and `POSTGRES_DSN` is set
@@ -39,8 +39,8 @@ The CI workflow SHALL include a `test` job that declares a `postgres:16-alpine` 
 
 #### Scenario: A test fails
 - **WHEN** any test in the suite fails
-- **THEN** the test job exits with a non-zero code and the PR check is marked failed
+- **THEN** the `test-backend` job exits with a non-zero code and the PR check is marked failed
 
 #### Scenario: Schema applied before tests
-- **WHEN** the test job starts
+- **WHEN** the `test-backend` job starts
 - **THEN** `alembic upgrade head` runs successfully before `pytest` is invoked, ensuring the `ser_zones` table exists

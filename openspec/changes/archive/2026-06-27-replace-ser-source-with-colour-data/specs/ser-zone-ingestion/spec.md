@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Download Madrid SER Calles CSV
 The system SHALL download the Madrid SER Calles dataset (218228) from a configurable URL (`MADRID_SER_CALLES_URL` env var, default: `https://datos.madrid.es/dataset/218228-0-ser-calles/resource/218228-1-ser-calles-csv/download/218228-1-ser-calles-csv.csv`) via HTTP on each scheduled ingestion run. The response SHALL be decoded as Latin-1 (ISO-8859-1) to correctly handle accented characters.
 
@@ -89,23 +91,26 @@ The system SHALL run ingestion automatically on a configurable interval (default
 - **WHEN** one city provider raises an exception during `get_records()`
 - **THEN** the scheduler logs the failure and continues scheduling/running the other providers
 
-#### Scenario: Configurable interval
-- **WHEN** the env var `INGESTION_INTERVAL_HOURS` is set to a positive integer
-- **THEN** the scheduler uses that interval instead of the 24-hour default
+## REMOVED Requirements
 
-#### Scenario: Scheduler shuts down cleanly
-- **WHEN** the FastAPI application receives a shutdown signal
-- **THEN** the scheduler shuts down without leaving orphaned threads
+### Requirement: Download Madrid callejero CSV
+**Reason**: Replaced by the 218228 SER Calles dataset which is the authoritative source and includes colour information absent from the callejero.
+**Migration**: Set `MADRID_SER_CALLES_URL` env var; remove `MADRID_CALLEJERO_URL` from environment config.
 
 ---
 
-### Requirement: ser_zones database table
-The system SHALL maintain a `ser_zones` table in PostgreSQL with columns: `id` (serial PK), `street_name` (text), `zone_type` (varchar(50), not-null), `spot_count` (integer, not-null, default -1), `latitude` (double precision), `longitude` (double precision), `utm_x` (double precision), `utm_y` (double precision). A composite index on `(latitude, longitude)` SHALL exist for bounding-box queries. `utm_x` and `utm_y` store EPSG:25830 easting/northing in metres and are used for Euclidean distance calculation. `spot_count = -1` is the sentinel for unknown spot count.
+### Requirement: Parse SER zone fields from CSV (callejero columns)
+**Reason**: The 218228 CSV has different columns (`calle`, `color` raw field → `zone_type` domain field, `gis_x`, `gis_y`, `numero_plazas`) replacing the callejero columns (`Nombre de la vía`, `Zona Servicio Estacionamiento Regulado`, centimetre coordinate columns).
+**Migration**: No migration needed; the `MadridSerCallesProvider` replaces `CallejeroCsvParser` entirely.
 
-#### Scenario: Table created by migration
-- **WHEN** the `db-migrate` Makefile target runs
-- **THEN** the `ser_zones` table and its index are created if they do not already exist
+---
 
-#### Scenario: utm_x and utm_y stored alongside WGS84
-- **WHEN** a record is inserted
-- **THEN** both the WGS84 lat/lng (for bounding-box SQL index) and the UTM metre coordinates (for Euclidean distance ranking) are persisted
+### Requirement: Convert centimetre coordinates to UTM metres and reproject to WGS84
+**Reason**: The 218228 CSV ships coordinates already in UTM metres; no ÷100 conversion is needed.
+**Migration**: No action; the new parser reads metre values directly.
+
+---
+
+### Requirement: Zone code "000" row filtering
+**Reason**: The 218228 CSV contains only SER zone rows by definition; there is no non-zone sentinel value to filter.
+**Migration**: No action; filtering logic removed from the parser.

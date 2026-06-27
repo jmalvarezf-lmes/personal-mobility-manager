@@ -23,7 +23,7 @@ def get_ser_zone(
     lat: float = Query(..., ge=-90, le=90, description="Latitude (WGS84)"),
     lng: float = Query(..., ge=-180, le=180, description="Longitude (WGS84)"),
 ) -> SerZoneResponse:
-    """Find the nearest Madrid SER parking zone for the given coordinates."""
+    """Find the nearest SER parking zone for the given coordinates."""
     use_case = request.app.state.find_nearest_ser_zone
     location = GeoLocation(lat=lat, lng=lng)
 
@@ -37,8 +37,8 @@ def get_ser_zone(
     )
     return SerZoneResponse(
         street_name=ser_zone.street_name,
-        zone_code=ser_zone.zone_code,
-        zone_label=ser_zone.zone_label,
+        zone_type=ser_zone.zone_type,
+        spot_count=ser_zone.spot_count,
         distance_meters=distance,
         latitude=ser_zone.location.lat,
         longitude=ser_zone.location.lng,

@@ -1,11 +1,9 @@
-## ADDED Requirements
-
 ### Requirement: Coordinate-based SER zone lookup endpoint
-The system SHALL expose a REST endpoint `GET /parking/ser-zone` that accepts `lat` and `lng` query parameters and returns the SER zone information for the nearest street in the database.
+The system SHALL expose a REST endpoint `GET /parking/ser-zone` that accepts `lat` and `lng` query parameters and returns the SER zone information for the nearest parking spot in the database.
 
 #### Scenario: Valid coordinates return zone info
 - **WHEN** a `GET /parking/ser-zone?lat=40.4168&lng=-3.7038` request is made and the database has data
-- **THEN** the response is HTTP 200 with a JSON body containing `street_name`, `zone_code`, `zone_label`, `distance_meters`, `latitude`, and `longitude`
+- **THEN** the response is HTTP 200 with a JSON body containing `street_name`, `zone_type`, `spot_count`, `distance_meters`, `latitude`, and `longitude`
 
 #### Scenario: Missing parameters return 422
 - **WHEN** a request is made with `lat` or `lng` missing
@@ -39,11 +37,11 @@ The system SHALL find the nearest street by first filtering candidates within a 
 ---
 
 ### Requirement: Domain SerZone entity
-The system SHALL model SER zone data as a `SerZone` domain entity (pure Python dataclass) with fields: `street_name: str`, `zone_code: str`, `zone_label: str`, `location: GeoLocation`.
+The system SHALL model SER zone data as a `SerZone` domain entity (pure Python dataclass) with fields: `street_name: str`, `zone_type: str`, `spot_count: int`, `location: GeoLocation`.
 
 #### Scenario: SerZone created from repository result
 - **WHEN** the `SerZoneRepository` returns a result
-- **THEN** a `SerZone` instance is constructed without any infrastructure imports
+- **THEN** a `SerZone` instance is constructed with `zone_type` (the validated display name) and `spot_count` populated, without any infrastructure imports
 
 ---
 

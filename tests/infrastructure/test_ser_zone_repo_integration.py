@@ -27,14 +27,14 @@ def pg_engine():
             text(
                 """
                 CREATE TABLE IF NOT EXISTS ser_zones (
-                    id          SERIAL PRIMARY KEY,
-                    street_name TEXT NOT NULL,
-                    zone_code   TEXT NOT NULL,
-                    zone_label  TEXT NOT NULL,
-                    latitude    DOUBLE PRECISION NOT NULL,
-                    longitude   DOUBLE PRECISION NOT NULL,
-                    utm_x       DOUBLE PRECISION NOT NULL,
-                    utm_y       DOUBLE PRECISION NOT NULL
+                    id             SERIAL PRIMARY KEY,
+                    street_name    TEXT NOT NULL,
+                    zone_type      VARCHAR(50) NOT NULL DEFAULT '',
+                    spot_count     INTEGER NOT NULL DEFAULT -1,
+                    latitude       DOUBLE PRECISION NOT NULL,
+                    longitude      DOUBLE PRECISION NOT NULL,
+                    utm_x          DOUBLE PRECISION NOT NULL,
+                    utm_y          DOUBLE PRECISION NOT NULL
                 )
                 """
             )
@@ -53,8 +53,8 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
     records = [
         {
             "street_name": "Calle Mayor",
-            "zone_code": "011",
-            "zone_label": "011",
+            "zone_type": "Azul",
+            "spot_count": 15,
             "latitude": 40.4168,
             "longitude": -3.7038,
             "utm_x": 440594.0,   # EPSG:25830 easting near Puerta del Sol
@@ -69,8 +69,8 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
 
     assert zone is not None
     assert zone.street_name == "Calle Mayor"
-    assert zone.zone_code == "011"
-    assert zone.zone_label == "011"
+    assert zone.zone_type == "Azul"
+    assert zone.spot_count == 15
     assert abs(zone.location.lat - 40.4168) < 0.001
     assert abs(zone.location.lng - (-3.7038)) < 0.001
 
@@ -93,8 +93,8 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     first_batch = [
         {
             "street_name": "Old Street",
-            "zone_code": "021",
-            "zone_label": "021",
+            "zone_type": "Verde",
+            "spot_count": -1,
             "latitude": 40.4000,
             "longitude": -3.7000,
             "utm_x": 441203.0,
@@ -106,8 +106,8 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     second_batch = [
         {
             "street_name": "New Street",
-            "zone_code": "011",
-            "zone_label": "011",
+            "zone_type": "Azul",
+            "spot_count": 20,
             "latitude": 40.4168,
             "longitude": -3.7038,
             "utm_x": 440594.0,
@@ -122,3 +122,45 @@ def test_bulk_replace_truncates_old_records(pg_engine) -> None:
     # Only New Street remains after the second bulk_replace.
     assert zone is not None
     assert zone.street_name == "New Street"
+
+
+def test_spot_count_minus_one_for_unknown(pg_engine) -> None:
+    """Verify that spot_count=-1 round-trips correctly."""
+    repo = PostgresSerZoneRepository(pg_engine)
+
+    records = [
+        {
+            "street_name": "Calle Sin Plazas",
+            "zone_type": "Naranja",
+            "spot_count": -1,
+            "latitude": 40.4168,
+            "longitude": -3.7038,
+            "utm_x": 440594.0,
+            "utm_y": 4474469.0,
+        }
+    ]
+    repo.bulk_replace(records)
+
+    location = GeoLocation(lat=40.4168, lng=-3.7038)
+    zone = repo.find_nearest(location)
+
+    assert zone is not None
+    assert zone.spot_count == -1
+
+
+def test_old_columns_are_absent(pg_engine) -> None:
+    """zone_code and zone_label must not be present in the schema."""
+    with pg_engine.connect() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'ser_zones'
+                """
+            )
+        )
+        columns = {row[0] for row in result}
+
+    assert "zone_code" not in columns, "zone_code column must be dropped"
+    assert "zone_label" not in columns, "zone_label column must be dropped"

@@ -60,8 +60,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         best = result[0]
         return SerZone(
             street_name=best[4],
-            zone_code=best[5],
-            zone_label=best[6],
+            zone_type=best[5],
+            spot_count=best[6],
             location=GeoLocation(lat=best[0], lng=best[1]),
         )
 
@@ -69,12 +69,12 @@ class PostgresSerZoneRepository(SerZoneRepository):
         self,
         location: GeoLocation,
         radius_deg: float,
-    ) -> list[tuple[float, float, float, float, str, str, str]]:
-        """Execute bounding-box query; returns (lat, lng, utm_x, utm_y, street, code, label)."""
+    ) -> list[tuple[float, float, float, float, str, str, int]]:
+        """Return (lat, lng, utm_x, utm_y, street_name, zone_type, spot_count)."""
         lat, lng = location.lat, location.lng
         query = text(
             """
-            SELECT latitude, longitude, utm_x, utm_y, street_name, zone_code, zone_label
+            SELECT latitude, longitude, utm_x, utm_y, street_name, zone_type, spot_count
             FROM ser_zones
             WHERE latitude  BETWEEN :lat_min  AND :lat_max
               AND longitude BETWEEN :lng_min  AND :lng_max

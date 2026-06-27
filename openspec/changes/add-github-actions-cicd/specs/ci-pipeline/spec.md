@@ -1,0 +1,46 @@
+## ADDED Requirements
+
+### Requirement: CI workflow triggers on every pull request
+A GitHub Actions workflow file SHALL exist at `.github/workflows/ci.yml` and SHALL be triggered on every pull request targeting any branch. It SHALL also expose a `workflow_call` trigger so it can be reused by other workflows.
+
+#### Scenario: PR opened or updated
+- **WHEN** a pull request is opened or a new commit is pushed to a PR branch
+- **THEN** the CI workflow starts automatically on GitHub Actions
+
+#### Scenario: Reused by release workflow
+- **WHEN** the release workflow calls `ci.yml` via `workflow_call`
+- **THEN** the CI workflow runs and its outcome is available to the caller
+
+---
+
+### Requirement: Lint job runs ruff and mypy
+The CI workflow SHALL include a `lint` job that runs `ruff check src/ tests/` and `mypy src/`. Both tools SHALL be installed from `requirements-dev.txt`. The job SHALL fail if either tool reports errors.
+
+#### Scenario: Clean code passes lint
+- **WHEN** all source files conform to ruff and mypy rules
+- **THEN** the lint job exits with code 0
+
+#### Scenario: Lint violation fails the job
+- **WHEN** a file contains a ruff or mypy error
+- **THEN** the lint job exits with a non-zero code and the PR check is marked failed
+
+---
+
+### Requirement: Test job runs the full test suite with a live PostgreSQL instance
+The CI workflow SHALL include a `test` job that declares a `postgres:16-alpine` service container with health-check (`pg_isready`). The job SHALL set `POSTGRES_DSN` from the service container's connection details, run `alembic upgrade head` before executing `pytest`, and collect coverage output.
+
+#### Scenario: All tests pass including integration
+- **WHEN** the PostgreSQL service is healthy and `POSTGRES_DSN` is set
+- **THEN** `pytest tests/` runs all test layers (unit, integration, e2e) and exits with code 0
+
+#### Scenario: PostgreSQL service not yet healthy
+- **WHEN** the postgres service container is still starting
+- **THEN** the job waits until the health check passes before running any steps
+
+#### Scenario: A test fails
+- **WHEN** any test in the suite fails
+- **THEN** the test job exits with a non-zero code and the PR check is marked failed
+
+#### Scenario: Schema applied before tests
+- **WHEN** the test job starts
+- **THEN** `alembic upgrade head` runs successfully before `pytest` is invoked, ensuring the `ser_zones` table exists

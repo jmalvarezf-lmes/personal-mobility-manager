@@ -9,4 +9,8 @@ COPY src/ src/
 COPY pyproject.toml .
 RUN pip install --no-cache-dir -e .
 
-CMD ["mobility-manager"]
+COPY alembic/ alembic/
+COPY alembic.ini .
+COPY docker-entrypoint.sh .
+
+ENTRYPOINT ["./docker-entrypoint.sh"]

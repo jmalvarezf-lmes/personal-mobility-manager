@@ -8,27 +8,13 @@ Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
 import math
 
 from pyproj import Transformer
-from sqlalchemy import Column, Float, Integer, MetaData, Table, Text, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
 from mobility_manager.domain.value_objects.location import GeoLocation
-
-metadata = MetaData()
-
-ser_zones_table = Table(
-    "ser_zones",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("street_name", Text, nullable=False),
-    Column("zone_code", Text, nullable=False),
-    Column("zone_label", Text, nullable=False),
-    Column("latitude", Float, nullable=False),   # WGS84 — bounding-box index
-    Column("longitude", Float, nullable=False),  # WGS84 — bounding-box index
-    Column("utm_x", Float, nullable=False),      # EPSG:25830 easting (metres)
-    Column("utm_y", Float, nullable=False),      # EPSG:25830 northing (metres)
-)
+from mobility_manager.infrastructure.orm.tables import ser_zones_table
 
 # WGS84 → EPSG:25830; always_xy=True means transform(lng, lat) → (easting, northing)
 _wgs84_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)

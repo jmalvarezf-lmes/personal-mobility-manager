@@ -99,3 +99,25 @@ The reference file is `200075-1-callejero-csv.csv` (215 k rows, Latin-1, semicol
 ## Python Skill
 
 When implementing any Python feature, endpoint, use case, repository, or domain model, load and follow the `python-clean-arch` skill at `~/.claude/skills/python-clean-arch/SKILL.md`.
+
+---
+
+## OpenSpec: Git branch per change (MANDATORY)
+
+Every time a new OpenSpec change is created — whether via `/opsx:propose`, `/sdd-new`, or any other command that calls `openspec new change "<name>"` — immediately create and check out a git branch named `change/<name>` before writing any artifacts.
+
+```bash
+git checkout -b change/<name>
+```
+
+This rule is non-negotiable. Do not skip it, do not ask for confirmation — create the branch as part of the change creation flow.
+
+---
+
+## OpenSpec: Create a PR on archive (MANDATORY)
+
+Every time an OpenSpec change is archived — via `/opsx:archive` or any equivalent command that moves a change to `openspec/changes/archive/` — immediately create a pull request targeting `main` after the archive step completes.
+
+Use the `branch-pr` skill (`~/.claude/skills/branch-pr/SKILL.md`) to create the PR. The PR title should follow the pattern `change: <change-name>` and the body should summarise what was implemented, referencing the proposal and any specs that were synced.
+
+This rule is non-negotiable. Do not skip it, do not ask for confirmation — create the PR as part of the archive flow.

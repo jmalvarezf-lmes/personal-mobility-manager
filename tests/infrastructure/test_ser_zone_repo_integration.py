@@ -12,7 +12,6 @@ from sqlalchemy import create_engine, text
 from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
-    ser_zones_table,
 )
 
 

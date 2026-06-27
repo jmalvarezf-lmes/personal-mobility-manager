@@ -5,7 +5,6 @@ Uses FastAPI TestClient with mocked use case via app.state.
 """
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

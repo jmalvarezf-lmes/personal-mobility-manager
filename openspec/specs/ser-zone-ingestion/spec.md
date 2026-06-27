@@ -1,7 +1,5 @@
-## ADDED Requirements
-
-### Requirement: Download Madrid callejero CSV
-The system SHALL download the Madrid callejero dataset from a configurable URL (`MADRID_CALLEJERO_URL` env var) via HTTP on each scheduled ingestion run. The response SHALL be decoded as Latin-1 (ISO-8859-1) to correctly handle accented characters in column headers.
+### Requirement: Download Madrid SER Calles CSV
+The system SHALL download the Madrid SER Calles dataset (218228) from a configurable URL (`MADRID_SER_CALLES_URL` env var, default: `https://datos.madrid.es/dataset/218228-0-ser-calles/resource/218228-1-ser-calles-csv/download/218228-1-ser-calles-csv.csv`) via HTTP on each scheduled ingestion run. The response SHALL be decoded as Latin-1 (ISO-8859-1) to correctly handle accented characters.
 
 #### Scenario: Successful download
 - **WHEN** the scheduler triggers an ingestion run and the URL is reachable
@@ -12,38 +10,46 @@ The system SHALL download the Madrid callejero dataset from a configurable URL (
 - **THEN** the system logs an error with the status code and skips the ingestion run, leaving existing data intact
 
 #### Scenario: Configurable URL
-- **WHEN** the env var `MADRID_CALLEJERO_URL` is set
+- **WHEN** the env var `MADRID_SER_CALLES_URL` is set
 - **THEN** the system uses that URL instead of the default
 
 ---
 
-### Requirement: Parse SER zone fields from CSV
-The system SHALL parse each CSV row from `200075-1-callejero-csv.csv` (semicolon-delimited, all fields quoted) and extract four fields using accent-insensitive header matching: `Nombre de la vía` (street name), `Zona Servicio Estacionamiento Regulado` (zone code), `Coordenada X (Guia Urbana) cm` (UTM easting, centimetres), and `Coordenada Y (Guia Urbana) cm` (UTM northing, centimetres). Rows missing any of these four fields SHALL be skipped.
+### Requirement: Parse SER spot fields from 218228 CSV
+The system SHALL parse each CSV row from the 218228 SER Calles CSV (semicolon-delimited) and extract five fields: `calle` (street name), `color` (raw zone type from source), `gis_x` (UTM easting, metres), `gis_y` (UTM northing, metres), and `numero_plazas` (spot count, optional). The raw `color` value SHALL be extracted by splitting the RGB-prefixed string (e.g., `"043000255 Azul"`) on the first space and taking the remainder, yielding the plain name (e.g., `"Azul"`). That name SHALL then be validated via `MadridZoneType.from_raw()` — rows where it returns `None` SHALL be skipped. The `numero_plazas` field is optional: if it is absent, empty, or non-numeric, the system SHALL use `-1` as the spot count rather than skipping the row. Rows missing `calle`, `color`, `gis_x`, or `gis_y` SHALL be skipped.
 
 #### Scenario: Valid row parsed
-- **WHEN** a CSV row contains all four required fields with valid values
-- **THEN** the system produces a `SerZoneRecord` with street name, zone code, UTM coordinates in metres (cm / 100), and WGS84 lat/lng
+- **WHEN** a CSV row contains all fields including a numeric `numero_plazas`
+- **THEN** the system produces a `ParkingSpotRecord` with street name, `zone_type` set to the `display_name` of the matched `MadridZoneType`, UTM coordinates in metres, WGS84 lat/lng, and the actual spot count
 
-#### Scenario: Zone code "000" skipped
-- **WHEN** a CSV row has zone code `"000"` (no SER zone assigned to that address)
-- **THEN** the system skips that row and increments a skipped-row counter
+#### Scenario: Missing or non-numeric spot count uses sentinel
+- **WHEN** a CSV row has an empty or non-numeric `numero_plazas` field
+- **THEN** `ParkingSpotRecord.spot_count` is `-1` and the row is NOT skipped
 
-#### Scenario: Row with empty or missing zone field skipped
-- **WHEN** a CSV row has an empty SER zone code field
-- **THEN** the system skips that row and increments a skipped-row counter
+#### Scenario: Zone type extracted from RGB-prefixed string
+- **WHEN** the `color` CSV field is `"043000255 Azul"`
+- **THEN** the extracted name `"Azul"` is passed to `MadridZoneType.from_raw()` and `ParkingSpotRecord.zone_type` is `"Azul"`
 
-#### Scenario: Column detection is accent-insensitive
-- **WHEN** the CSV column header `Nombre de la vía` is decoded with or without the accent on `í`
-- **THEN** the system still resolves the street column correctly (NFKD normalisation strips accents before matching)
+#### Scenario: Multi-word zone type extracted correctly
+- **WHEN** the `color` CSV field is `"081209246 Alta Rotación"`
+- **THEN** the extracted name `"Alta Rotación"` is passed to `MadridZoneType.from_raw()` and `ParkingSpotRecord.zone_type` is `"Alta Rotación"`
+
+#### Scenario: Unrecognised zone type skips the row
+- **WHEN** a CSV row has a zone type string not recognised by `MadridZoneType.from_raw()`
+- **THEN** the system skips that row, logs a warning with the unrecognised value, and increments the skipped-row counter
+
+#### Scenario: Row with missing required field skipped
+- **WHEN** a CSV row has an empty `calle`, `color`, `gis_x`, or `gis_y` field
+- **THEN** the system skips that row and increments the skipped-row counter
 
 ---
 
-### Requirement: Convert centimetre coordinates to UTM metres and reproject to WGS84
-The system SHALL divide raw centimetre coordinate values by 100 to obtain EPSG:25830 easting/northing in metres, then reproject to WGS84 (EPSG:4326). Both the UTM metre values and the WGS84 lat/lng SHALL be stored.
+### Requirement: Use UTM coordinates directly without centimetre conversion
+The system SHALL use `gis_x` and `gis_y` from the 218228 CSV directly as EPSG:25830 easting and northing in metres. No division by 100 SHALL be applied. Both values SHALL be stored as-is and also reprojected to WGS84 (EPSG:4326) for bounding-box indexing.
 
-#### Scenario: Centimetre values converted to metres
-- **WHEN** a row contains `"0044059400"` in the X column
-- **THEN** `utm_x = 440594.0` metres (÷ 100)
+#### Scenario: Coordinates used without conversion
+- **WHEN** a row has `gis_x = 438727.67` and `gis_y = 4473037.77`
+- **THEN** `utm_x = 438727.67` and `utm_y = 4473037.77` (no division applied)
 
 #### Scenario: Valid UTM coordinates reprojected
 - **WHEN** a row contains valid UTM X/Y values in EPSG:25830 (metres)
@@ -56,7 +62,7 @@ The system SHALL divide raw centimetre coordinate values by 100 to obtain EPSG:2
 ---
 
 ### Requirement: Upsert SER zone data into PostgreSQL
-The system SHALL store parsed records in the `ser_zones` PostgreSQL table using a truncate-and-reload strategy within a single transaction.
+The system SHALL store parsed records in the `ser_zones` PostgreSQL table using a truncate-and-reload strategy within a single transaction. The stored fields SHALL include `street_name`, `zone_type`, `spot_count`, `latitude`, `longitude`, `utm_x`, `utm_y`.
 
 #### Scenario: Successful ingestion run
 - **WHEN** parsing completes with at least one valid record
@@ -72,12 +78,16 @@ The system SHALL store parsed records in the `ser_zones` PostgreSQL table using 
 
 ---
 
-### Requirement: Scheduled periodic ingestion
-The system SHALL run ingestion automatically on a configurable interval (default: every 24 hours), starting at application startup.
+### Requirement: Scheduled periodic ingestion via provider interface
+The system SHALL run ingestion automatically on a configurable interval (default: every 24 hours) for each registered `CityParkingDataProvider`. The scheduler SHALL call `provider.get_records()` and delegate to the `IngestCityParkingData` use case. The scheduler SHALL NOT contain city-specific logic.
 
 #### Scenario: Scheduler starts on app boot
 - **WHEN** the FastAPI application starts
-- **THEN** the APScheduler `BackgroundScheduler` starts and schedules the ingestion job with the configured interval
+- **THEN** the APScheduler `BackgroundScheduler` starts and schedules one ingestion job per registered provider
+
+#### Scenario: Provider failure does not stop other providers
+- **WHEN** one city provider raises an exception during `get_records()`
+- **THEN** the scheduler logs the failure and continues scheduling/running the other providers
 
 #### Scenario: Configurable interval
 - **WHEN** the env var `INGESTION_INTERVAL_HOURS` is set to a positive integer
@@ -90,15 +100,11 @@ The system SHALL run ingestion automatically on a configurable interval (default
 ---
 
 ### Requirement: ser_zones database table
-The system SHALL maintain a `ser_zones` table in PostgreSQL with columns: `id` (serial PK), `street_name` (text), `zone_code` (text), `zone_label` (text), `latitude` (double precision), `longitude` (double precision), `utm_x` (double precision), `utm_y` (double precision). A composite index on `(latitude, longitude)` SHALL exist for bounding-box queries. `utm_x` and `utm_y` store EPSG:25830 easting/northing in metres and are used for Euclidean distance calculation.
+The system SHALL maintain a `ser_zones` table in PostgreSQL with columns: `id` (serial PK), `street_name` (text), `zone_type` (varchar(50), not-null), `spot_count` (integer, not-null, default -1), `latitude` (double precision), `longitude` (double precision), `utm_x` (double precision), `utm_y` (double precision). A composite index on `(latitude, longitude)` SHALL exist for bounding-box queries. `utm_x` and `utm_y` store EPSG:25830 easting/northing in metres and are used for Euclidean distance calculation. `spot_count = -1` is the sentinel for unknown spot count.
 
 #### Scenario: Table created by migration
 - **WHEN** the `db-migrate` Makefile target runs
 - **THEN** the `ser_zones` table and its index are created if they do not already exist
-
-#### Scenario: Zone code used as label
-- **WHEN** a zone code is parsed from the CSV (e.g., `"011"`, `"042"`, `"163"`)
-- **THEN** `zone_label` stores the raw zone code unchanged (numeric SER codes have no standard colour mapping)
 
 #### Scenario: utm_x and utm_y stored alongside WGS84
 - **WHEN** a record is inserted

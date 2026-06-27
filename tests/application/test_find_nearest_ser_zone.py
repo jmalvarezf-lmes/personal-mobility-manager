@@ -14,8 +14,8 @@ from mobility_manager.domain.value_objects.location import GeoLocation
 def _make_ser_zone() -> SerZone:
     return SerZone(
         street_name="Calle Mayor",
-        zone_code="SER-A",
-        zone_label="Blue",
+        zone_type="Azul",
+        spot_count=15,
         location=GeoLocation(lat=40.4168, lng=-3.7038),
     )
 
@@ -29,7 +29,8 @@ def test_execute_returns_ser_zone_when_found() -> None:
     result = use_case.execute(location)
 
     assert result.street_name == "Calle Mayor"
-    assert result.zone_code == "SER-A"
+    assert result.zone_type == "Azul"
+    assert result.spot_count == 15
     repo.find_nearest.assert_called_once_with(location)
 
 

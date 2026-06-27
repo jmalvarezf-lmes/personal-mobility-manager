@@ -1,43 +1,48 @@
 """
 Use case: IngestSerZones.
 
-Orchestrates download → parse → persist pipeline for Madrid SER zone data.
+Orchestrates the fetch → parse → persist pipeline for any city's SER-equivalent
+parking data via a CityParkingDataProvider.
 """
 import logging
 from typing import Any
+
+from mobility_manager.domain.ports.city_parking_data_provider import (
+    CityParkingDataProvider,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class IngestSerZones:
     """
-    Use case that ingests SER zone data from the Madrid Callejero CSV.
+    Use case that ingests city parking data from a CityParkingDataProvider.
 
-    Dependencies are injected at construction time to keep this class
-    infrastructure-agnostic.
+    The provider owns the full fetch-and-parse pipeline; this use case maps
+    ParkingSpotRecord fields to the repository's expected dict structure
+    and delegates persistence.
     """
 
-    def __init__(self, fetcher: Any, parser: Any, repo: Any) -> None:
-        self._fetcher = fetcher
-        self._parser = parser
+    def __init__(self, provider: CityParkingDataProvider, repo: Any) -> None:
+        self._provider = provider
         self._repo = repo
 
     def execute(self) -> dict[str, int]:
         """
         Run the full ingestion pipeline.
 
-        Returns a summary dict: {total, skipped, inserted}.
+        Returns a summary dict: {total, inserted}.
         """
-        logger.info("Starting SER zone ingestion")
+        city = self._provider.city_code
+        logger.info("Starting parking data ingestion for city: %s", city)
 
-        csv_text = self._fetcher.fetch()
-        records, skipped = self._parser.parse(csv_text)
+        records = self._provider.get_records()
 
         raw_dicts = [
             {
                 "street_name": r.street_name,
-                "zone_code": r.zone_code,
-                "zone_label": r.zone_label,
+                "zone_type": r.zone_type,
+                "spot_count": r.spot_count,
                 "latitude": r.latitude,
                 "longitude": r.longitude,
                 "utm_x": r.utm_x,
@@ -48,10 +53,6 @@ class IngestSerZones:
 
         inserted = self._repo.bulk_replace(raw_dicts)
 
-        summary = {
-            "total": len(records) + skipped,
-            "skipped": skipped,
-            "inserted": inserted,
-        }
-        logger.info("SER zone ingestion complete: %s", summary)
+        summary = {"total": len(records), "inserted": inserted}
+        logger.info("Ingestion complete [%s]: %s", city, summary)
         return summary

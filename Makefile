@@ -1,4 +1,4 @@
-.PHONY: install install-dev run test lint docker-build docker-run db-migrate api
+.PHONY: install install-dev run test lint docker-build docker-run db-migrate db-revision api
 
 VENV    := .venv
 PYTHON  := $(VENV)/bin/python
@@ -27,7 +27,11 @@ docker-run:
 	docker run --env-file .env mobility-manager
 
 db-migrate:
-	psql $$POSTGRES_DSN -f db/migrations/001_create_ser_zones.sql
+	$(VENV)/bin/alembic upgrade head
+
+# Usage: make db-revision msg="describe_your_change"
+db-revision:
+	$(VENV)/bin/alembic revision --autogenerate -m "$(msg)"
 
 api:
 	$(VENV)/bin/uvicorn mobility_manager.presentation.api.app:app --reload --host 0.0.0.0 --port 8000

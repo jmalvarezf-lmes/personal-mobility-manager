@@ -6,6 +6,7 @@ Bounding-box SQL filter on WGS84 lat/lng narrows candidates; final sort uses
 Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
 """
 import math
+from typing import Any
 
 from pyproj import Transformer
 from sqlalchemy import text
@@ -89,7 +90,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
             rows = conn.execute(query, params).fetchall()
         return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
 
-    def bulk_replace(self, records: list[dict]) -> int:
+    def bulk_replace(self, records: list[dict[str, Any]]) -> int:
         """
         Replace all SER zone records in a single transaction.
 

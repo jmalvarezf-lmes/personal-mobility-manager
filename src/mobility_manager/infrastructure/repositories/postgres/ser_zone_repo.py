@@ -90,6 +90,23 @@ class PostgresSerZoneRepository(SerZoneRepository):
             rows = conn.execute(query, params).fetchall()
         return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
 
+    def list_all(self) -> list[SerZone]:
+        """Return all SER zones ordered by street name."""
+        query = text(
+            "SELECT latitude, longitude, street_name, zone_type, spot_count FROM ser_zones ORDER BY street_name"
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+        return [
+            SerZone(
+                street_name=row[2],
+                zone_type=row[3],
+                spot_count=row[4],
+                location=GeoLocation(lat=row[0], lng=row[1]),
+            )
+            for row in rows
+        ]
+
     def bulk_replace(self, records: list[dict[str, Any]]) -> int:
         """
         Replace all SER zone records in a single transaction.

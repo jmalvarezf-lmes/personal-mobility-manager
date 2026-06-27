@@ -20,3 +20,8 @@ class SerZoneRepository(ABC):
     ) -> SerZone | None:
         """Find the nearest SER zone within radius_deg degrees of the given location."""
         ...
+
+    @abstractmethod
+    def list_all(self) -> list[SerZone]:
+        """Return all stored SER zones."""
+        ...

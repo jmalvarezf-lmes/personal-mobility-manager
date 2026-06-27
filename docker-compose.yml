@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mobility} -d ${POSTGRES_DB:-mobility_manager}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api:
     build: .
@@ -16,9 +21,21 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      OSM_TILE_URL: ${OSM_TILE_URL:-}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     command: uvicorn mobility_manager.presentation.api.app:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

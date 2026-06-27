@@ -82,3 +82,30 @@ def test_display_name_equals_value() -> None:
 def test_madrid_zone_type_is_subclass_of_zone_type() -> None:
     assert issubclass(MadridZoneType, ZoneType)
     assert isinstance(MadridZoneType.Azul, ZoneType)
+
+
+# ---------------------------------------------------------------------------
+# ZoneType: colour default fallback
+# ---------------------------------------------------------------------------
+
+def test_colour_default_returns_grey() -> None:
+    instance = _IncompleteZoneType()
+    assert instance.colour == "#6B7280"
+
+
+# ---------------------------------------------------------------------------
+# MadridZoneType: colour
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "zone_type, expected_colour",
+    [
+        (MadridZoneType.Azul, "#2563EB"),
+        (MadridZoneType.Verde, "#16A34A"),
+        (MadridZoneType.AltaRotacion, "#6B7280"),
+        (MadridZoneType.Naranja, "#6B7280"),
+        (MadridZoneType.Rojo, "#6B7280"),
+    ],
+)
+def test_madrid_colour_mapping(zone_type: MadridZoneType, expected_colour: str) -> None:
+    assert zone_type.colour == expected_colour

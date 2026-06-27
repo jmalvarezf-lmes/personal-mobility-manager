@@ -28,7 +28,9 @@ from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import 
 )
 from mobility_manager.infrastructure.scheduler import ParkingIngestionScheduler
 from mobility_manager.presentation.api.limiter import limiter
+from mobility_manager.presentation.api.routers.config import router as config_router
 from mobility_manager.presentation.api.routers.parking import router as parking_router
+from mobility_manager.presentation.api.routers.zones import router as zones_router
 
 
 @asynccontextmanager
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     find_uc = FindNearestSerZone(repo=repo)
     app.state.find_nearest_ser_zone = find_uc
+    app.state.ser_zone_repo = repo
 
     scheduler = ParkingIngestionScheduler(
         city_use_cases=city_use_cases,
@@ -74,6 +77,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(parking_router)
+app.include_router(zones_router)
+app.include_router(config_router)
 
 
 @app.middleware("http")

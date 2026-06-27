@@ -45,3 +45,8 @@ def get_cors_origins() -> list[str]:
     """Return allowed CORS origins from CORS_ORIGINS env var (comma-separated)."""
     raw = os.environ.get("CORS_ORIGINS", "")
     return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def get_osm_tile_url() -> str | None:
+    """Return the OSM tile server URL from environment, or None if unset."""
+    return os.environ.get("OSM_TILE_URL") or None

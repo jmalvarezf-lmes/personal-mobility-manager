@@ -22,6 +22,11 @@ class ZoneType:
             f"'{type(self).__name__}' must implement display_name"
         )
 
+    @property
+    def colour(self) -> str:
+        """Hex colour string for map rendering. Defaults to grey for unknown types."""
+        return "#6B7280"
+
     @classmethod
     def from_raw(cls, raw: str) -> "ZoneType | None":
         """

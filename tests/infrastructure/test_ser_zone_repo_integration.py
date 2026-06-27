@@ -148,6 +148,49 @@ def test_spot_count_minus_one_for_unknown(pg_engine) -> None:
     assert zone.spot_count == -1
 
 
+def test_list_all_returns_empty_when_table_is_empty(pg_engine) -> None:
+    """list_all returns an empty list when no zones are stored."""
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([])
+
+    result = repo.list_all()
+
+    assert result == []
+
+
+def test_list_all_returns_all_inserted_zones(pg_engine) -> None:
+    """list_all returns all zones after bulk_replace."""
+    repo = PostgresSerZoneRepository(pg_engine)
+
+    records = [
+        {
+            "street_name": "Calle A",
+            "zone_type": "Azul",
+            "spot_count": 10,
+            "latitude": 40.41,
+            "longitude": -3.70,
+            "utm_x": 440594.0,
+            "utm_y": 4474469.0,
+        },
+        {
+            "street_name": "Calle B",
+            "zone_type": "Verde",
+            "spot_count": 5,
+            "latitude": 40.42,
+            "longitude": -3.71,
+            "utm_x": 440500.0,
+            "utm_y": 4474500.0,
+        },
+    ]
+    repo.bulk_replace(records)
+
+    result = repo.list_all()
+
+    assert len(result) == 2
+    street_names = {z.street_name for z in result}
+    assert street_names == {"Calle A", "Calle B"}
+
+
 def test_old_columns_are_absent(pg_engine) -> None:
     """zone_code and zone_label must not be present in the schema."""
     with pg_engine.connect() as conn:

@@ -136,10 +136,10 @@ class CallejeroCsvParser:
         skipped = 0
 
         for row in reader:
-            street = row.get(street_col, "").strip()  # type: ignore[arg-type]
-            zone = row.get(zone_col, "").strip()  # type: ignore[arg-type]
-            x_raw = row.get(x_col, "").strip()  # type: ignore[arg-type]
-            y_raw = row.get(y_col, "").strip()  # type: ignore[arg-type]
+            street = row.get(street_col, "").strip()
+            zone = row.get(zone_col, "").strip()
+            x_raw = row.get(x_col, "").strip()
+            y_raw = row.get(y_col, "").strip()
 
             if len(street) > _MAX_STREET_LEN or len(zone) > _MAX_ZONE_LEN:
                 skipped += 1

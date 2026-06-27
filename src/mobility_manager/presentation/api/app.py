@@ -4,7 +4,7 @@ Presentation: FastAPI application entry point.
 Wires together all infrastructure and starts/stops the scheduler
 via the FastAPI lifespan context manager.
 """
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -68,7 +68,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -80,7 +80,10 @@ app.include_router(parking_router)
 
 
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next: Callable) -> Response:
+async def add_security_headers(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -91,6 +94,6 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
 
 
 @app.get("/health", tags=["health"])
-def health() -> dict:
+def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}

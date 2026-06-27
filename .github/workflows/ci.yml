@@ -95,11 +95,27 @@ jobs:
   test-frontend:
     name: Test (frontend)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v7
+
+      - name: Create backend .env
+        run: |
+          echo "POSTGRES_DSN=postgresql://mobility:mobility@localhost:5432/mobility_manager" > .env
+          echo "CORS_ORIGINS=http://localhost:5173" >> .env
+
+      - name: Start backend services
+        run: docker compose up -d postgres api
+
+      - name: Wait for API to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then
+              echo "API is ready"
+              break
+            fi
+            echo "Waiting for API... ($i/30)"
+            sleep 2
+          done
 
       - uses: pnpm/action-setup@v6
         with:
@@ -113,10 +129,13 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
+        working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright Chromium
+        working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run Playwright tests
+        working-directory: frontend
         run: pnpm exec playwright test

@@ -95,16 +95,41 @@ jobs:
   test-frontend:
     name: Test (frontend)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mobility
+          POSTGRES_PASSWORD: mobility
+          POSTGRES_DB: mobility_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mobility -d mobility_manager"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_DSN: postgresql://mobility:mobility@localhost:5432/mobility_manager
+      CORS_ORIGINS: http://localhost:5173
+
     steps:
       - uses: actions/checkout@v7
 
-      - name: Create backend .env
-        run: |
-          echo "POSTGRES_DSN=postgresql://mobility:mobility@localhost:5432/mobility_manager" > .env
-          echo "CORS_ORIGINS=http://localhost:5173" >> .env
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
 
-      - name: Start backend services
-        run: docker compose up -d postgres api
+      - name: Install backend dependencies
+        run: pip install -r requirements-dev.txt && pip install -e .
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Start backend API
+        run: uvicorn mobility_manager.presentation.api.app:app --host 0.0.0.0 --port 8000 &
 
       - name: Wait for API to be ready
         run: |
@@ -116,6 +141,7 @@ jobs:
             echo "Waiting for API... ($i/30)"
             sleep 2
           done
+          curl -sf http://localhost:8000/health || { echo "API failed to start"; exit 1; }
 
       - uses: pnpm/action-setup@v6
         with:

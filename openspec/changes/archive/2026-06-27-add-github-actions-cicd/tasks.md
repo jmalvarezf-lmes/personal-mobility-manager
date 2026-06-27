@@ -19,7 +19,7 @@
 
 ## 4. Verify
 
-- [ ] 4.1 Push this branch and open a PR; confirm the `ci.yml` workflow triggers and both `lint` and `test` jobs pass (including integration tests against the postgres service)
-- [ ] 4.2 Merge the PR to `main`; confirm `release.yml` triggers, CI passes, and an image is pushed to `ghcr.io` with `:latest` and `:<sha>` tags
-- [ ] 4.3 Push a `v0.1.0` tag; confirm the image is pushed with tags `:0.1.0`, `:0.1`, `:0`, and `:latest`
-- [ ] 4.4 Confirm the GitHub Package is public (`docker pull ghcr.io/jmalvarezf-lmes/personal-mobility-manager:latest` without credentials)
+- [x] 4.1 Push this branch and open a PR; confirm the `ci.yml` workflow triggers and both `lint` and `test` jobs pass (including integration tests against the postgres service)
+- [x] 4.2 Merge the PR to `main`; confirm `release.yml` triggers, CI passes, and an image is pushed to `ghcr.io` with `:latest` and `:<sha>` tags
+- [x] 4.3 Push a `v0.1.0` tag; confirm the image is pushed with tags `:0.1.0`, `:0.1`, `:0`, and `:latest`
+- [x] 4.4 Confirm the GitHub Package is public (`docker pull ghcr.io/jmalvarezf-lmes/personal-mobility-manager:latest` without credentials)

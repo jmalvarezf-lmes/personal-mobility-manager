@@ -3,6 +3,7 @@ Presentation tests for GET /parking/ser-zone endpoint.
 
 Uses FastAPI TestClient with mocked use case via app.state.
 """
+
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI

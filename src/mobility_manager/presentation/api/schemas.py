@@ -1,6 +1,7 @@
 """
 Presentation: Pydantic schemas for the FastAPI API layer.
 """
+
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -86,9 +87,7 @@ class PushLocationRequest(BaseModel):
 
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude in WGS84 degrees")
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude in WGS84 degrees")
-    recorded_at: datetime = Field(
-        ..., description="When the GPS fix was acquired (source device clock)"
-    )
+    recorded_at: datetime = Field(..., description="When the GPS fix was acquired (source device clock)")
 
 
 class VehicleLocationResponse(BaseModel):

@@ -8,9 +8,10 @@ and returns a VehicleLocation with source="pull".
 Note: pytoyoda uses async internally. This adapter wraps the async calls with
 asyncio.run() so it can be used from the synchronous APScheduler BackgroundScheduler.
 """
+
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pytoyoda import MyT  # type: ignore[attr-defined]
@@ -45,9 +46,7 @@ class ToyotaLocationProvider(VehiclePullLocationPort):
         """
         return asyncio.run(self._fetch_async(vehicle_id, config))
 
-    async def _fetch_async(
-        self, vehicle_id: UUID, config: ToyotaConfig
-    ) -> VehicleLocation:
+    async def _fetch_async(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation:
         client = MyT(username=config.username, password=config.password)
         vehicles = await client.get_vehicles()
 
@@ -67,16 +66,14 @@ class ToyotaLocationProvider(VehiclePullLocationPort):
 
         location = target.location
         if location is None or location.latitude is None or location.longitude is None:
-            raise VinNotFoundInAccountError(
-                f"No location data available for VIN {config.vin!r}"
-            )
+            raise VinNotFoundInAccountError(f"No location data available for VIN {config.vin!r}")
 
         recorded_at = location.timestamp
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         if recorded_at is None:
             recorded_at = now_utc
         elif recorded_at.tzinfo is None:
-            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+            recorded_at = recorded_at.replace(tzinfo=UTC)
 
         logger.debug(
             "Fetched location for VIN %s: lat=%s lon=%s recorded_at=%s",

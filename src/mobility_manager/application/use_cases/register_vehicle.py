@@ -5,8 +5,9 @@ Creates a new vehicle and its brand-specific configuration:
 - Toyota: encrypts credentials via VehicleConfigRepository
 - Generic: generates a random location_token
 """
+
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from mobility_manager.domain.entities.vehicle import Vehicle
@@ -73,8 +74,7 @@ class RegisterVehicle:
         """
         if brand not in self._enabled_brands:
             raise BrandNotEnabledError(
-                f"Brand {brand.value!r} is not enabled. "
-                f"Enabled brands: {[b.value for b in self._enabled_brands]}"
+                f"Brand {brand.value!r} is not enabled. Enabled brands: {[b.value for b in self._enabled_brands]}"
             )
 
         vehicle = Vehicle(
@@ -82,7 +82,7 @@ class RegisterVehicle:
             brand=brand,
             display_name=display_name,
             vin=vin,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         self._vehicle_repo.save(vehicle)
 
@@ -95,9 +95,7 @@ class RegisterVehicle:
 
         elif brand == Brand.GENERIC:
             location_token = str(uuid4())
-            self._config_repo.save_generic_config(
-                vehicle.id, GenericConfig(location_token=location_token)
-            )
+            self._config_repo.save_generic_config(vehicle.id, GenericConfig(location_token=location_token))
 
         return RegisterVehicleResult(
             vehicle_id=vehicle.id,

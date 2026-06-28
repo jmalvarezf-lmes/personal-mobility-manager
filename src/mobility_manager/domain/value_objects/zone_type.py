@@ -9,6 +9,7 @@ city-specific implementations (EnumType and ABCMeta are not composable
 without an explicit combined metaclass). The contract is enforced at
 runtime via NotImplementedError.
 """
+
 from __future__ import annotations
 
 
@@ -18,9 +19,7 @@ class ZoneType:
     @property
     def display_name(self) -> str:
         """Human-readable zone type name stored in the DB and returned by the API."""
-        raise NotImplementedError(
-            f"'{type(self).__name__}' must implement display_name"
-        )
+        raise NotImplementedError(f"'{type(self).__name__}' must implement display_name")
 
     @property
     def colour(self) -> str:
@@ -28,12 +27,10 @@ class ZoneType:
         return "#6B7280"
 
     @classmethod
-    def from_raw(cls, raw: str) -> "ZoneType | None":
+    def from_raw(cls, raw: str) -> ZoneType | None:
         """
         Parse a raw source string into a ZoneType instance.
 
         Returns None when the value is not recognised; the caller skips the row.
         """
-        raise NotImplementedError(
-            f"'{cls.__name__}' must implement from_raw"
-        )
+        raise NotImplementedError(f"'{cls.__name__}' must implement from_raw")

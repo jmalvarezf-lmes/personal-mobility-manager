@@ -3,6 +3,7 @@ Port (interface): VehicleRepository.
 
 Abstract contract for vehicle entity persistence.
 """
+
 from abc import ABC, abstractmethod
 from uuid import UUID
 

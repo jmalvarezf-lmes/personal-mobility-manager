@@ -5,6 +5,7 @@ Reads the ENABLED_CITIES env var (comma-separated, default "madrid") and
 returns one provider instance per configured city. Unknown city codes are
 logged as a warning and ignored.
 """
+
 import logging
 import os
 
@@ -37,18 +38,12 @@ def build_providers() -> list[CityParkingDataProvider]:
     providers: list[CityParkingDataProvider] = []
     for code in city_codes:
         if code == "madrid":
-            url = os.environ.get(
-                "MADRID_SER_CALLES_URL", _DEFAULT_MADRID_SER_CALLES_URL
-            )
+            url = os.environ.get("MADRID_SER_CALLES_URL", _DEFAULT_MADRID_SER_CALLES_URL)
             providers.append(MadridSerCallesProvider(url=url))
         else:
-            logger.warning(
-                "ENABLED_CITIES contains unknown city code %r — skipping", code
-            )
+            logger.warning("ENABLED_CITIES contains unknown city code %r — skipping", code)
 
     if not providers:
-        logger.warning(
-            "No valid city providers configured. ENABLED_CITIES=%r", raw
-        )
+        logger.warning("No valid city providers configured. ENABLED_CITIES=%r", raw)
 
     return providers

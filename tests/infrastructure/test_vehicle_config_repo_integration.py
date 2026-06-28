@@ -4,8 +4,9 @@ Integration tests for PostgresVehicleConfigRepository.
 Requires POSTGRES_DSN environment variable and the cryptography package.
 Skipped automatically if either is absent.
 """
+
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -18,9 +19,7 @@ try:
 except ImportError:
     _CRYPTO_AVAILABLE = False
 
-pytestmark = pytest.mark.skipif(
-    not _CRYPTO_AVAILABLE, reason="cryptography package not installed"
-)
+pytestmark = pytest.mark.skipif(not _CRYPTO_AVAILABLE, reason="cryptography package not installed")
 
 
 @pytest.fixture()
@@ -75,11 +74,8 @@ def pg_engine():
 def _insert_vehicle(engine, vehicle_id, brand="generic") -> None:
     with engine.begin() as conn:
         conn.execute(
-            text(
-                "INSERT INTO vehicles (id, brand, display_name, created_at) "
-                "VALUES (:id, :brand, 'Test', :now)"
-            ),
-            {"id": str(vehicle_id), "brand": brand, "now": datetime.now(timezone.utc)},
+            text("INSERT INTO vehicles (id, brand, display_name, created_at) VALUES (:id, :brand, 'Test', :now)"),
+            {"id": str(vehicle_id), "brand": brand, "now": datetime.now(UTC)},
         )
 
 
@@ -142,9 +138,7 @@ def test_generic_token_stored_cleartext(pg_engine, fernet_key) -> None:
     # Verify raw DB value is the token in plaintext
     with pg_engine.connect() as conn:
         row = conn.execute(
-            text(
-                "SELECT location_token FROM vehicle_configs WHERE vehicle_id = :id"
-            ),
+            text("SELECT location_token FROM vehicle_configs WHERE vehicle_id = :id"),
             {"id": str(vehicle_id)},
         ).fetchone()
     assert row is not None

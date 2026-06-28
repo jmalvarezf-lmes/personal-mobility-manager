@@ -3,6 +3,7 @@ Domain entity: Vehicle.
 
 Represents a vehicle owned by the user, agnostic of the vendor (Toyota, etc.).
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID

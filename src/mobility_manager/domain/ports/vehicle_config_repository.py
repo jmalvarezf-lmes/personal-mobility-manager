@@ -4,6 +4,7 @@ Port (interface): VehicleConfigRepository.
 Abstract contract for per-vehicle configuration storage.
 Toyota credentials are stored AES-encrypted; generic token is cleartext.
 """
+
 from abc import ABC, abstractmethod
 from uuid import UUID
 

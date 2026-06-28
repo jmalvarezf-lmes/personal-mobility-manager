@@ -4,6 +4,7 @@ Infrastructure: PostgresVehicleLocationRepository.
 Appends each location update as a new row; never overwrites.
 get_latest returns the row with the highest recorded_at for the given vehicle.
 """
+
 from uuid import UUID
 
 from sqlalchemy import desc, select

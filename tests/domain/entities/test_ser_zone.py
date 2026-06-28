@@ -1,4 +1,5 @@
 """Unit tests for SerZone entity."""
+
 import pytest
 
 from mobility_manager.domain.entities.ser_zone import SerZone
@@ -6,12 +7,12 @@ from mobility_manager.domain.value_objects.location import GeoLocation
 
 
 def _make_ser_zone(**kwargs) -> SerZone:
-    defaults = dict(
-        street_name="Calle Mayor",
-        zone_type="Azul",
-        spot_count=15,
-        location=GeoLocation(lat=40.4168, lng=-3.7038),
-    )
+    defaults = {
+        "street_name": "Calle Mayor",
+        "zone_type": "Azul",
+        "spot_count": 15,
+        "location": GeoLocation(lat=40.4168, lng=-3.7038),
+    }
     defaults.update(kwargs)
     return SerZone(**defaults)
 

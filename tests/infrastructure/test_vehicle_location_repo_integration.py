@@ -4,8 +4,9 @@ Integration tests for PostgresVehicleLocationRepository.
 Requires POSTGRES_DSN environment variable.
 Skipped automatically if not set.
 """
+
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -59,11 +60,8 @@ def pg_engine():
 def _insert_vehicle(engine, vehicle_id) -> None:
     with engine.begin() as conn:
         conn.execute(
-            text(
-                "INSERT INTO vehicles (id, brand, display_name, created_at) "
-                "VALUES (:id, 'generic', 'Test', :now)"
-            ),
-            {"id": str(vehicle_id), "now": datetime.now(timezone.utc)},
+            text("INSERT INTO vehicles (id, brand, display_name, created_at) VALUES (:id, 'generic', 'Test', :now)"),
+            {"id": str(vehicle_id), "now": datetime.now(UTC)},
         )
 
 
@@ -87,7 +85,7 @@ def test_get_latest_returns_most_recent_row(pg_engine) -> None:
     vehicle_id = uuid4()
     _insert_vehicle(pg_engine, vehicle_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_loc = VehicleLocation(
         id=uuid4(),
         vehicle_id=vehicle_id,
@@ -126,7 +124,7 @@ def test_save_accumulates_rows(pg_engine) -> None:
     vehicle_id = uuid4()
     _insert_vehicle(pg_engine, vehicle_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for i in range(3):
         repo.save(
             VehicleLocation(
@@ -159,7 +157,7 @@ def test_get_latest_uses_recorded_at_not_received_at(pg_engine) -> None:
     vehicle_id = uuid4()
     _insert_vehicle(pg_engine, vehicle_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # older received_at but newer recorded_at
     loc_a = VehicleLocation(
         id=uuid4(),

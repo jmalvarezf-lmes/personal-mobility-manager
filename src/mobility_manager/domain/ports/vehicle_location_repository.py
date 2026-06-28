@@ -3,6 +3,7 @@ Port (interface): VehicleLocationRepository.
 
 Abstract contract for vehicle location history persistence.
 """
+
 from abc import ABC, abstractmethod
 from uuid import UUID
 

@@ -8,6 +8,7 @@ and delegating to RecordVehicleLocation.
 Per-vehicle errors are logged and swallowed so the scheduler continues for
 remaining vehicles.
 """
+
 import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -89,9 +90,7 @@ class VehicleLocationScheduler:
                     location.longitude,
                 )
             except Exception:
-                logger.exception(
-                    "Failed to record location for vehicle %s — continuing", vehicle.id
-                )
+                logger.exception("Failed to record location for vehicle %s — continuing", vehicle.id)
 
     def start(self) -> None:
         """Start the scheduler and trigger an immediate first run if a provider exists."""

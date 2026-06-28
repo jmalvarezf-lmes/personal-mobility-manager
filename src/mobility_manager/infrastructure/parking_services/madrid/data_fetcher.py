@@ -3,6 +3,7 @@ Infrastructure: MadridCallejeroCsvFetcher.
 
 Downloads the Madrid Callejero CSV from the Madrid open data portal.
 """
+
 import logging
 from urllib.parse import urlparse
 
@@ -20,9 +21,7 @@ class MadridCallejeroCsvFetcher:
         self._url = url
         hostname = urlparse(url).hostname or ""
         if hostname not in _ALLOWED_HOSTNAMES:
-            raise ValueError(
-                f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}"
-            )
+            raise ValueError(f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}")
 
     def fetch(self) -> str:
         """
@@ -35,12 +34,8 @@ class MadridCallejeroCsvFetcher:
             response = client.get(self._url)
 
         if not response.is_success:
-            raise RuntimeError(
-                f"Failed to fetch Madrid Callejero CSV: HTTP {response.status_code}"
-            )
+            raise RuntimeError(f"Failed to fetch Madrid Callejero CSV: HTTP {response.status_code}")
 
-        logger.info(
-            "Fetched Madrid Callejero CSV (%d bytes)", len(response.content)
-        )
+        logger.info("Fetched Madrid Callejero CSV (%d bytes)", len(response.content))
         # The Madrid callejero CSV is encoded in Latin-1 (ISO-8859-1).
         return response.content.decode("latin-1")

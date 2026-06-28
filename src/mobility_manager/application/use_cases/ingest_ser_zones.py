@@ -4,6 +4,7 @@ Use case: IngestSerZones.
 Orchestrates the fetch → parse → persist pipeline for any city's SER-equivalent
 parking data via a CityParkingDataProvider.
 """
+
 import logging
 from typing import Any
 

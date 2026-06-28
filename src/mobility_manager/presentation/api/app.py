@@ -4,9 +4,9 @@ Presentation: FastAPI application entry point.
 Wires together all infrastructure and starts/stops the schedulers
 via the FastAPI lifespan context manager.
 """
-from collections.abc import Awaitable, Callable
+
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,17 +64,14 @@ from mobility_manager.presentation.api.routers.zones import router as zones_rout
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Set up and tear down application-level resources."""
     engine = get_engine()
 
     # --- Parking (existing) ---
     repo = PostgresSerZoneRepository(engine)
     providers = build_providers()
-    city_use_cases = [
-        (provider.city_code, IngestSerZones(provider=provider, repo=repo))
-        for provider in providers
-    ]
+    city_use_cases = [(provider.city_code, IngestSerZones(provider=provider, repo=repo)) for provider in providers]
     find_uc = FindNearestSerZone(repo=repo)
     app.state.find_nearest_ser_zone = find_uc
     app.state.ser_zone_repo = repo

@@ -1,6 +1,7 @@
 """
 Unit tests for ZoneType base class and MadridZoneType implementation.
 """
+
 import pytest
 
 from mobility_manager.domain.value_objects.zone_type import ZoneType
@@ -8,13 +9,14 @@ from mobility_manager.infrastructure.parking_services.madrid.zone_type import (
     MadridZoneType,
 )
 
-
 # ---------------------------------------------------------------------------
 # ZoneType contract enforcement (raises NotImplementedError when not implemented)
 # ---------------------------------------------------------------------------
 
+
 class _IncompleteZoneType(ZoneType):
     """Subclass that forgets to implement display_name and from_raw."""
+
     pass
 
 
@@ -32,6 +34,7 @@ def test_from_raw_raises_when_not_implemented() -> None:
 # ---------------------------------------------------------------------------
 # MadridZoneType: from_raw()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -67,6 +70,7 @@ def test_from_raw_is_case_sensitive() -> None:
 # MadridZoneType: display_name
 # ---------------------------------------------------------------------------
 
+
 def test_display_name_equals_value() -> None:
     assert MadridZoneType.Azul.display_name == "Azul"
     assert MadridZoneType.Verde.display_name == "Verde"
@@ -79,6 +83,7 @@ def test_display_name_equals_value() -> None:
 # MadridZoneType: is a subclass of ZoneType
 # ---------------------------------------------------------------------------
 
+
 def test_madrid_zone_type_is_subclass_of_zone_type() -> None:
     assert issubclass(MadridZoneType, ZoneType)
     assert isinstance(MadridZoneType.Azul, ZoneType)
@@ -88,6 +93,7 @@ def test_madrid_zone_type_is_subclass_of_zone_type() -> None:
 # ZoneType: colour default fallback
 # ---------------------------------------------------------------------------
 
+
 def test_colour_default_returns_grey() -> None:
     instance = _IncompleteZoneType()
     assert instance.colour == "#6B7280"
@@ -96,6 +102,7 @@ def test_colour_default_returns_grey() -> None:
 # ---------------------------------------------------------------------------
 # MadridZoneType: colour
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "zone_type, expected_colour",

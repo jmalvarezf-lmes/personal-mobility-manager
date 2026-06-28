@@ -1,4 +1,5 @@
 """Unit tests for ETRS89 UTM Zone 30N → WGS84 coordinate reprojection."""
+
 import pytest
 from pyproj import Transformer
 
@@ -9,8 +10,8 @@ from pyproj import Transformer
 # Expected WGS84: lat≈40.4168, lng≈-3.7038
 _PUERTA_DEL_SOL_X_CM = 44059400
 _PUERTA_DEL_SOL_Y_CM = 447446900
-_PUERTA_DEL_SOL_X = _PUERTA_DEL_SOL_X_CM / 100.0   # 440594.0 m
-_PUERTA_DEL_SOL_Y = _PUERTA_DEL_SOL_Y_CM / 100.0   # 4474469.0 m
+_PUERTA_DEL_SOL_X = _PUERTA_DEL_SOL_X_CM / 100.0  # 440594.0 m
+_PUERTA_DEL_SOL_Y = _PUERTA_DEL_SOL_Y_CM / 100.0  # 4474469.0 m
 _EXPECTED_LAT = 40.4168
 _EXPECTED_LNG = -3.7038
 _TOLERANCE = 0.005  # degrees (~500 m) — input UTM coords are approximate
@@ -18,8 +19,8 @@ _TOLERANCE = 0.005  # degrees (~500 m) — input UTM coords are approximate
 
 def test_cm_to_metres_conversion() -> None:
     """Centimetre values from the CSV divide by 100 to give UTM metres."""
-    assert _PUERTA_DEL_SOL_X == pytest.approx(440594.0)
-    assert _PUERTA_DEL_SOL_Y == pytest.approx(4474469.0)
+    assert pytest.approx(440594.0) == _PUERTA_DEL_SOL_X
+    assert pytest.approx(4474469.0) == _PUERTA_DEL_SOL_Y
 
 
 def test_puerta_del_sol_reprojection() -> None:

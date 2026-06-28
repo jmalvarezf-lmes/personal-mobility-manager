@@ -3,10 +3,11 @@ Domain value object: Brand.
 
 Closed enum of supported vehicle brands. New brands require code changes.
 """
-from enum import Enum
+
+from enum import StrEnum
 
 
-class Brand(str, Enum):
+class Brand(StrEnum):
     """Supported vehicle brands."""
 
     TOYOTA = "toyota"

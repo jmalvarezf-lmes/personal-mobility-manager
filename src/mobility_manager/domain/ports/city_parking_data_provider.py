@@ -4,6 +4,7 @@ Port (interface): CityParkingDataProvider.
 Abstract contract for city-specific parking data ingestion. Each city
 implements this to own its full fetch-and-parse pipeline.
 """
+
 from abc import ABC, abstractmethod
 
 from mobility_manager.domain.value_objects.parking_spot_record import ParkingSpotRecord

@@ -1,4 +1,7 @@
 """Unit tests for GeoLocation value object."""
+
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from mobility_manager.domain.value_objects.location import GeoLocation
@@ -12,7 +15,7 @@ def test_valid_geolocation() -> None:
 
 def test_geolocation_is_frozen() -> None:
     loc = GeoLocation(lat=40.0, lng=-3.0)
-    with pytest.raises(Exception):  # FrozenInstanceError
+    with pytest.raises(FrozenInstanceError):
         loc.lat = 0.0  # type: ignore[misc]
 
 

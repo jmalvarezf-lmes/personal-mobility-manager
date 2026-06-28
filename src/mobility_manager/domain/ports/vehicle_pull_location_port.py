@@ -4,6 +4,7 @@ Port (interface): VehiclePullLocationPort.
 Abstract contract for pull-based vehicle location adapters (e.g. Toyota via pytoyoda).
 Push-only brands do NOT implement this interface.
 """
+
 from abc import ABC, abstractmethod
 from uuid import UUID
 

@@ -1,4 +1,5 @@
 """Unit tests for FindNearestSerZone use case."""
+
 from unittest.mock import MagicMock
 
 import pytest

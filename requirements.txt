@@ -1,5 +1,5 @@
 pytoyoda
-cryptography
+cryptography>=48.0.1
 pydantic>=2.0
 python-dotenv
 click

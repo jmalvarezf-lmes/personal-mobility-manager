@@ -3,6 +3,7 @@ Application configuration loaded from environment variables.
 """
 import os
 import re
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -50,3 +51,54 @@ def get_cors_origins() -> list[str]:
 def get_osm_tile_url() -> str | None:
     """Return the OSM tile server URL from environment, or None if unset."""
     return os.environ.get("OSM_TILE_URL") or None
+
+
+def get_enabled_brands() -> list[Any]:  # list[Brand] — avoids circular import at module level
+    """
+    Return the list of enabled vehicle brands from ENABLED_BRANDS env var.
+
+    Parses the comma-separated string and validates each value against the
+    Brand enum. Unknown values are silently ignored.
+    Default is ["generic"] when ENABLED_BRANDS is not set.
+    """
+    from mobility_manager.domain.value_objects.brand import Brand
+
+    raw = os.environ.get("ENABLED_BRANDS", "generic")
+    result: list[Brand] = []
+    for code in raw.split(","):
+        code = code.strip().lower()
+        if not code:
+            continue
+        try:
+            result.append(Brand(code))
+        except ValueError:
+            pass  # unknown brand code — ignored
+    return result
+
+
+def get_encryption_key() -> bytes:
+    """
+    Return the Fernet encryption key from ENCRYPTION_KEY env var.
+
+    The value must be a base64-encoded 32-byte key as produced by
+    ``Fernet.generate_key()``.
+
+    Raises:
+        RuntimeError: If ENCRYPTION_KEY is not set.
+    """
+    key = os.environ.get("ENCRYPTION_KEY")
+    if not key:
+        raise RuntimeError(
+            "ENCRYPTION_KEY environment variable is not set. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    return key.encode()
+
+
+def get_vehicle_poll_interval_minutes() -> int:
+    """Return the vehicle location poll interval in minutes from environment."""
+    raw = os.environ.get("VEHICLE_POLL_INTERVAL_MINUTES", "5")
+    try:
+        return int(raw)
+    except ValueError:
+        return 5

@@ -1,13 +1,3 @@
-"""
-Port (interface): VehicleProviderPort.
-
-Abstract contract that all vehicle vendor adapters must implement.
-New vendors (e.g. Volkswagen, BMW) plug in by implementing this interface.
-"""
-from abc import ABC
-
-
-class VehicleProviderPort(ABC):
-    """Abstract vehicle provider — implemented per vendor in infrastructure."""
-
-    pass
+# This file is intentionally empty — VehicleProviderPort has been replaced by
+# VehiclePullLocationPort in domain/ports/vehicle_pull_location_port.py.
+# Kept as a tombstone to avoid git merge surprises; remove in a future cleanup pass.

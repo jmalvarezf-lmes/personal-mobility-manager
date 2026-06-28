@@ -78,24 +78,6 @@ tests/
 
 ---
 
-## Madrid Callejero CSV — Key Facts
-
-The reference file is `200075-1-callejero-csv.csv` (215 k rows, Latin-1, semicolon-delimited, all fields quoted).
-
-| Role | Column name |
-|---|---|
-| Street name | `Nombre de la vía` |
-| SER zone code | `Zona Servicio Estacionamiento Regulado` |
-| UTM easting (cm) | `Coordenada X (Guia Urbana) cm` |
-| UTM northing (cm) | `Coordenada Y (Guia Urbana) cm` |
-
-- Zone code `"000"` means no SER zone — skip those rows.
-- X/Y values are in **centimetres**; divide by 100 for EPSG:25830 metres.
-- Distance calculation uses **UTM Euclidean distance** (not Haversine).
-- Fetcher must decode response bytes as `latin-1`.
-
----
-
 ## Python Skill
 
 When implementing any Python feature, endpoint, use case, repository, or domain model, load and follow the `python-clean-arch` skill at `~/.claude/skills/python-clean-arch/SKILL.md`.

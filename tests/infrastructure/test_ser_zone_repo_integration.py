@@ -4,6 +4,7 @@ Integration tests for PostgresSerZoneRepository.
 These tests require a running PostgreSQL instance.
 Set POSTGRES_DSN env var or skip tests if not available.
 """
+
 import os
 
 import pytest
@@ -57,7 +58,7 @@ def test_bulk_replace_and_find_nearest(pg_engine) -> None:
             "spot_count": 15,
             "latitude": 40.4168,
             "longitude": -3.7038,
-            "utm_x": 440594.0,   # EPSG:25830 easting near Puerta del Sol
+            "utm_x": 440594.0,  # EPSG:25830 easting near Puerta del Sol
             "utm_y": 4474469.0,  # EPSG:25830 northing near Puerta del Sol
         }
     ]

@@ -46,6 +46,15 @@ Domain  ←  Application  ←  Infrastructure  ←  Presentation
 
 New features must include tests at each applicable level. Use `unittest.mock` for ports in unit tests. Integration tests live in `tests/infrastructure/` and must be skippable without `POSTGRES_DSN`.
 
+## Coverage Targets (mandatory)
+
+| Layer | Minimum coverage |
+|---|---|
+| `domain/` | **100%** — entities, value objects, exceptions, ports |
+| `application/` | **80%** — use cases |
+
+Run with `make coverage` (or `pytest --cov=src/mobility_manager --cov-report=term-missing`). A change is not done if it drops either layer below its target.
+
 ---
 
 ## Project Layout
@@ -81,6 +90,14 @@ tests/
 ## Python Skill
 
 When implementing any Python feature, endpoint, use case, repository, or domain model, load and follow the `python-clean-arch` skill at `~/.claude/skills/python-clean-arch/SKILL.md`.
+
+---
+
+## Makefile consistency (MANDATORY)
+
+Any change to how a task is executed — test command, coverage command, migration, server start, linting, formatting, or any other workflow step — must also update the `Makefile` to keep it the source of truth for all runnable operations.
+
+Do not leave the `Makefile` stale. If a new tool is added, a flag changes, or a step is renamed, update the relevant `make` target in the same commit.
 
 ---
 

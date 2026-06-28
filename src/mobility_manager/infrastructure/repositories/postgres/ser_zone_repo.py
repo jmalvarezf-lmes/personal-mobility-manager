@@ -5,6 +5,7 @@ Uses UTM (EPSG:25830) Euclidean distance for maximum precision.
 Bounding-box SQL filter on WGS84 lat/lng narrows candidates; final sort uses
 Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
 """
+
 import math
 from typing import Any
 
@@ -53,9 +54,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
 
         # Convert query location to UTM once for distance ranking.
         q_utm_x, q_utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
-        result.sort(
-            key=lambda r: math.sqrt((r[2] - q_utm_x) ** 2 + (r[3] - q_utm_y) ** 2)
-        )
+        result.sort(key=lambda r: math.sqrt((r[2] - q_utm_x) ** 2 + (r[3] - q_utm_y) ** 2))
 
         best = result[0]
         return SerZone(

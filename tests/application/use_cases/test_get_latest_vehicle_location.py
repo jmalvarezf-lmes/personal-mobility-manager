@@ -1,7 +1,8 @@
 """
 Unit tests for GetLatestVehicleLocation use case.
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -32,8 +33,8 @@ def _make_location(vehicle_id=None) -> VehicleLocation:
         vehicle_id=vehicle_id,
         latitude=40.4,
         longitude=-3.7,
-        recorded_at=datetime.now(timezone.utc),
-        received_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
+        received_at=datetime.now(UTC),
         source="pull",
     )
 

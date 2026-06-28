@@ -4,6 +4,7 @@ Domain entity: VehicleLocation.
 Captures a single GPS fix for a vehicle with source tagging (pull or push).
 Full history is retained — rows are never overwritten.
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -18,6 +19,6 @@ class VehicleLocation:
     vehicle_id: UUID
     latitude: float
     longitude: float
-    recorded_at: datetime   # source-device clock
-    received_at: datetime   # server clock
+    recorded_at: datetime  # source-device clock
+    received_at: datetime  # server clock
     source: Literal["pull", "push"]

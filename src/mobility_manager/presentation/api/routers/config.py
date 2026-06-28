@@ -3,6 +3,7 @@ Presentation: Config API router.
 
 Exposes GET /config to provide runtime configuration values to the frontend.
 """
+
 from fastapi import APIRouter
 
 from mobility_manager.config import get_osm_tile_url

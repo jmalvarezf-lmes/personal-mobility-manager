@@ -5,7 +5,8 @@ Stores per-vehicle configuration:
 - Toyota: JSON-serialised credentials encrypted via Fernet.
 - Generic: location_token stored as cleartext (indexed for push-endpoint dispatch).
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -48,9 +49,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
             RuntimeError: If encryption_key was not provided at construction.
         """
         if self._encryption_key is None:
-            raise RuntimeError(
-                "encryption_key is required to save Toyota config but was not provided"
-            )
+            raise RuntimeError("encryption_key is required to save Toyota config but was not provided")
         payload = {
             "username": config.username,
             "password": config.password,
@@ -58,7 +57,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
             "vin": config.vin,
         }
         ciphertext = encrypt(payload, self._encryption_key)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         with self._engine.begin() as conn:
             conn.execute(
@@ -80,9 +79,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
             RuntimeError: If encryption_key was not provided at construction.
         """
         if self._encryption_key is None:
-            raise RuntimeError(
-                "encryption_key is required to read Toyota config but was not provided"
-            )
+            raise RuntimeError("encryption_key is required to read Toyota config but was not provided")
         with self._engine.connect() as conn:
             row = conn.execute(
                 select(vehicle_configs_table).where(
@@ -92,9 +89,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
             ).fetchone()
 
         if row is None or row.encrypted_payload is None:
-            raise VehicleConfigNotFoundError(
-                f"No Toyota config found for vehicle {vehicle_id}"
-            )
+            raise VehicleConfigNotFoundError(f"No Toyota config found for vehicle {vehicle_id}")
 
         data = decrypt(row.encrypted_payload, self._encryption_key)
         return ToyotaConfig(
@@ -110,7 +105,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
 
     def save_generic_config(self, vehicle_id: UUID, config: GenericConfig) -> None:
         """Store the generic location_token as cleartext."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._engine.begin() as conn:
             conn.execute(
                 vehicle_configs_table.insert().values(
@@ -143,9 +138,7 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
         """
         with self._engine.connect() as conn:
             row = conn.execute(
-                select(vehicle_configs_table.c.vehicle_id).where(
-                    vehicle_configs_table.c.location_token == token
-                )
+                select(vehicle_configs_table.c.vehicle_id).where(vehicle_configs_table.c.location_token == token)
             ).fetchone()
         if row is None:
             return None

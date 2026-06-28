@@ -3,6 +3,7 @@ Port (interface): SerZoneRepository.
 
 Abstract contract for SER zone data persistence.
 """
+
 from abc import ABC, abstractmethod
 
 from mobility_manager.domain.entities.ser_zone import SerZone

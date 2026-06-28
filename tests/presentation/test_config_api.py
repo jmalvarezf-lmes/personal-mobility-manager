@@ -1,6 +1,7 @@
 """
 Presentation tests for GET /config endpoint.
 """
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

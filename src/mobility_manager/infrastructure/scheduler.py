@@ -5,6 +5,7 @@ Wraps APScheduler BackgroundScheduler to periodically run parking data
 ingestion for all registered city providers. One APScheduler job is created
 per city so each city ingests independently.
 """
+
 import logging
 from collections.abc import Callable
 from typing import Any

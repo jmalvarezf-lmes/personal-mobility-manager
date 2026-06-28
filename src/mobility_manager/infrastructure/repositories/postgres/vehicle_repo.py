@@ -3,6 +3,7 @@ Infrastructure: PostgresVehicleRepository.
 
 SQLAlchemy Core implementation of the VehicleRepository port.
 """
+
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,9 +37,7 @@ class PostgresVehicleRepository(VehicleRepository):
     def get_by_id(self, vehicle_id: UUID) -> Vehicle | None:
         """Return the vehicle with the given UUID, or None."""
         with self._engine.connect() as conn:
-            row = conn.execute(
-                select(vehicles_table).where(vehicles_table.c.id == vehicle_id)
-            ).fetchone()
+            row = conn.execute(select(vehicles_table).where(vehicles_table.c.id == vehicle_id)).fetchone()
         if row is None:
             return None
         return self._row_to_vehicle(row)
@@ -46,11 +45,7 @@ class PostgresVehicleRepository(VehicleRepository):
     def get_all_by_brand(self, brand: Brand) -> list[Vehicle]:
         """Return all vehicles for the given brand."""
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(vehicles_table).where(
-                    vehicles_table.c.brand == brand.value
-                )
-            ).fetchall()
+            rows = conn.execute(select(vehicles_table).where(vehicles_table.c.brand == brand.value)).fetchall()
         return [self._row_to_vehicle(r) for r in rows]
 
     @staticmethod

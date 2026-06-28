@@ -5,6 +5,7 @@ This is the single source of truth for all table schemas. Both repository
 implementations and Alembic's env.py import from here so autogenerate
 can discover every table in one place.
 """
+
 from sqlalchemy import (
     Column,
     DateTime,
@@ -28,10 +29,10 @@ ser_zones_table = Table(
     Column("street_name", Text, nullable=False),
     Column("zone_type", String(50), nullable=False),
     Column("spot_count", Integer, nullable=False, server_default="-1"),
-    Column("latitude", Float, nullable=False),    # WGS84 — bounding-box index
-    Column("longitude", Float, nullable=False),   # WGS84 — bounding-box index
-    Column("utm_x", Float, nullable=False),       # EPSG:25830 easting (metres)
-    Column("utm_y", Float, nullable=False),       # EPSG:25830 northing (metres)
+    Column("latitude", Float, nullable=False),  # WGS84 — bounding-box index
+    Column("longitude", Float, nullable=False),  # WGS84 — bounding-box index
+    Column("utm_x", Float, nullable=False),  # EPSG:25830 easting (metres)
+    Column("utm_y", Float, nullable=False),  # EPSG:25830 northing (metres)
 )
 
 vehicles_table = Table(
@@ -49,8 +50,8 @@ vehicle_configs_table = Table(
     metadata,
     Column("vehicle_id", Uuid, ForeignKey("vehicles.id"), primary_key=True),
     Column("brand", String(20), nullable=False),
-    Column("encrypted_payload", LargeBinary, nullable=True),   # Toyota only (Fernet)
-    Column("location_token", String(64), nullable=True),        # Generic only (cleartext)
+    Column("encrypted_payload", LargeBinary, nullable=True),  # Toyota only (Fernet)
+    Column("location_token", String(64), nullable=True),  # Generic only (cleartext)
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 

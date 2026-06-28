@@ -6,6 +6,7 @@ Endpoints:
   GET    /vehicles/{vehicle_id}/location — latest known location
   POST   /vehicles/{token}/location      — push ingest from generic device
 """
+
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -53,7 +54,7 @@ def register_vehicle(
             toyota_config=toyota_config,
         )
     except BrandNotEnabledError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return VehicleResponse(
         vehicle_id=result.vehicle_id,
@@ -75,7 +76,7 @@ def get_latest_location(request: Request, vehicle_id: UUID) -> VehicleLocationRe
         raise HTTPException(
             status_code=404,
             detail="No location history found for this vehicle",
-        )
+        ) from None
 
     return VehicleLocationResponse(
         vehicle_id=location.vehicle_id,
@@ -117,6 +118,6 @@ def push_vehicle_location(
             source="push",
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return Response(status_code=204)

@@ -1,6 +1,7 @@
 """
 Unit tests for Brand enum.
 """
+
 import pytest
 
 from mobility_manager.domain.value_objects.brand import Brand

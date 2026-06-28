@@ -5,7 +5,8 @@ POST   /vehicles                       (task 16.9)
 POST   /vehicles/{token}/location      (task 16.10)
 GET    /vehicles/{vehicle_id}/location (task 16.11)
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
@@ -73,8 +74,8 @@ def _make_location(vehicle_id: UUID | None = None, source: str = "pull") -> Vehi
         vehicle_id=vehicle_id,
         latitude=40.4168,
         longitude=-3.7038,
-        recorded_at=datetime.now(timezone.utc),
-        received_at=datetime.now(timezone.utc),
+        recorded_at=datetime.now(UTC),
+        received_at=datetime.now(UTC),
         source=source,  # type: ignore[arg-type]
     )
 
@@ -177,7 +178,7 @@ class TestRegisterVehicle:
 
 class TestPushVehicleLocation:
     def _make_push_body(self, seconds_ago: float = 10) -> dict:
-        recorded_at = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+        recorded_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
         return {
             "lat": 40.4168,
             "lon": -3.7038,
@@ -211,7 +212,7 @@ class TestPushVehicleLocation:
         config_repo.find_vehicle_by_token.return_value = uuid4()
 
         client = TestClient(_build_app(config_repo=config_repo))
-        body = {"lat": 999.0, "lon": -3.7038, "recorded_at": datetime.now(timezone.utc).isoformat()}
+        body = {"lat": 999.0, "lon": -3.7038, "recorded_at": datetime.now(UTC).isoformat()}
         response = client.post("/vehicles/some-token/location", json=body)
 
         assert response.status_code == 422
@@ -221,7 +222,7 @@ class TestPushVehicleLocation:
         config_repo.find_vehicle_by_token.return_value = uuid4()
 
         client = TestClient(_build_app(config_repo=config_repo))
-        body = {"lat": 40.4, "lon": 999.0, "recorded_at": datetime.now(timezone.utc).isoformat()}
+        body = {"lat": 40.4, "lon": 999.0, "recorded_at": datetime.now(UTC).isoformat()}
         response = client.post("/vehicles/some-token/location", json=body)
 
         assert response.status_code == 422
@@ -234,7 +235,7 @@ class TestPushVehicleLocation:
         record_uc.execute.side_effect = ValueError("recorded_at is more than 60s in the future")
 
         client = TestClient(_build_app(record_uc=record_uc, config_repo=config_repo))
-        future = (datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat()
+        future = (datetime.now(UTC) + timedelta(seconds=120)).isoformat()
         body = {"lat": 40.4, "lon": -3.7, "recorded_at": future}
         response = client.post(f"/vehicles/{token}/location", json=body)
 

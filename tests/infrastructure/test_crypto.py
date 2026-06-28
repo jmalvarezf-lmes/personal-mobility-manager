@@ -3,6 +3,7 @@ Unit tests for infrastructure/crypto.py (Fernet encrypt/decrypt helpers).
 
 Skipped if the cryptography package is not installed.
 """
+
 import pytest
 
 try:

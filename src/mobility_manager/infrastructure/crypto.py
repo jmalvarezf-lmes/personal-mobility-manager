@@ -6,6 +6,7 @@ Toyota credentials before storing them in the database.
 
 Key format: base64-encoded 32-byte key as produced by ``Fernet.generate_key()``.
 """
+
 import json
 from typing import Any
 

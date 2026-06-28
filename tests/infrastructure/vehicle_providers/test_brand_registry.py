@@ -1,6 +1,7 @@
 """
 Unit tests for BrandRegistry.
 """
+
 import pytest
 
 from mobility_manager.infrastructure.vehicle_providers.brand_registry import (

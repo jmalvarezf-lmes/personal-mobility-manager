@@ -3,6 +3,7 @@ Use case: FindNearestSerZone.
 
 Finds the nearest SER parking zone for a given geographic location.
 """
+
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
 from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
@@ -23,7 +24,5 @@ class FindNearestSerZone:
         """
         zone = self._repo.find_nearest(location)
         if zone is None:
-            raise SerZoneNotFoundError(
-                f"No SER zone found near ({location.lat}, {location.lng})"
-            )
+            raise SerZoneNotFoundError(f"No SER zone found near ({location.lat}, {location.lng})")
         return zone

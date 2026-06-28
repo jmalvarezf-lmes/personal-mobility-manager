@@ -4,6 +4,7 @@ Application use case: GetLatestVehicleLocation.
 Returns the most recent known GPS location for a vehicle.
 Raises VehicleLocationNotFoundError if no location history exists.
 """
+
 from uuid import UUID
 
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
@@ -34,7 +35,5 @@ class GetLatestVehicleLocation:
         """
         location = self._location_repo.get_latest(vehicle_id)
         if location is None:
-            raise VehicleLocationNotFoundError(
-                f"No location history found for vehicle {vehicle_id}"
-            )
+            raise VehicleLocationNotFoundError(f"No location history found for vehicle {vehicle_id}")
         return location

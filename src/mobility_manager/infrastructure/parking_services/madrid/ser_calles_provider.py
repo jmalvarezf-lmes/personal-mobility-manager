@@ -5,6 +5,7 @@ Fetches, parses, and validates parking spot records from the Madrid SER
 Calles CSV dataset (dataset 218228). This replaces the previous two-step
 callejero fetcher + parser pipeline with a single self-contained provider.
 """
+
 import csv
 import io
 import logging
@@ -44,9 +45,7 @@ class MadridSerCallesProvider(CityParkingDataProvider):
     def __init__(self, url: str = _DEFAULT_URL) -> None:
         hostname = urlparse(url).hostname or ""
         if hostname not in _ALLOWED_HOSTNAMES:
-            raise ValueError(
-                f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}"
-            )
+            raise ValueError(f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}")
         self._url = url
 
     @property
@@ -71,9 +70,7 @@ class MadridSerCallesProvider(CityParkingDataProvider):
             response = client.get(self._url)
 
         if not response.is_success:
-            raise RuntimeError(
-                f"Failed to fetch Madrid SER Calles CSV: HTTP {response.status_code}"
-            )
+            raise RuntimeError(f"Failed to fetch Madrid SER Calles CSV: HTTP {response.status_code}")
 
         logger.info("Fetched Madrid SER Calles CSV (%d bytes)", len(response.content))
         return response.content.decode("latin-1")
@@ -147,8 +144,7 @@ class MadridSerCallesProvider(CityParkingDataProvider):
             )
 
         logger.info(
-            "Parsed Madrid SER Calles CSV: %d records kept, %d skipped "
-            "(zone=%d, missing=%d, coords=%d)",
+            "Parsed Madrid SER Calles CSV: %d records kept, %d skipped (zone=%d, missing=%d, coords=%d)",
             len(records),
             skipped_zone + skipped_missing + skipped_coords,
             skipped_zone,
@@ -169,10 +165,7 @@ class MadridSerCallesProvider(CityParkingDataProvider):
         After stripping the prefix, the plain name is validated against
         MadridZoneType. Returns None for unrecognised names.
         """
-        if " " in raw_color:
-            plain = raw_color.split(" ", 1)[1].strip()
-        else:
-            plain = raw_color
+        plain = raw_color.split(" ", 1)[1].strip() if " " in raw_color else raw_color
 
         zone_type = MadridZoneType.from_raw(plain)
         return zone_type.display_name if zone_type is not None else None

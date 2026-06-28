@@ -3,14 +3,15 @@ Presentation: Parking API router.
 
 Exposes GET /parking/ser-zone to find the nearest SER zone for a coordinate.
 """
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
-from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     distance_m,
 )
+from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.schemas import SerZoneResponse
 
 router = APIRouter(prefix="/parking", tags=["parking"])
@@ -30,11 +31,9 @@ def get_ser_zone(
     try:
         ser_zone = use_case.execute(location)
     except SerZoneNotFoundError:
-        raise HTTPException(status_code=404, detail="No SER zone data available")
+        raise HTTPException(status_code=404, detail="No SER zone data available") from None
 
-    distance = int(
-        distance_m(lat, lng, ser_zone.location.lat, ser_zone.location.lng)
-    )
+    distance = int(distance_m(lat, lng, ser_zone.location.lat, ser_zone.location.lng))
     return SerZoneResponse(
         street_name=ser_zone.street_name,
         zone_type=ser_zone.zone_type,

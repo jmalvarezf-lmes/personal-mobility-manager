@@ -1,6 +1,7 @@
 """
 Presentation tests for GET /parking/ser-zones endpoint.
 """
+
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI

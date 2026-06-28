@@ -4,7 +4,8 @@ Application use case: RecordVehicleLocation.
 Shared entry point for both pull (scheduler) and push (HTTP endpoint) location ingestion.
 Validates coordinates and timestamp before persisting.
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -54,16 +55,11 @@ class RecordVehicleLocation:
             raise ValueError(f"lon must be in [-180, 180], got {lon}")
 
         # Normalise to UTC
-        if recorded_at.tzinfo is None:
-            recorded_at_utc = recorded_at.replace(tzinfo=timezone.utc)
-        else:
-            recorded_at_utc = recorded_at.astimezone(timezone.utc)
+        recorded_at_utc = recorded_at.replace(tzinfo=UTC) if recorded_at.tzinfo is None else recorded_at.astimezone(UTC)
 
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         if recorded_at_utc > now_utc + timedelta(seconds=_MAX_FUTURE_SECONDS):
-            raise ValueError(
-                f"recorded_at is more than {_MAX_FUTURE_SECONDS}s in the future"
-            )
+            raise ValueError(f"recorded_at is more than {_MAX_FUTURE_SECONDS}s in the future")
 
         location = VehicleLocation(
             id=uuid4(),

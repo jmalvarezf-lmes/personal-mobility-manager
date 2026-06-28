@@ -4,6 +4,7 @@ Domain value object: ToyotaConfig.
 Holds Toyota-specific credentials used for pull-based location fetching.
 Never persisted directly — serialised to JSON and AES-encrypted before storage.
 """
+
 from dataclasses import dataclass
 
 

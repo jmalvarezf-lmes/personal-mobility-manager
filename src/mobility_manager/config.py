@@ -1,6 +1,8 @@
 """
 Application configuration loaded from environment variables.
 """
+
+import contextlib
 import os
 import re
 from typing import Any
@@ -69,10 +71,8 @@ def get_enabled_brands() -> list[Any]:  # list[Brand] — avoids circular import
         code = code.strip().lower()
         if not code:
             continue
-        try:
+        with contextlib.suppress(ValueError):
             result.append(Brand(code))
-        except ValueError:
-            pass  # unknown brand code — ignored
     return result
 
 
@@ -90,7 +90,7 @@ def get_encryption_key() -> bytes:
     if not key:
         raise RuntimeError(
             "ENCRYPTION_KEY environment variable is not set. "
-            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
     return key.encode()
 

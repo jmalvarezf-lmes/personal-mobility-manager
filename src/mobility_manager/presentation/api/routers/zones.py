@@ -4,6 +4,7 @@ Presentation: Zones API router.
 Exposes GET /parking/ser-zones to return all stored SER zones for a city,
 suitable for bulk map rendering.
 """
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from mobility_manager.infrastructure.parking_services.madrid.zone_type import (

@@ -9,6 +9,7 @@ Unknown brand codes are logged as warnings and skipped.
 
 Also validates that ENCRYPTION_KEY is present when Toyota is enabled.
 """
+
 import logging
 import os
 
@@ -42,8 +43,8 @@ class BrandRegistry:
                 if not os.environ.get("ENCRYPTION_KEY"):
                     raise RuntimeError(
                         "ENCRYPTION_KEY must be set when Toyota brand is enabled. "
-                        "Generate one with: python -c \"from cryptography.fernet import Fernet; "
-                        "print(Fernet.generate_key().decode())\""
+                        'Generate one with: python -c "from cryptography.fernet import Fernet; '
+                        'print(Fernet.generate_key().decode())"'
                     )
                 from mobility_manager.infrastructure.vehicle_providers.toyota.location_provider import (
                     ToyotaLocationProvider,
@@ -57,8 +58,6 @@ class BrandRegistry:
                 logger.debug("Generic brand is push-only; no pull provider added")
 
             else:
-                logger.warning(
-                    "ENABLED_BRANDS contains unknown brand %r — skipping", code
-                )
+                logger.warning("ENABLED_BRANDS contains unknown brand %r — skipping", code)
 
         return providers

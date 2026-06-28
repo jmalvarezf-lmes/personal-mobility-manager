@@ -3,6 +3,7 @@ Infrastructure: SQLAlchemy engine factory.
 
 Provides a singleton engine instance configured from POSTGRES_DSN.
 """
+
 import logging
 from functools import lru_cache
 

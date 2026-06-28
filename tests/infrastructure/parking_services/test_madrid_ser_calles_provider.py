@@ -5,6 +5,7 @@ HTTP layer is exercised via mock so tests run without network access.
 Parsing logic is also tested through the private _parse() method directly,
 since it's the most complex surface and benefits from isolated exercising.
 """
+
 import textwrap
 from unittest.mock import MagicMock, patch
 
@@ -14,10 +15,10 @@ from mobility_manager.infrastructure.parking_services.madrid.ser_calles_provider
     MadridSerCallesProvider,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_provider() -> MadridSerCallesProvider:
     return MadridSerCallesProvider(url="https://datos.madrid.es/fake.csv")
@@ -34,6 +35,7 @@ _BASE_CSV = textwrap.dedent("""\
 # ---------------------------------------------------------------------------
 # Parsing: colour / zone type
 # ---------------------------------------------------------------------------
+
 
 def test_rgb_prefix_stripped_and_zone_type_resolved() -> None:
     provider = _make_provider()
@@ -72,6 +74,7 @@ def test_unrecognised_zone_type_skips_row() -> None:
 # Parsing: coordinates
 # ---------------------------------------------------------------------------
 
+
 def test_coordinates_not_divided_by_100() -> None:
     """gis_x / gis_y are direct metres — no ÷100 conversion."""
     provider = _make_provider()
@@ -96,6 +99,7 @@ def test_wgs84_coordinates_are_reprojected() -> None:
 # ---------------------------------------------------------------------------
 # Parsing: spot count
 # ---------------------------------------------------------------------------
+
 
 def test_numeric_spot_count_is_parsed() -> None:
     provider = _make_provider()
@@ -145,6 +149,7 @@ def test_non_numeric_numero_plazas_yields_minus_one_not_skipped() -> None:
 # Parsing: mandatory field validation
 # ---------------------------------------------------------------------------
 
+
 def test_row_missing_calle_is_skipped() -> None:
     csv_text = textwrap.dedent("""\
         calle;color;gis_x;gis_y;numero_plazas
@@ -193,6 +198,7 @@ def test_row_missing_gis_y_is_skipped() -> None:
 # get_records: HTTP layer
 # ---------------------------------------------------------------------------
 
+
 def test_get_records_fetches_via_http_and_parses() -> None:
     """get_records() calls HTTP and delegates to _parse()."""
     provider = _make_provider()
@@ -202,9 +208,7 @@ def test_get_records_fetches_via_http_and_parses() -> None:
     fake_response.content = _BASE_CSV.encode("latin-1")
 
     with patch("httpx.Client") as mock_client_cls:
-        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-            fake_response
-        )
+        mock_client_cls.return_value.__enter__.return_value.get.return_value = fake_response
         records = provider.get_records()
 
     assert len(records) == 1
@@ -220,9 +224,7 @@ def test_get_records_raises_on_non_2xx() -> None:
     fake_response.status_code = 503
 
     with patch("httpx.Client") as mock_client_cls:
-        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-            fake_response
-        )
+        mock_client_cls.return_value.__enter__.return_value.get.return_value = fake_response
         with pytest.raises(RuntimeError, match="503"):
             provider.get_records()
 
@@ -230,6 +232,7 @@ def test_get_records_raises_on_non_2xx() -> None:
 # ---------------------------------------------------------------------------
 # Constructor: URL allowlist
 # ---------------------------------------------------------------------------
+
 
 def test_constructor_rejects_non_madrid_url() -> None:
     with pytest.raises(ValueError, match="allowed list"):

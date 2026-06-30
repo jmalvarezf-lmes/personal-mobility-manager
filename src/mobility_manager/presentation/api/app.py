@@ -14,6 +14,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from mobility_manager.application.use_cases.authenticate_google_user import (
+    AuthenticateGoogleUser,
+)
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
 )
@@ -40,6 +43,9 @@ from mobility_manager.infrastructure.parking_services.provider_registry import (
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.user_repo import (
+    PostgresUserRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.vehicle_config_repo import (
     PostgresVehicleConfigRepository,
 )
@@ -57,6 +63,7 @@ from mobility_manager.infrastructure.vehicle_providers.brand_registry import (
     BrandRegistry,
 )
 from mobility_manager.presentation.api.limiter import limiter
+from mobility_manager.presentation.api.routers.auth import router as auth_router
 from mobility_manager.presentation.api.routers.config import router as config_router
 from mobility_manager.presentation.api.routers.parking import router as parking_router
 from mobility_manager.presentation.api.routers.vehicles import router as vehicles_router
@@ -83,6 +90,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     parking_scheduler.start()
     app.state.scheduler = parking_scheduler
 
+    # --- Auth (Users) ---
+    user_repo = PostgresUserRepository(engine)
+    authenticate_google_user_uc = AuthenticateGoogleUser(user_repo=user_repo)
+    app.state.user_repo = user_repo
+    app.state.authenticate_google_user = authenticate_google_user_uc
+
     # --- Vehicles ---
     enabled_brands = get_enabled_brands()
 
@@ -107,6 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.record_vehicle_location = record_uc
     app.state.get_latest_vehicle_location = get_latest_uc
     app.state.vehicle_config_repo = vehicle_config_repo
+    app.state.vehicle_repo = vehicle_repo
 
     # Brand registry validates ENCRYPTION_KEY when Toyota is enabled
     brand_registry = BrandRegistry()
@@ -144,6 +158,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 app.include_router(parking_router)
 app.include_router(zones_router)
 app.include_router(config_router)

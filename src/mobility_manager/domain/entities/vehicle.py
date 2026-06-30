@@ -20,3 +20,4 @@ class Vehicle:
     display_name: str
     vin: str | None
     created_at: datetime
+    user_id: UUID

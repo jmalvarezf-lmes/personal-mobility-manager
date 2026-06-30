@@ -31,6 +31,7 @@ class PostgresVehicleRepository(VehicleRepository):
                     display_name=vehicle.display_name,
                     vin=vehicle.vin,
                     created_at=vehicle.created_at,
+                    user_id=vehicle.user_id,
                 )
             )
 
@@ -41,6 +42,10 @@ class PostgresVehicleRepository(VehicleRepository):
         if row is None:
             return None
         return self._row_to_vehicle(row)
+
+    def find_by_id(self, vehicle_id: UUID) -> Vehicle | None:
+        """Return the vehicle with the given UUID, or None (alias for ownership checks)."""
+        return self.get_by_id(vehicle_id)
 
     def get_all_by_brand(self, brand: Brand) -> list[Vehicle]:
         """Return all vehicles for the given brand."""
@@ -56,4 +61,5 @@ class PostgresVehicleRepository(VehicleRepository):
             display_name=row.display_name,  # type: ignore[attr-defined]
             vin=row.vin,  # type: ignore[attr-defined]
             created_at=row.created_at,  # type: ignore[attr-defined]
+            user_id=row.user_id,  # type: ignore[attr-defined]
         )

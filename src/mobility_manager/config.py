@@ -102,3 +102,35 @@ def get_vehicle_poll_interval_minutes() -> int:
         return int(raw)
     except ValueError:
         return 5
+
+
+def get_google_client_id() -> str:
+    """Return the Google OAuth2 client ID from environment."""
+    value = os.environ.get("GOOGLE_CLIENT_ID")
+    if not value:
+        raise RuntimeError("GOOGLE_CLIENT_ID environment variable is not set")
+    return value
+
+
+def get_google_client_secret() -> str:
+    """Return the Google OAuth2 client secret from environment."""
+    value = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if not value:
+        raise RuntimeError("GOOGLE_CLIENT_SECRET environment variable is not set")
+    return value
+
+
+def get_jwt_secret() -> str:
+    """Return the JWT signing secret from environment."""
+    value = os.environ.get("JWT_SECRET")
+    if not value:
+        raise RuntimeError("JWT_SECRET environment variable is not set")
+    return value
+
+
+def get_google_redirect_uri() -> str:
+    """Return the Google OAuth2 redirect URI from environment."""
+    value = os.environ.get("GOOGLE_REDIRECT_URI")
+    if not value:
+        raise RuntimeError("GOOGLE_REDIRECT_URI environment variable is not set")
+    return value

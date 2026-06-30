@@ -39,12 +39,26 @@ def pg_engine():
         conn.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS users (
+                    id UUID PRIMARY KEY,
+                    google_sub TEXT NOT NULL UNIQUE,
+                    email TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 CREATE TABLE IF NOT EXISTS vehicles (
                     id UUID PRIMARY KEY,
                     brand VARCHAR(20) NOT NULL,
                     display_name VARCHAR(255) NOT NULL,
                     vin VARCHAR(50),
-                    created_at TIMESTAMPTZ NOT NULL
+                    created_at TIMESTAMPTZ NOT NULL,
+                    user_id UUID NOT NULL REFERENCES users(id)
                 )
                 """
             )
@@ -62,20 +76,29 @@ def pg_engine():
                 """
             )
         )
-        conn.execute(text("TRUNCATE vehicle_configs CASCADE"))
-        conn.execute(text("TRUNCATE vehicles CASCADE"))
+        conn.execute(text("TRUNCATE vehicle_configs, vehicles, users CASCADE"))
     yield engine
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE vehicle_configs CASCADE"))
-        conn.execute(text("TRUNCATE vehicles CASCADE"))
+        conn.execute(text("TRUNCATE vehicle_configs, vehicles, users CASCADE"))
     engine.dispose()
 
 
 def _insert_vehicle(engine, vehicle_id, brand="generic") -> None:
+    user_id = uuid4()
     with engine.begin() as conn:
         conn.execute(
-            text("INSERT INTO vehicles (id, brand, display_name, created_at) VALUES (:id, :brand, 'Test', :now)"),
-            {"id": str(vehicle_id), "brand": brand, "now": datetime.now(UTC)},
+            text(
+                "INSERT INTO users (id, google_sub, email, display_name, created_at)"
+                " VALUES (:id, :sub, 'test@example.com', 'Test User', :now)"
+            ),
+            {"id": str(user_id), "sub": str(uuid4()), "now": datetime.now(UTC)},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO vehicles (id, brand, display_name, created_at, user_id)"
+                " VALUES (:id, :brand, 'Test', :now, :user_id)"
+            ),
+            {"id": str(vehicle_id), "brand": brand, "now": datetime.now(UTC), "user_id": str(user_id)},
         )
 
 

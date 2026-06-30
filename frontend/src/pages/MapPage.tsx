@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchOsmTileUrl } from "../api/config";
 import { fetchZones } from "../api/zones";
+import Nav from "../components/Nav";
 import ZoneMap from "../components/ZoneMap";
 import type { Zone } from "../types/zone";
 
@@ -45,8 +46,11 @@ export default function MapPage() {
   }
 
   return (
-    <div className="h-screen w-full">
-      <ZoneMap zones={zones} tileUrl={tileUrl} />
+    <div className="flex h-screen flex-col">
+      <Nav />
+      <div className="flex-1">
+        <ZoneMap zones={zones} tileUrl={tileUrl} />
+      </div>
     </div>
   );
 }

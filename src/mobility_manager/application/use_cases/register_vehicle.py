@@ -53,6 +53,7 @@ class RegisterVehicle:
         self,
         brand: Brand,
         display_name: str,
+        user_id: UUID,
         vin: str | None = None,
         toyota_config: ToyotaConfig | None = None,
     ) -> RegisterVehicleResult:
@@ -62,6 +63,7 @@ class RegisterVehicle:
         Args:
             brand: The vehicle brand (must be in enabled_brands).
             display_name: Human-readable name for the vehicle.
+            user_id: UUID of the authenticated user who owns this vehicle.
             vin: Vehicle Identification Number (required for Toyota).
             toyota_config: Decrypted Toyota credentials (required for Toyota brand).
 
@@ -83,6 +85,7 @@ class RegisterVehicle:
             display_name=display_name,
             vin=vin,
             created_at=datetime.now(UTC),
+            user_id=user_id,
         )
         self._vehicle_repo.save(vehicle)
 

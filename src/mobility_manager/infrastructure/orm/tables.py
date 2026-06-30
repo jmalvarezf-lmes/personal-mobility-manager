@@ -35,6 +35,16 @@ ser_zones_table = Table(
     Column("utm_y", Float, nullable=False),  # EPSG:25830 northing (metres)
 )
 
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", Uuid, primary_key=True),
+    Column("google_sub", Text, nullable=False, unique=True),
+    Column("email", Text, nullable=False),
+    Column("display_name", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 vehicles_table = Table(
     "vehicles",
     metadata,
@@ -43,6 +53,7 @@ vehicles_table = Table(
     Column("display_name", String(255), nullable=False),
     Column("vin", String(50), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
 )
 
 vehicle_configs_table = Table(

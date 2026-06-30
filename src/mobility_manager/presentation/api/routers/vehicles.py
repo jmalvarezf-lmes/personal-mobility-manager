@@ -9,14 +9,16 @@ Endpoints:
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
+from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.exceptions import (
     BrandNotEnabledError,
     VehicleLocationNotFoundError,
 )
 from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
+from mobility_manager.presentation.api.deps import get_current_user
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.schemas import (
     PushLocationRequest,
@@ -33,6 +35,7 @@ router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 def register_vehicle(
     request: Request,
     body: RegisterVehicleRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> VehicleResponse:
     """Register a new vehicle and return its ID (and token for Generic brand)."""
     use_case = request.app.state.register_vehicle
@@ -50,6 +53,7 @@ def register_vehicle(
         result = use_case.execute(
             brand=body.brand,
             display_name=body.display_name,
+            user_id=current_user.id,
             vin=getattr(body, "vin", None),
             toyota_config=toyota_config,
         )
@@ -66,8 +70,19 @@ def register_vehicle(
 
 
 @router.get("/{vehicle_id}/location", response_model=VehicleLocationResponse)
-def get_latest_location(request: Request, vehicle_id: UUID) -> VehicleLocationResponse:
+def get_latest_location(
+    request: Request,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleLocationResponse:
     """Return the most recent known GPS location for the given vehicle."""
+    vehicle_repo = request.app.state.vehicle_repo
+    vehicle = vehicle_repo.find_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own this vehicle")
+
     use_case = request.app.state.get_latest_vehicle_location
 
     try:

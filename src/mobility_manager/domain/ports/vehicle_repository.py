@@ -25,6 +25,11 @@ class VehicleRepository(ABC):
         ...
 
     @abstractmethod
+    def find_by_id(self, vehicle_id: UUID) -> Vehicle | None:
+        """Return the vehicle with the given ID, or None (alias for ownership checks)."""
+        ...
+
+    @abstractmethod
     def get_all_by_brand(self, brand: Brand) -> list[Vehicle]:
         """Return all vehicles with the given brand."""
         ...

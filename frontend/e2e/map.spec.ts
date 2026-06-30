@@ -26,9 +26,24 @@ function leafletMapFromFiber(): { x: number; y: number } | null {
   return pos;
 }
 
+// Mock /api/auth/me so ProtectedRoute lets the test user through to /map.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "00000000-0000-0000-0000-000000000001",
+        email: "test@example.com",
+        display_name: "Test User",
+      }),
+    }),
+  );
+});
+
 test.describe("Map page", () => {
   test("map container is present on load", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/map");
     await expect(page.locator(".leaflet-container")).toBeVisible();
   });
 
@@ -38,7 +53,7 @@ test.describe("Map page", () => {
         resp.url().includes("/api/parking/ser-zones") && resp.status() === 200,
     );
 
-    await page.goto("/");
+    await page.goto("/map");
     const zonesResponse = await zonesResponsePromise;
     const data = (await zonesResponse.json()) as { zones: unknown[] };
 
@@ -56,7 +71,7 @@ test.describe("Map page", () => {
         resp.url().includes("/api/parking/ser-zones") && resp.status() === 200,
     );
 
-    await page.goto("/");
+    await page.goto("/map");
     await zonesResponsePromise;
 
     await expect(page.locator("canvas.leaflet-zoom-animated")).toBeVisible({

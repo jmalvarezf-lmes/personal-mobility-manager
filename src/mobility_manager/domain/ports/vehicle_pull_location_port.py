@@ -16,7 +16,7 @@ class VehiclePullLocationPort(ABC):
     """Abstract pull-location provider — implemented per vendor in infrastructure."""
 
     @abstractmethod
-    def fetch_location(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation:
+    def fetch_location(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation | None:
         """
         Fetch the current GPS location for a vehicle.
 
@@ -25,10 +25,11 @@ class VehiclePullLocationPort(ABC):
             config: Decrypted Toyota credentials.
 
         Returns:
-            VehicleLocation with source="pull".
+            VehicleLocation with source="pull", or None if the API has no location
+            cached for this vehicle right now (transient — try again next cycle).
 
         Raises:
-            VinNotFoundInAccountError: If the VIN is not in the Toyota account.
+            VinNotFoundInAccountError: If the VIN is not present in the Toyota account.
             Exception: On network/auth failures.
         """
         ...

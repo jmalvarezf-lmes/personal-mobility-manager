@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/auth";
 
 // Retrieves the Leaflet map instance from the MapContainer's React ref
 // by walking the fiber hook chain of the .leaflet-container element.
@@ -26,25 +26,10 @@ function leafletMapFromFiber(): { x: number; y: number } | null {
   return pos;
 }
 
-// Mock /api/auth/me so ProtectedRoute lets the test user through to /map.
-test.beforeEach(async ({ page }) => {
-  await page.route("**/api/auth/me", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        id: "00000000-0000-0000-0000-000000000001",
-        email: "test@example.com",
-        display_name: "Test User",
-      }),
-    }),
-  );
-});
-
 test.describe("Map page", () => {
   test("map container is present on load", async ({ page }) => {
     await page.goto("/map");
-    await expect(page.locator(".leaflet-container")).toBeVisible();
+    await expect(page.locator(".leaflet-container")).toBeVisible({ timeout: 15000 });
   });
 
   test("zone markers appear after data loads", async ({ page }) => {

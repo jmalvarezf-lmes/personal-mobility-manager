@@ -17,6 +17,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
 )
+from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
 )
@@ -24,10 +25,12 @@ from mobility_manager.application.use_cases.get_latest_vehicle_location import (
     GetLatestVehicleLocation,
 )
 from mobility_manager.application.use_cases.ingest_ser_zones import IngestSerZones
+from mobility_manager.application.use_cases.list_user_vehicles import ListUserVehicles
 from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
 )
 from mobility_manager.application.use_cases.register_vehicle import RegisterVehicle
+from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.config import (
     get_cors_origins,
     get_enabled_brands,
@@ -116,9 +119,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo)
     get_latest_uc = GetLatestVehicleLocation(location_repo=vehicle_location_repo)
 
+    list_uc = ListUserVehicles(vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo)
+    delete_uc = DeleteVehicle(vehicle_repo=vehicle_repo)
+    update_uc = UpdateVehicle(vehicle_repo=vehicle_repo, config_repo=vehicle_config_repo)
+
     app.state.register_vehicle = register_uc
     app.state.record_vehicle_location = record_uc
     app.state.get_latest_vehicle_location = get_latest_uc
+    app.state.list_user_vehicles = list_uc
+    app.state.delete_vehicle = delete_uc
+    app.state.update_vehicle = update_uc
     app.state.vehicle_config_repo = vehicle_config_repo
     app.state.vehicle_repo = vehicle_repo
 
@@ -155,7 +165,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 app.include_router(auth_router)

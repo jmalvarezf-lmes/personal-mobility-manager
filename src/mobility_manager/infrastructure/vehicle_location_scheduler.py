@@ -10,6 +10,7 @@ remaining vehicles.
 """
 
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -76,6 +77,9 @@ class VehicleLocationScheduler:
             try:
                 config = self._config_repo.get_toyota_config(vehicle.id)
                 location = self._location_provider.fetch_location(vehicle.id, config)
+                if location is None:
+                    logger.debug("No location available for vehicle %s this cycle — skipping", vehicle.id)
+                    continue
                 self._record_use_case.execute(
                     vehicle_id=vehicle.id,
                     lat=location.latitude,
@@ -93,13 +97,20 @@ class VehicleLocationScheduler:
                 logger.exception("Failed to record location for vehicle %s — continuing", vehicle.id)
 
     def start(self) -> None:
-        """Start the scheduler and trigger an immediate first run if a provider exists."""
+        """Start the scheduler.
+
+        When a provider is configured the first run fires immediately via
+        next_run_time so it executes inside APScheduler's own thread pool —
+        not in the caller's thread, which may already be running an event loop
+        (e.g. FastAPI's lifespan).
+        """
         if self._location_provider is not None:
             self._scheduler.add_job(
                 self._run,
                 "interval",
                 minutes=self._interval_minutes,
                 id="vehicle_location_poll",
+                next_run_time=datetime.now(),
             )
 
         self._scheduler.start()
@@ -108,10 +119,6 @@ class VehicleLocationScheduler:
             self._interval_minutes,
             type(self._location_provider).__name__ if self._location_provider else "None",
         )
-
-        # Trigger an immediate first run
-        if self._location_provider is not None:
-            self._run()
 
     def stop(self) -> None:
         """Stop the scheduler gracefully."""

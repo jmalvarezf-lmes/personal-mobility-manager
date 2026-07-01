@@ -99,3 +99,78 @@ class VehicleLocationResponse(BaseModel):
     recorded_at: datetime
     received_at: datetime
     source: Literal["pull", "push"]
+
+
+# ---------------------------------------------------------------------------
+# Vehicle list / detail schemas (GET /vehicles, GET /vehicles/{id})
+# ---------------------------------------------------------------------------
+
+
+class VehicleLocationSummary(BaseModel):
+    """Condensed location snapshot embedded in vehicle list items."""
+
+    latitude: float
+    longitude: float
+    recorded_at: datetime
+
+
+class VehicleListItem(BaseModel):
+    """Single entry in the authenticated user's vehicle list."""
+
+    vehicle_id: UUID
+    brand: Brand
+    display_name: str
+    vin: str | None
+    location: VehicleLocationSummary | None
+
+
+class ToyotaConfigResponse(BaseModel):
+    """Toyota configuration returned to the owner (password always masked)."""
+
+    username: str
+    locale: str
+    password: str = "●●●●●●●●"
+
+
+class GenericConfigResponse(BaseModel):
+    """Generic vehicle configuration returned to the owner."""
+
+    location_token: str
+
+
+class VehicleDetailResponse(BaseModel):
+    """Full vehicle detail including brand-specific config."""
+
+    vehicle_id: UUID
+    brand: Brand
+    display_name: str
+    vin: str | None
+    config: ToyotaConfigResponse | GenericConfigResponse
+
+
+# ---------------------------------------------------------------------------
+# Vehicle update schemas (PUT /vehicles/{id})
+# ---------------------------------------------------------------------------
+
+
+class UpdateToyotaRequest(BaseModel):
+    """Update payload for a Toyota vehicle."""
+
+    brand: Literal[Brand.TOYOTA]
+    display_name: str
+    username: str
+    locale: str
+    password: str | None = None
+
+
+class UpdateGenericRequest(BaseModel):
+    """Update payload for a generic vehicle."""
+
+    brand: Literal[Brand.GENERIC]
+    display_name: str
+
+
+UpdateVehicleRequest = Annotated[
+    UpdateToyotaRequest | UpdateGenericRequest,
+    Field(discriminator="brand"),
+]

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class ToyotaLocationProvider(VehiclePullLocationPort):
     """Fetches vehicle location from the Toyota MyT API via pytoyoda."""
 
-    def fetch_location(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation:
+    def fetch_location(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation | None:
         """
         Authenticate with Toyota and return the current GPS location.
 
@@ -38,15 +38,16 @@ class ToyotaLocationProvider(VehiclePullLocationPort):
             config: Decrypted Toyota credentials.
 
         Returns:
-            VehicleLocation with source="pull".
+            VehicleLocation with source="pull", or None when the API has no
+            cached location for this vehicle (transient — skip this cycle).
 
         Raises:
-            VinNotFoundInAccountError: If the VIN is not in the Toyota account
-                or location data is unavailable.
+            VinNotFoundInAccountError: If the VIN is not present in the account.
+            Exception: On network or authentication failures.
         """
         return asyncio.run(self._fetch_async(vehicle_id, config))
 
-    async def _fetch_async(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation:
+    async def _fetch_async(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation | None:
         client = MyT(username=config.username, password=config.password)
         vehicles = await client.get_vehicles()
 
@@ -66,7 +67,11 @@ class ToyotaLocationProvider(VehiclePullLocationPort):
 
         location = target.location
         if location is None or location.latitude is None or location.longitude is None:
-            raise VinNotFoundInAccountError(f"No location data available for VIN {config.vin!r}")
+            logger.info(
+                "No location cached by Toyota API for VIN %s — skipping this cycle",
+                config.vin,
+            )
+            return None
 
         recorded_at = location.timestamp
         now_utc = datetime.now(UTC)

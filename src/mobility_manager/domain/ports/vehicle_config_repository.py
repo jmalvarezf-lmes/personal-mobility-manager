@@ -48,3 +48,8 @@ class VehicleConfigRepository(ABC):
         Returns None if no vehicle config has the given location_token.
         """
         ...
+
+    @abstractmethod
+    def update_toyota_config(self, vehicle_id: UUID, config: ToyotaConfig) -> None:
+        """Re-encrypt and update the Toyota credentials for the given vehicle."""
+        ...

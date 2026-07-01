@@ -24,6 +24,11 @@ export default function Nav() {
         <Link to="/map" className="text-blue-600 hover:underline">
           Map
         </Link>
+        {user && (
+          <Link to="/my-vehicles" className="text-blue-600 hover:underline">
+            My Vehicles
+          </Link>
+        )}
         {user ? (
           <>
             <span className="text-sm text-gray-600">{user.email}</span>

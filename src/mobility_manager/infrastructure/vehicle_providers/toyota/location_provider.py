@@ -47,7 +47,7 @@ class ToyotaLocationProvider(VehiclePullLocationPort):
         """
         return asyncio.run(self._fetch_async(vehicle_id, config))
 
-    async def _fetch_async(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation:
+    async def _fetch_async(self, vehicle_id: UUID, config: ToyotaConfig) -> VehicleLocation | None:
         client = MyT(username=config.username, password=config.password)
         vehicles = await client.get_vehicles()
 

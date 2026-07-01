@@ -16,19 +16,150 @@ from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.exceptions import (
     BrandNotEnabledError,
     VehicleLocationNotFoundError,
+    VehicleNotFoundError,
 )
+from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
 from mobility_manager.presentation.api.deps import get_current_user
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.schemas import (
+    GenericConfigResponse,
     PushLocationRequest,
     RegisterToyotaRequest,
     RegisterVehicleRequest,
+    ToyotaConfigResponse,
+    UpdateToyotaRequest,
+    UpdateVehicleRequest,
+    VehicleDetailResponse,
+    VehicleListItem,
     VehicleLocationResponse,
+    VehicleLocationSummary,
     VehicleResponse,
 )
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
+
+
+@router.get("", response_model=list[VehicleListItem])
+def list_vehicles(
+    request: Request,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> list[VehicleListItem]:
+    """Return all vehicles owned by the authenticated user."""
+    result = request.app.state.list_user_vehicles.execute(current_user.id)
+    items: list[VehicleListItem] = []
+    for item in result:
+        location_summary = None
+        if item.location is not None:
+            location_summary = VehicleLocationSummary(
+                latitude=item.location.latitude,
+                longitude=item.location.longitude,
+                recorded_at=item.location.recorded_at,
+            )
+        items.append(
+            VehicleListItem(
+                vehicle_id=item.vehicle.id,
+                brand=item.vehicle.brand,
+                display_name=item.vehicle.display_name,
+                vin=item.vehicle.vin,
+                location=location_summary,
+            )
+        )
+    return items
+
+
+def _build_vehicle_detail(vehicle, config_repo) -> VehicleDetailResponse:  # type: ignore[no-untyped-def]
+    """Build a VehicleDetailResponse from a vehicle entity and its config repo."""
+    if vehicle.brand == Brand.TOYOTA:
+        toyota = config_repo.get_toyota_config(vehicle.id)
+        config: ToyotaConfigResponse | GenericConfigResponse = ToyotaConfigResponse(
+            username=toyota.username,
+            locale=toyota.locale,
+        )
+    else:
+        generic = config_repo.get_generic_config(vehicle.id)
+        token = generic.location_token if generic is not None else ""
+        config = GenericConfigResponse(location_token=token)
+    return VehicleDetailResponse(
+        vehicle_id=vehicle.id,
+        brand=vehicle.brand,
+        display_name=vehicle.display_name,
+        vin=vehicle.vin,
+        config=config,
+    )
+
+
+@router.get("/{vehicle_id}", response_model=VehicleDetailResponse)
+def get_vehicle(
+    request: Request,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleDetailResponse:
+    """Return full detail for a specific vehicle owned by the authenticated user."""
+    vehicle_repo = request.app.state.vehicle_repo
+    vehicle = vehicle_repo.get_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own this vehicle")
+    return _build_vehicle_detail(vehicle, request.app.state.vehicle_config_repo)
+
+
+@router.delete("/{vehicle_id}", status_code=204)
+def delete_vehicle(
+    request: Request,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> Response:
+    """Delete a vehicle owned by the authenticated user."""
+    vehicle_repo = request.app.state.vehicle_repo
+    vehicle = vehicle_repo.get_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own this vehicle")
+    try:
+        request.app.state.delete_vehicle.execute(vehicle_id)
+    except VehicleNotFoundError:
+        raise HTTPException(status_code=404, detail="Vehicle not found") from None
+    return Response(status_code=204)
+
+
+@router.put("/{vehicle_id}", response_model=VehicleDetailResponse)
+def update_vehicle(
+    request: Request,
+    vehicle_id: UUID,
+    body: UpdateVehicleRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleDetailResponse:
+    """Update display_name (and Toyota credentials when a new password is supplied)."""
+    vehicle_repo = request.app.state.vehicle_repo
+    vehicle = vehicle_repo.get_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own this vehicle")
+
+    password = body.password if isinstance(body, UpdateToyotaRequest) else None
+    username = body.username if isinstance(body, UpdateToyotaRequest) else None
+    locale = body.locale if isinstance(body, UpdateToyotaRequest) else None
+
+    try:
+        request.app.state.update_vehicle.execute(
+            vehicle_id=vehicle_id,
+            display_name=body.display_name,
+            username=username,
+            locale=locale,
+            password=password,
+        )
+    except VehicleNotFoundError:
+        raise HTTPException(status_code=404, detail="Vehicle not found") from None
+
+    # Re-fetch the updated vehicle to build the response
+    updated_vehicle = vehicle_repo.get_by_id(vehicle_id)
+    if updated_vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found after update")
+    return _build_vehicle_detail(updated_vehicle, request.app.state.vehicle_config_repo)
 
 
 @router.post("", response_model=VehicleResponse, status_code=201)

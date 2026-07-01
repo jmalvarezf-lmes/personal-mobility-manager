@@ -143,3 +143,30 @@ class PostgresVehicleConfigRepository(VehicleConfigRepository):
         if row is None:
             return None
         return UUID(str(row.vehicle_id))
+
+    def update_toyota_config(self, vehicle_id: UUID, config: ToyotaConfig) -> None:
+        """
+        Re-encrypt updated Toyota credentials and write them back.
+
+        Raises:
+            RuntimeError: If encryption_key was not provided at construction.
+        """
+        if self._encryption_key is None:
+            raise RuntimeError("encryption_key is required to update Toyota config but was not provided")
+        payload = {
+            "username": config.username,
+            "password": config.password,
+            "locale": config.locale,
+            "vin": config.vin,
+        }
+        ciphertext = encrypt(payload, self._encryption_key)
+        now = datetime.now(UTC)
+        with self._engine.begin() as conn:
+            conn.execute(
+                vehicle_configs_table.update()
+                .where(
+                    vehicle_configs_table.c.vehicle_id == vehicle_id,
+                    vehicle_configs_table.c.brand == Brand.TOYOTA.value,
+                )
+                .values(encrypted_payload=ciphertext, updated_at=now)
+            )

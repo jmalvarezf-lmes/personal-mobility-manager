@@ -33,3 +33,18 @@ class VehicleRepository(ABC):
     def get_all_by_brand(self, brand: Brand) -> list[Vehicle]:
         """Return all vehicles with the given brand."""
         ...
+
+    @abstractmethod
+    def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
+        """Return all vehicles belonging to the given user."""
+        ...
+
+    @abstractmethod
+    def delete(self, vehicle_id: UUID) -> None:
+        """Delete the vehicle with the given ID (cascade removes child rows in DB)."""
+        ...
+
+    @abstractmethod
+    def update_display_name(self, vehicle_id: UUID, display_name: str) -> None:
+        """Update the display_name of the given vehicle."""
+        ...

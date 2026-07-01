@@ -4,6 +4,10 @@ Presentation tests for the vehicles API endpoints.
 POST   /vehicles                       (task 16.9)
 POST   /vehicles/{token}/location      (task 16.10)
 GET    /vehicles/{vehicle_id}/location (task 16.11)
+GET    /vehicles                       (task 6.1)
+GET    /vehicles/{id}                  (task 6.2)
+DELETE /vehicles/{id}                  (task 6.3)
+PUT    /vehicles/{id}                  (task 6.4)
 """
 
 from datetime import UTC, datetime, timedelta
@@ -18,6 +22,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from mobility_manager.application.use_cases.list_user_vehicles import (
+    VehicleWithLocation,
+)
 from mobility_manager.application.use_cases.register_vehicle import (
     RegisterVehicleResult,
 )
@@ -29,6 +36,8 @@ from mobility_manager.domain.exceptions import (
     VehicleLocationNotFoundError,
 )
 from mobility_manager.domain.value_objects.brand import Brand
+from mobility_manager.domain.value_objects.generic_config import GenericConfig
+from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.vehicles import router
 
@@ -59,6 +68,9 @@ def _build_app(
     register_uc=None,
     record_uc=None,
     get_latest_uc=None,
+    list_uc=None,
+    delete_uc=None,
+    update_uc=None,
     config_repo=None,
     user_repo=None,
     vehicle_repo=None,
@@ -74,6 +86,12 @@ def _build_app(
         app.state.record_vehicle_location = record_uc
     if get_latest_uc is not None:
         app.state.get_latest_vehicle_location = get_latest_uc
+    if list_uc is not None:
+        app.state.list_user_vehicles = list_uc
+    if delete_uc is not None:
+        app.state.delete_vehicle = delete_uc
+    if update_uc is not None:
+        app.state.update_vehicle = update_uc
     if config_repo is not None:
         app.state.vehicle_config_repo = config_repo
     if user_repo is not None:
@@ -451,3 +469,327 @@ class TestGetLatestVehicleLocation:
         response = client.get(f"/vehicles/{vehicle_id}/location", cookies={"session": cookie})
 
         assert UUID(response.json()["vehicle_id"]) == vehicle_id
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by new endpoint tests
+# ---------------------------------------------------------------------------
+
+
+def _make_full_vehicle(
+    vehicle_id: UUID | None = None,
+    owner_id: UUID | None = None,
+    brand: Brand = Brand.GENERIC,
+) -> Vehicle:
+    from datetime import UTC, datetime
+
+    return Vehicle(
+        id=vehicle_id or uuid4(),
+        brand=brand,
+        display_name="My Car",
+        vin="VIN001" if brand == Brand.TOYOTA else None,
+        created_at=datetime.now(UTC),
+        user_id=owner_id or _OWNER_ID,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /vehicles — Task 7.5
+# ---------------------------------------------------------------------------
+
+
+class TestListVehicles:
+    def test_unauthenticated_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = None
+        client = TestClient(
+            _build_app(user_repo=mock_repo),
+            raise_server_exceptions=False,
+        )
+
+        response = client.get("/vehicles")
+
+        assert response.status_code == 401
+
+    def test_empty_list_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = []
+        app, cookie = _build_authed_app(list_uc=mock_list_uc)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_vehicles_returned_without_location(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [VehicleWithLocation(vehicle=vehicle, location=None)]
+        app, cookie = _build_authed_app(list_uc=mock_list_uc)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["location"] is None
+        assert UUID(data[0]["vehicle_id"]) == vehicle_id
+
+    def test_vehicles_returned_with_location(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        location = _make_location(vehicle_id=vehicle_id)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [VehicleWithLocation(vehicle=vehicle, location=location)]
+        app, cookie = _build_authed_app(list_uc=mock_list_uc)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        data = response.json()
+        assert data[0]["location"]["latitude"] == pytest.approx(40.4168)
+
+
+# ---------------------------------------------------------------------------
+# GET /vehicles/{vehicle_id} — Task 7.6
+# ---------------------------------------------------------------------------
+
+
+class TestGetVehicleDetail:
+    def _make_config_repo(self, vehicle_id: UUID, brand: Brand) -> MagicMock:
+        config_repo = MagicMock()
+        if brand == Brand.TOYOTA:
+            config_repo.get_toyota_config.return_value = ToyotaConfig(
+                username="alice", password="s3cr3t", locale="en_GB", vin="VIN001"
+            )
+        else:
+            config_repo.get_generic_config.return_value = GenericConfig(location_token="tok-123")
+        return config_repo
+
+    def test_owner_gets_200_generic(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, config_repo=config_repo)
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["config"]["location_token"] == "tok-123"
+
+    def test_owner_gets_200_toyota_with_masked_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.TOYOTA)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.TOYOTA)
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, config_repo=config_repo)
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        assert response.json()["config"]["password"] == "●●●●●●●●"
+
+    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=uuid4())
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.status_code == 403
+
+    def test_not_found_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{uuid4()}", cookies={"session": cookie})
+
+        assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /vehicles/{vehicle_id} — Task 7.7
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteVehicle:
+    def test_owner_deletes_returns_204(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        mock_delete_uc = MagicMock()
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, delete_uc=mock_delete_uc)
+        client = TestClient(app)
+
+        response = client.delete(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.status_code == 204
+        mock_delete_uc.execute.assert_called_once_with(vehicle_id)
+
+    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=uuid4())
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.delete(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.status_code == 403
+
+    def test_not_found_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.delete(f"/vehicles/{uuid4()}", cookies={"session": cookie})
+
+        assert response.status_code == 404
+
+    def test_unauthenticated_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = None
+        client = TestClient(
+            _build_app(user_repo=mock_repo),
+            raise_server_exceptions=False,
+        )
+
+        response = client.delete(f"/vehicles/{uuid4()}")
+
+        assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PUT /vehicles/{vehicle_id} — Task 7.8
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateVehicle:
+    def _make_config_repo(self, vehicle_id: UUID, brand: Brand) -> MagicMock:
+        config_repo = MagicMock()
+        if brand == Brand.TOYOTA:
+            config_repo.get_toyota_config.return_value = ToyotaConfig(
+                username="alice", password="s3cr3t", locale="en_GB", vin="VIN001"
+            )
+        else:
+            config_repo.get_generic_config.return_value = GenericConfig(location_token="tok-123")
+        return config_repo
+
+    def test_toyota_display_name_update_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.TOYOTA)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.TOYOTA)
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(
+            vehicle_repo=mock_vehicle_repo,
+            config_repo=config_repo,
+            update_uc=mock_update_uc,
+        )
+        client = TestClient(app)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "toyota", "display_name": "Updated", "username": "alice", "locale": "en_GB"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        mock_update_uc.execute.assert_called_once()
+
+    def test_generic_display_name_update_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(
+            vehicle_repo=mock_vehicle_repo,
+            config_repo=config_repo,
+            update_uc=mock_update_uc,
+        )
+        client = TestClient(app)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "Updated Generic"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+
+    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=uuid4())
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "Hacked"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 403
+
+    def test_not_found_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{uuid4()}",
+            json={"brand": "generic", "display_name": "New"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 404

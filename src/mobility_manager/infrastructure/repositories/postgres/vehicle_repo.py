@@ -53,6 +53,28 @@ class PostgresVehicleRepository(VehicleRepository):
             rows = conn.execute(select(vehicles_table).where(vehicles_table.c.brand == brand.value)).fetchall()
         return [self._row_to_vehicle(r) for r in rows]
 
+    def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
+        """Return all vehicles owned by the given user."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(vehicles_table).where(vehicles_table.c.user_id == user_id)
+            ).fetchall()
+        return [self._row_to_vehicle(r) for r in rows]
+
+    def delete(self, vehicle_id: UUID) -> None:
+        """Delete the vehicle row; DB cascade removes child rows."""
+        with self._engine.begin() as conn:
+            conn.execute(vehicles_table.delete().where(vehicles_table.c.id == vehicle_id))
+
+    def update_display_name(self, vehicle_id: UUID, display_name: str) -> None:
+        """Update the display_name column for the given vehicle."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                vehicles_table.update()
+                .where(vehicles_table.c.id == vehicle_id)
+                .values(display_name=display_name)
+            )
+
     @staticmethod
     def _row_to_vehicle(row: object) -> Vehicle:
         return Vehicle(

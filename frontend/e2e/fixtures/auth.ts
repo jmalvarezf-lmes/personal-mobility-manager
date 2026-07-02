@@ -20,6 +20,9 @@ export const test = base.extend({
         body: JSON.stringify(MOCK_USER),
       }),
     );
+    await page.addInitScript(() => {
+      localStorage.setItem("i18nextLng", "en");
+    });
     await use(page);
   },
 });

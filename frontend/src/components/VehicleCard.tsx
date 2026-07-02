@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { deleteVehicle, getVehicle } from "../api/vehicles";
 import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem } from "../types/vehicle";
 
@@ -9,6 +10,7 @@ interface VehicleCardProps {
 }
 
 export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardProps) {
+  const { t } = useTranslation();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -23,19 +25,19 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
       const d = detail ?? await getVehicle(vehicle.vehicle_id);
       onEdit(d);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to load vehicle details");
+      setDeleteError(err instanceof Error ? err.message : t("vehicle.edit"));
     }
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete "${vehicle.display_name}"?`)) {
+    if (!window.confirm(t("vehicle.confirmDelete", { name: vehicle.display_name }))) {
       return;
     }
     try {
       await deleteVehicle(vehicle.vehicle_id);
       onDeleted(vehicle.vehicle_id);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to delete vehicle");
+      setDeleteError(err instanceof Error ? err.message : t("vehicle.delete"));
     }
   }
 
@@ -52,21 +54,21 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
       </div>
 
       {vehicle.brand === "toyota" && vehicle.vin && (
-        <p className="text-sm text-gray-500">VIN: {vehicle.vin}</p>
+        <p className="text-sm text-gray-500">{t("vehicle.vin")}: {vehicle.vin}</p>
       )}
 
       {toyotaConfig && (
         <div className="mt-1 space-y-0.5 text-sm text-gray-600">
-          <p>Username: {toyotaConfig.username}</p>
-          <p>Locale: {toyotaConfig.locale}</p>
-          <p>Password: {toyotaConfig.password}</p>
+          <p>{t("vehicle.username")}: {toyotaConfig.username}</p>
+          <p>{t("vehicle.locale")}: {toyotaConfig.locale}</p>
+          <p>{t("vehicle.password")}: {toyotaConfig.password}</p>
         </div>
       )}
 
       {genericConfig && (
         <div className="mt-1 text-sm text-gray-600">
           <p className="break-all">
-            Push URL:{" "}
+            {t("vehicle.pushUrl")}:{" "}
             {`${window.location.origin}/api/vehicles/${genericConfig.location_token}/location`}
           </p>
         </div>
@@ -75,11 +77,11 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
       <div className="mt-2 text-sm text-gray-600">
         {vehicle.location ? (
           <p>
-            Location: {vehicle.location.latitude.toFixed(5)},{" "}
+            {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
             {vehicle.location.longitude.toFixed(5)}
           </p>
         ) : (
-          <p className="italic text-gray-400">No location data</p>
+          <p className="italic text-gray-400">{t("vehicle.noLocation")}</p>
         )}
       </div>
 
@@ -94,13 +96,13 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
           onClick={() => void handleEdit()}
           className="rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
         >
-          Edit
+          {t("vehicle.edit")}
         </button>
         <button
           onClick={() => void handleDelete()}
           className="rounded bg-red-100 px-3 py-1 text-sm text-red-700 hover:bg-red-200"
         >
-          Delete
+          {t("vehicle.delete")}
         </button>
       </div>
     </div>

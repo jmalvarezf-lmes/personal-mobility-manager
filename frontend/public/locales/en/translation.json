@@ -1,0 +1,60 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "displayName": "Display Name",
+    "username": "Username",
+    "password": "Password",
+    "locale": "Locale"
+  },
+  "nav": {
+    "title": "Personal Mobility Manager",
+    "map": "Map",
+    "myVehicles": "My Vehicles",
+    "logout": "Logout",
+    "loginGoogle": "Login with Google",
+    "language": "Language"
+  },
+  "page": {
+    "landing": {
+      "title": "Personal Mobility Manager"
+    },
+    "myVehicles": {
+      "title": "My Vehicles",
+      "add": "Add Vehicle",
+      "empty": "No vehicles registered yet.",
+      "loading": "Loading vehicles…"
+    },
+    "map": {
+      "loading": "Loading map data…"
+    }
+  },
+  "modal": {
+    "addVehicle": {
+      "title": "Add Vehicle",
+      "brand": "Brand",
+      "brandGeneric": "Generic",
+      "brandToyota": "Toyota",
+      "adding": "Adding…",
+      "add": "Add"
+    },
+    "editVehicle": {
+      "title": "Edit Vehicle",
+      "saving": "Saving…",
+      "save": "Save",
+      "newPassword": "New Password",
+      "keepBlank": "(leave blank to keep current)"
+    }
+  },
+  "vehicle": {
+    "vin": "VIN",
+    "username": "Username",
+    "locale": "Locale",
+    "password": "Password",
+    "pushUrl": "Push URL",
+    "location": "Location",
+    "noLocation": "No location data",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Delete \"{{name}}\"?"
+  }
+}

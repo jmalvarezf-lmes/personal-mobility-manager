@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { updateVehicle } from "../api/vehicles";
 import type { GenericConfig, ToyotaConfig, VehicleDetail } from "../types/vehicle";
 
@@ -13,6 +14,7 @@ interface EditVehicleModalProps {
 }
 
 export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVehicleModalProps) {
+  const { t } = useTranslation();
   const toyotaCfg = isToyotaConfig(vehicle.config) ? vehicle.config : null;
 
   const [displayName, setDisplayName] = useState(vehicle.display_name);
@@ -41,7 +43,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
       onUpdated(updated);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update vehicle");
+      setError(err instanceof Error ? err.message : t("modal.editVehicle.title"));
     } finally {
       setSubmitting(false);
     }
@@ -51,15 +53,15 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Edit Vehicle"
+      aria-label={t("modal.editVehicle.title")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     >
       <div className="w-full max-w-md rounded bg-white p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Edit Vehicle</h2>
+        <h2 className="mb-4 text-lg font-semibold">{t("modal.editVehicle.title")}</h2>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-display-name">
-              Display Name
+              {t("common.displayName")}
             </label>
             <input
               id="edit-display-name"
@@ -75,12 +77,12 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
             <>
               {vehicle.vin && (
                 <div>
-                  <span className="text-sm text-gray-500">VIN: {vehicle.vin}</span>
+                  <span className="text-sm text-gray-500">{t("vehicle.vin")}: {vehicle.vin}</span>
                 </div>
               )}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-username">
-                  Username
+                  {t("common.username")}
                 </label>
                 <input
                   id="edit-username"
@@ -93,7 +95,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-locale">
-                  Locale
+                  {t("common.locale")}
                 </label>
                 <input
                   id="edit-locale"
@@ -106,7 +108,8 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-password">
-                  New Password <span className="text-xs text-gray-400">(leave blank to keep current)</span>
+                  {t("modal.editVehicle.newPassword")}{" "}
+                  <span className="text-xs text-gray-400">{t("modal.editVehicle.keepBlank")}</span>
                 </label>
                 <input
                   id="edit-password"
@@ -131,14 +134,14 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               onClick={onClose}
               className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? "Saving…" : "Save"}
+              {submitting ? t("modal.editVehicle.saving") : t("modal.editVehicle.save")}
             </button>
           </div>
         </form>

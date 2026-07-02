@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listVehicles } from "../api/vehicles";
 import AddVehicleModal from "../components/AddVehicleModal";
 import EditVehicleModal from "../components/EditVehicleModal";
@@ -8,6 +9,7 @@ import VehicleMap from "../components/VehicleMap";
 import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
 
 export default function MyVehiclesPage() {
+  const { t } = useTranslation();
   const [vehicles, setVehicles] = useState<VehicleListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,16 +22,15 @@ export default function MyVehiclesPage() {
         const data = await listVehicles();
         setVehicles(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load vehicles");
+        setError(err instanceof Error ? err.message : t("page.myVehicles.loading"));
       } finally {
         setLoading(false);
       }
     }
     void load();
-  }, []);
+  }, [t]);
 
   function handleCreated(vehicle: VehicleListItem) {
-    // POST /vehicles returns VehicleResponse which has no location field; normalize to null
     setVehicles((prev) => [...prev, { ...vehicle, location: vehicle.location ?? null }]);
   }
 
@@ -55,7 +56,7 @@ export default function MyVehiclesPage() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center text-gray-600">
-        Loading vehicles…
+        {t("page.myVehicles.loading")}
       </div>
     );
   }
@@ -65,12 +66,12 @@ export default function MyVehiclesPage() {
       <Nav />
       <div className="flex-1 overflow-auto p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-800">My Vehicles</h1>
+          <h1 className="text-2xl font-bold text-gray-800">{t("page.myVehicles.title")}</h1>
           <button
             onClick={() => setShowAdd(true)}
             className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
           >
-            Add Vehicle
+            {t("page.myVehicles.add")}
           </button>
         </div>
 
@@ -87,7 +88,7 @@ export default function MyVehiclesPage() {
         )}
 
         {vehicles.length === 0 && !error && (
-          <p className="text-gray-500">No vehicles registered yet.</p>
+          <p className="text-gray-500">{t("page.myVehicles.empty")}</p>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fetchOsmTileUrl } from "../api/config";
 import { fetchZones } from "../api/zones";
 import Nav from "../components/Nav";
@@ -6,6 +7,7 @@ import ZoneMap from "../components/ZoneMap";
 import type { Zone } from "../types/zone";
 
 export default function MapPage() {
+  const { t } = useTranslation();
   const [zones, setZones] = useState<Zone[]>([]);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,18 +23,18 @@ export default function MapPage() {
         setTileUrl(fetchedTileUrl);
         setZones(fetchedZones);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load map data");
+        setError(err instanceof Error ? err.message : t("page.map.loading"));
       } finally {
         setLoading(false);
       }
     }
     void load();
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center text-gray-600">
-        Cargando zonas…
+        {t("page.map.loading")}
       </div>
     );
   }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { createVehicle } from "../api/vehicles";
 import type { VehicleListItem } from "../types/vehicle";
 
@@ -8,6 +9,7 @@ interface AddVehicleModalProps {
 }
 
 export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalProps) {
+  const { t } = useTranslation();
   const [brand, setBrand] = useState<"toyota" | "generic">("generic");
   const [displayName, setDisplayName] = useState("");
   const [vin, setVin] = useState("");
@@ -30,7 +32,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
       onCreated(result);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add vehicle");
+      setError(err instanceof Error ? err.message : t("modal.addVehicle.title"));
     } finally {
       setSubmitting(false);
     }
@@ -40,15 +42,15 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Add Vehicle"
+      aria-label={t("modal.addVehicle.title")}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     >
       <div className="w-full max-w-md rounded bg-white p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Add Vehicle</h2>
+        <h2 className="mb-4 text-lg font-semibold">{t("modal.addVehicle.title")}</h2>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="brand">
-              Brand
+              {t("modal.addVehicle.brand")}
             </label>
             <select
               id="brand"
@@ -56,14 +58,14 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               onChange={(e) => setBrand(e.target.value as "toyota" | "generic")}
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             >
-              <option value="generic">Generic</option>
-              <option value="toyota">Toyota</option>
+              <option value="generic">{t("modal.addVehicle.brandGeneric")}</option>
+              <option value="toyota">{t("modal.addVehicle.brandToyota")}</option>
             </select>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display-name">
-              Display Name
+              {t("common.displayName")}
             </label>
             <input
               id="display-name"
@@ -79,7 +81,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
             <>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="vin">
-                  VIN
+                  {t("vehicle.vin")}
                 </label>
                 <input
                   id="vin"
@@ -92,7 +94,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="username">
-                  Username
+                  {t("common.username")}
                 </label>
                 <input
                   id="username"
@@ -105,7 +107,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
-                  Password
+                  {t("common.password")}
                 </label>
                 <input
                   id="password"
@@ -118,7 +120,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="locale">
-                  Locale
+                  {t("common.locale")}
                 </label>
                 <input
                   id="locale"
@@ -144,14 +146,14 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               onClick={onClose}
               className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? "Adding…" : "Add"}
+              {submitting ? t("modal.addVehicle.adding") : t("modal.addVehicle.add")}
             </button>
           </div>
         </form>

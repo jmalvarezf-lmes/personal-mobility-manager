@@ -36,8 +36,8 @@ The system SHALL render a single Leaflet map at the top of the My Vehicles page.
 Below the map the system SHALL render one card per vehicle belonging to the authenticated user. Each card SHALL display:
 - `display_name` and `brand` badge
 - Brand-specific config section (see vehicle-detail spec for what is shown)
-- Last known location as coordinates (lat, lon) if available, or "No location data" if not
-- Action buttons: Edit and Delete
+- Last known location as coordinates (lat, lon) if available, or a localised "no location" placeholder if not
+- Action buttons: Edit and Delete (labels localised)
 
 #### Scenario: Vehicle card shows Toyota config
 - **WHEN** the vehicle is brand TOYOTA
@@ -51,9 +51,9 @@ Below the map the system SHALL render one card per vehicle belonging to the auth
 - **WHEN** the vehicle has a last known location
 - **THEN** the card displays latitude and longitude to 6 decimal places
 
-#### Scenario: Card shows placeholder when no location
+#### Scenario: Card shows localised placeholder when no location
 - **WHEN** the vehicle has no location history
-- **THEN** the card displays "No location data"
+- **THEN** the card displays a localised placeholder string (e.g. "No location data" in English, "Sin datos de ubicación" in Spanish)
 
 ---
 

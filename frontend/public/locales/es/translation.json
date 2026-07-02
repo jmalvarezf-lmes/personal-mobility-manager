@@ -1,0 +1,60 @@
+{
+  "common": {
+    "cancel": "Cancelar",
+    "displayName": "Nombre",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "locale": "Región"
+  },
+  "nav": {
+    "title": "Personal Mobility Manager",
+    "map": "Mapa",
+    "myVehicles": "Mis vehículos",
+    "logout": "Cerrar sesión",
+    "loginGoogle": "Iniciar sesión con Google",
+    "language": "Idioma"
+  },
+  "page": {
+    "landing": {
+      "title": "Personal Mobility Manager"
+    },
+    "myVehicles": {
+      "title": "Mis vehículos",
+      "add": "Añadir vehículo",
+      "empty": "Aún no hay vehículos registrados.",
+      "loading": "Cargando vehículos…"
+    },
+    "map": {
+      "loading": "Cargando datos del mapa…"
+    }
+  },
+  "modal": {
+    "addVehicle": {
+      "title": "Añadir vehículo",
+      "brand": "Marca",
+      "brandGeneric": "Genérico",
+      "brandToyota": "Toyota",
+      "adding": "Añadiendo…",
+      "add": "Añadir"
+    },
+    "editVehicle": {
+      "title": "Editar vehículo",
+      "saving": "Guardando…",
+      "save": "Guardar",
+      "newPassword": "Nueva contraseña",
+      "keepBlank": "(dejar en blanco para no cambiar)"
+    }
+  },
+  "vehicle": {
+    "vin": "VIN",
+    "username": "Usuario",
+    "locale": "Región",
+    "password": "Contraseña",
+    "pushUrl": "URL de envío",
+    "location": "Ubicación",
+    "noLocation": "Sin datos de ubicación",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "confirmDelete": "¿Eliminar \"{{name}}\"?"
+  }
+}

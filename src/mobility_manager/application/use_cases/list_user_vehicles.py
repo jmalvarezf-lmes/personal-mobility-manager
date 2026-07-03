@@ -49,7 +49,4 @@ class ListUserVehicles:
             List of VehicleWithLocation ordered by vehicle creation (DB default).
         """
         vehicles = self._vehicle_repo.get_all_by_user_id(user_id)
-        return [
-            VehicleWithLocation(vehicle=v, location=self._location_repo.get_latest(v.id))
-            for v in vehicles
-        ]
+        return [VehicleWithLocation(vehicle=v, location=self._location_repo.get_latest(v.id)) for v in vehicles]

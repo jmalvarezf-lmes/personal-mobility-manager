@@ -57,6 +57,14 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
         <p className="text-sm text-gray-500">{t("vehicle.vin")}: {vehicle.vin}</p>
       )}
 
+      <div className="mt-1 text-sm text-gray-500">
+        {vehicle.license_plate ? (
+          <p>{t("vehicle.licensePlate")}: {vehicle.license_plate}</p>
+        ) : (
+          <p className="italic text-gray-400">{t("vehicle.noLicensePlate")}</p>
+        )}
+      </div>
+
       {toyotaConfig && (
         <div className="mt-1 space-y-0.5 text-sm text-gray-600">
           <p>{t("vehicle.username")}: {toyotaConfig.username}</p>

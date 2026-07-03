@@ -41,6 +41,7 @@ def pg_engine():
                     brand VARCHAR(20) NOT NULL,
                     display_name VARCHAR(255) NOT NULL,
                     vin VARCHAR(50),
+                    license_plate VARCHAR(20),
                     created_at TIMESTAMPTZ NOT NULL,
                     user_id UUID NOT NULL REFERENCES users(id)
                 )
@@ -69,8 +70,8 @@ def _insert_vehicle(engine, vehicle_id, user_id, brand="generic") -> None:  # ty
     with engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO vehicles (id, brand, display_name, created_at, user_id)"
-                " VALUES (:id, :brand, 'Test Car', :now, :user_id)"
+                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, user_id)"
+                " VALUES (:id, :brand, 'Test Car', NULL, :now, :user_id)"
             ),
             {"id": str(vehicle_id), "brand": brand, "now": datetime.now(UTC), "user_id": str(user_id)},
         )
@@ -112,3 +113,40 @@ def test_get_all_by_user_id_empty_for_unknown_user(pg_engine) -> None:  # type: 
 
     repo = PostgresVehicleRepository(pg_engine)
     assert repo.get_all_by_user_id(uuid4()) == []
+
+
+def test_update_license_plate_sets_value(pg_engine) -> None:  # type: ignore[no-untyped-def]
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
+        PostgresVehicleRepository,
+    )
+
+    user_id = uuid4()
+    vehicle_id = uuid4()
+    _insert_user(pg_engine, user_id)
+    _insert_vehicle(pg_engine, vehicle_id, user_id)
+
+    repo = PostgresVehicleRepository(pg_engine)
+    repo.update_license_plate(vehicle_id, "1234ABC")
+
+    vehicle = repo.get_by_id(vehicle_id)
+    assert vehicle is not None
+    assert vehicle.license_plate == "1234ABC"
+
+
+def test_update_license_plate_clears_to_none(pg_engine) -> None:  # type: ignore[no-untyped-def]
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
+        PostgresVehicleRepository,
+    )
+
+    user_id = uuid4()
+    vehicle_id = uuid4()
+    _insert_user(pg_engine, user_id)
+    _insert_vehicle(pg_engine, vehicle_id, user_id)
+
+    repo = PostgresVehicleRepository(pg_engine)
+    repo.update_license_plate(vehicle_id, "1234ABC")
+    repo.update_license_plate(vehicle_id, None)
+
+    vehicle = repo.get_by_id(vehicle_id)
+    assert vehicle is not None
+    assert vehicle.license_plate is None

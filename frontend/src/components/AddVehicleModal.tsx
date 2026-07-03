@@ -12,6 +12,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
   const { t } = useTranslation();
   const [brand, setBrand] = useState<"toyota" | "generic">("generic");
   const [displayName, setDisplayName] = useState("");
+  const [licensePlate, setLicensePlate] = useState("");
   const [vin, setVin] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -24,10 +25,11 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
     setError(null);
     setSubmitting(true);
     try {
+      const license_plate = licensePlate === "" ? null : licensePlate;
       const body =
         brand === "toyota"
-          ? { brand, display_name: displayName, vin, username, password, locale }
-          : { brand, display_name: displayName };
+          ? { brand, display_name: displayName, vin, username, password, locale, license_plate }
+          : { brand, display_name: displayName, license_plate };
       const result = await createVehicle(body);
       onCreated(result);
       onClose();
@@ -43,7 +45,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
       role="dialog"
       aria-modal="true"
       aria-label={t("modal.addVehicle.title")}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40"
     >
       <div className="w-full max-w-md rounded bg-white p-6 shadow-lg">
         <h2 className="mb-4 text-lg font-semibold">{t("modal.addVehicle.title")}</h2>
@@ -73,6 +75,22 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="license-plate">
+              {t("vehicle.licensePlate")}{" "}
+              <span className="text-xs text-gray-400">{t("modal.addVehicle.optional")}</span>
+            </label>
+            <input
+              id="license-plate"
+              type="text"
+              value={licensePlate}
+              onChange={(e) => setLicensePlate(e.target.value)}
+              maxLength={20}
+              placeholder={t("vehicle.noLicensePlate")}
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>

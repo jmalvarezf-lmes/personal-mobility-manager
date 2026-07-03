@@ -21,6 +21,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
   const [username, setUsername] = useState(toyotaCfg?.username ?? "");
   const [locale, setLocale] = useState(toyotaCfg?.locale ?? "");
   const [password, setPassword] = useState("");
+  const [licenseplate, setLicenseplate] = useState(vehicle.license_plate ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,6 +30,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
     setError(null);
     setSubmitting(true);
     try {
+      const licensePlateValue = licenseplate === "" ? null : licenseplate;
       const body =
         vehicle.brand === "toyota"
           ? {
@@ -36,9 +38,10 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               display_name: displayName,
               username,
               locale,
+              license_plate: licensePlateValue,
               ...(password ? { password } : {}),
             }
-          : { brand: "generic", display_name: displayName };
+          : { brand: "generic", display_name: displayName, license_plate: licensePlateValue };
       const updated = await updateVehicle(vehicle.vehicle_id, body);
       onUpdated(updated);
       onClose();
@@ -54,7 +57,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
       role="dialog"
       aria-modal="true"
       aria-label={t("modal.editVehicle.title")}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40"
     >
       <div className="w-full max-w-md rounded bg-white p-6 shadow-lg">
         <h2 className="mb-4 text-lg font-semibold">{t("modal.editVehicle.title")}</h2>
@@ -69,6 +72,22 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-license-plate">
+              {t("vehicle.licensePlate")}{" "}
+              <span className="text-xs text-gray-400">{t("modal.editVehicle.keepBlank")}</span>
+            </label>
+            <input
+              id="edit-license-plate"
+              type="text"
+              value={licenseplate}
+              onChange={(e) => setLicenseplate(e.target.value)}
+              maxLength={20}
+              placeholder={t("vehicle.noLicensePlate")}
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>

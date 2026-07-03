@@ -21,6 +21,7 @@ def _make_vehicle(owner_id: UUID | None = None) -> Vehicle:
         brand=Brand.GENERIC,
         display_name="Test Car",
         vin=None,
+        license_plate=None,
         created_at=datetime.now(UTC),
         user_id=owner_id or _OWNER_ID,
     )
@@ -49,6 +50,9 @@ class InMemoryVehicleRepo:
         self.vehicles = [v for v in self.vehicles if v.id != vehicle_id]
 
     def update_display_name(self, vehicle_id: UUID, display_name: str) -> None:
+        pass
+
+    def update_license_plate(self, vehicle_id: UUID, license_plate: str | None) -> None:
         pass
 
 

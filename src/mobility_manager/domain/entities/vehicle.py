@@ -19,5 +19,6 @@ class Vehicle:
     brand: Brand
     display_name: str
     vin: str | None
+    license_plate: str | None
     created_at: datetime
     user_id: UUID

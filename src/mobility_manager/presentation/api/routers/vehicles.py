@@ -19,16 +19,17 @@ from mobility_manager.domain.exceptions import (
     VehicleNotFoundError,
 )
 from mobility_manager.domain.value_objects.brand import Brand
-from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
 from mobility_manager.presentation.api.deps import get_current_user
+from mobility_manager.presentation.api.factories import (
+    VehicleRegisterFactory,
+    VehicleUpdateFactory,
+)
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.schemas import (
     GenericConfigResponse,
     PushLocationRequest,
-    RegisterToyotaRequest,
     RegisterVehicleRequest,
     ToyotaConfigResponse,
-    UpdateToyotaRequest,
     UpdateVehicleRequest,
     VehicleDetailResponse,
     VehicleListItem,
@@ -62,6 +63,7 @@ def list_vehicles(
                 brand=item.vehicle.brand,
                 display_name=item.vehicle.display_name,
                 vin=item.vehicle.vin,
+                license_plate=item.vehicle.license_plate,
                 location=location_summary,
             )
         )
@@ -85,6 +87,7 @@ def _build_vehicle_detail(vehicle, config_repo) -> VehicleDetailResponse:  # typ
         brand=vehicle.brand,
         display_name=vehicle.display_name,
         vin=vehicle.vin,
+        license_plate=vehicle.license_plate,
         config=config,
     )
 
@@ -132,7 +135,7 @@ def update_vehicle(
     body: UpdateVehicleRequest,
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> VehicleDetailResponse:
-    """Update display_name (and Toyota credentials when a new password is supplied)."""
+    """Update display_name, license_plate (and Toyota credentials when a new password is supplied)."""
     vehicle_repo = request.app.state.vehicle_repo
     vehicle = vehicle_repo.get_by_id(vehicle_id)
     if vehicle is None:
@@ -140,17 +143,16 @@ def update_vehicle(
     if vehicle.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You do not own this vehicle")
 
-    password = body.password if isinstance(body, UpdateToyotaRequest) else None
-    username = body.username if isinstance(body, UpdateToyotaRequest) else None
-    locale = body.locale if isinstance(body, UpdateToyotaRequest) else None
+    update_input = VehicleUpdateFactory.build(body)
 
     try:
         request.app.state.update_vehicle.execute(
             vehicle_id=vehicle_id,
-            display_name=body.display_name,
-            username=username,
-            locale=locale,
-            password=password,
+            display_name=update_input.display_name,
+            username=update_input.username,
+            locale=update_input.locale,
+            password=update_input.password,
+            license_plate=update_input.license_plate,
         )
     except VehicleNotFoundError:
         raise HTTPException(status_code=404, detail="Vehicle not found") from None
@@ -171,22 +173,16 @@ def register_vehicle(
     """Register a new vehicle and return its ID (and token for Generic brand)."""
     use_case = request.app.state.register_vehicle
 
-    toyota_config = None
-    if isinstance(body, RegisterToyotaRequest):
-        toyota_config = ToyotaConfig(
-            username=body.username,
-            password=body.password,
-            locale=body.locale,
-            vin=body.vin,
-        )
+    register_input = VehicleRegisterFactory.build(body)
 
     try:
         result = use_case.execute(
-            brand=body.brand,
-            display_name=body.display_name,
+            brand=register_input.brand,
+            display_name=register_input.display_name,
             user_id=current_user.id,
-            vin=getattr(body, "vin", None),
-            toyota_config=toyota_config,
+            vin=register_input.vin,
+            toyota_config=register_input.toyota_config,
+            license_plate=register_input.license_plate,
         )
     except BrandNotEnabledError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -197,6 +193,7 @@ def register_vehicle(
         display_name=result.display_name,
         vin=result.vin,
         location_token=result.location_token,
+        license_plate=result.license_plate,
     )
 
 

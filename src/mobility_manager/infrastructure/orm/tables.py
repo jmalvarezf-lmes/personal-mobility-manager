@@ -52,6 +52,7 @@ vehicles_table = Table(
     Column("brand", String(20), nullable=False),
     Column("display_name", String(255), nullable=False),
     Column("vin", String(50), nullable=True),
+    Column("license_plate", String(20), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
 )

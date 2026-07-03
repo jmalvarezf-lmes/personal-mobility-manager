@@ -353,6 +353,7 @@ def _make_owned_vehicle(vehicle_id: UUID, owner_id: UUID) -> Vehicle:
         brand=Brand.GENERIC,
         display_name="My Car",
         vin=None,
+        license_plate=None,
         created_at=datetime.now(UTC),
         user_id=owner_id,
     )
@@ -480,6 +481,7 @@ def _make_full_vehicle(
     vehicle_id: UUID | None = None,
     owner_id: UUID | None = None,
     brand: Brand = Brand.GENERIC,
+    license_plate: str | None = None,
 ) -> Vehicle:
     from datetime import UTC, datetime
 
@@ -488,6 +490,7 @@ def _make_full_vehicle(
         brand=brand,
         display_name="My Car",
         vin="VIN001" if brand == Brand.TOYOTA else None,
+        license_plate=license_plate,
         created_at=datetime.now(UTC),
         user_id=owner_id or _OWNER_ID,
     )
@@ -793,3 +796,76 @@ class TestUpdateVehicle:
         )
 
         assert response.status_code == 404
+
+    def test_set_license_plate_returns_200_with_plate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        updated_vehicle = _make_full_vehicle(
+            vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC, license_plate="1234ABC"
+        )
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.side_effect = [vehicle, updated_vehicle]
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(
+            vehicle_repo=mock_vehicle_repo,
+            config_repo=config_repo,
+            update_uc=mock_update_uc,
+        )
+        client = TestClient(app)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "My Car", "license_plate": "1234ABC"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["license_plate"] == "1234ABC"
+
+    def test_license_plate_too_long_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        app, cookie = _build_authed_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{uuid4()}",
+            json={"brand": "generic", "display_name": "My Car", "license_plate": "A" * 21},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+
+    def test_clear_license_plate_returns_200_with_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        # Vehicle initially has a plate
+        vehicle = _make_full_vehicle(
+            vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC, license_plate="OLD"
+        )
+        # After update, plate is None
+        updated_vehicle = _make_full_vehicle(
+            vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC, license_plate=None
+        )
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.side_effect = [vehicle, updated_vehicle]
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(
+            vehicle_repo=mock_vehicle_repo,
+            config_repo=config_repo,
+            update_uc=mock_update_uc,
+        )
+        client = TestClient(app)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "My Car", "license_plate": None},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["license_plate"] is None

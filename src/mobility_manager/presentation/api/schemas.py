@@ -43,22 +43,27 @@ class ListSerZonesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class RegisterToyotaRequest(BaseModel):
+class BaseRegisterVehicleRequest(BaseModel):
+    """Common fields for all vehicle registration requests."""
+
+    display_name: str
+    license_plate: str | None = Field(None, max_length=20)
+
+
+class RegisterToyotaRequest(BaseRegisterVehicleRequest):
     """Registration payload for a Toyota vehicle."""
 
     brand: Literal[Brand.TOYOTA]
-    display_name: str
     vin: str
     username: str
     password: str
     locale: str
 
 
-class RegisterGenericRequest(BaseModel):
+class RegisterGenericRequest(BaseRegisterVehicleRequest):
     """Registration payload for a generic (push-only) vehicle."""
 
     brand: Literal[Brand.GENERIC]
-    display_name: str
 
 
 RegisterVehicleRequest = Annotated[
@@ -75,6 +80,7 @@ class VehicleResponse(BaseModel):
     display_name: str
     vin: str | None
     location_token: str | None  # populated only for Generic brand
+    license_plate: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +127,7 @@ class VehicleListItem(BaseModel):
     brand: Brand
     display_name: str
     vin: str | None
+    license_plate: str | None
     location: VehicleLocationSummary | None
 
 
@@ -145,6 +152,7 @@ class VehicleDetailResponse(BaseModel):
     brand: Brand
     display_name: str
     vin: str | None
+    license_plate: str | None
     config: ToyotaConfigResponse | GenericConfigResponse
 
 
@@ -153,21 +161,26 @@ class VehicleDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class UpdateToyotaRequest(BaseModel):
+class BaseUpdateVehicleRequest(BaseModel):
+    """Common fields for all vehicle update requests."""
+
+    display_name: str
+    license_plate: str | None = Field(None, max_length=20)
+
+
+class UpdateToyotaRequest(BaseUpdateVehicleRequest):
     """Update payload for a Toyota vehicle."""
 
     brand: Literal[Brand.TOYOTA]
-    display_name: str
     username: str
     locale: str
     password: str | None = None
 
 
-class UpdateGenericRequest(BaseModel):
+class UpdateGenericRequest(BaseUpdateVehicleRequest):
     """Update payload for a generic vehicle."""
 
     brand: Literal[Brand.GENERIC]
-    display_name: str
 
 
 UpdateVehicleRequest = Annotated[

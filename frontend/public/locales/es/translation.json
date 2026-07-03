@@ -35,7 +35,8 @@
       "brandGeneric": "Genérico",
       "brandToyota": "Toyota",
       "adding": "Añadiendo…",
-      "add": "Añadir"
+      "add": "Añadir",
+      "optional": "(opcional)"
     },
     "editVehicle": {
       "title": "Editar vehículo",
@@ -53,6 +54,8 @@
     "pushUrl": "URL de envío",
     "location": "Ubicación",
     "noLocation": "Sin datos de ubicación",
+    "licensePlate": "Matrícula",
+    "noLicensePlate": "Sin matrícula",
     "edit": "Editar",
     "delete": "Eliminar",
     "confirmDelete": "¿Eliminar \"{{name}}\"?"

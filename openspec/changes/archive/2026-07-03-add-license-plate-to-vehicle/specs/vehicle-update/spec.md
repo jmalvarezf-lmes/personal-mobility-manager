@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: PUT /vehicles/{id} updates vehicle display_name, license_plate, and brand-specific credentials
 The system SHALL expose `PUT /vehicles/{id}` requiring a valid JWT session cookie. The request body SHALL be a discriminated union by brand, with all brand variants inheriting from a `BaseUpdateVehicleRequest` that includes `display_name` and `license_plate` (optional, max 20 chars). `display_name` is always updatable. `license_plate` is always updatable for all brands (set to string value or `null` to clear). For Toyota: `username` and `locale` are required; `password` is optional (omitted or empty string means keep the existing encrypted password). For Generic: only `display_name` and `license_plate` are updatable. Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle not owned by the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404.
 

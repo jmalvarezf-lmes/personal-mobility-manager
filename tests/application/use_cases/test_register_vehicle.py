@@ -111,17 +111,23 @@ class TestToyotaRegistration:
 
     def test_toyota_no_location_token(self) -> None:
         uc, _, _ = _make_use_case(enabled=[Brand.TOYOTA])
-        result = uc.execute(Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config())
+        result = uc.execute(
+            Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config()
+        )
         assert result.location_token is None
 
     def test_toyota_vin_on_result(self) -> None:
         uc, _, _ = _make_use_case(enabled=[Brand.TOYOTA])
-        result = uc.execute(Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config())
+        result = uc.execute(
+            Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config()
+        )
         assert result.vin == "VIN123"
 
     def test_toyota_config_stored(self) -> None:
         uc, _, c_repo = _make_use_case(enabled=[Brand.TOYOTA])
-        result = uc.execute(Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config())
+        result = uc.execute(
+            Brand.TOYOTA, "My Toyota", user_id=_OWNER_ID, vin="VIN123", toyota_config=self._toyota_config()
+        )
         config = c_repo.get_toyota_config(result.vehicle_id)
         assert config.username == "user"
         assert config.vin == "VIN123"

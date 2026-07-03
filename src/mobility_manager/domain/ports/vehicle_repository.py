@@ -48,3 +48,8 @@ class VehicleRepository(ABC):
     def update_display_name(self, vehicle_id: UUID, display_name: str) -> None:
         """Update the display_name of the given vehicle."""
         ...
+
+    @abstractmethod
+    def update_license_plate(self, vehicle_id: UUID, license_plate: str | None) -> None:
+        """Update the license_plate of the given vehicle (None clears it)."""
+        ...

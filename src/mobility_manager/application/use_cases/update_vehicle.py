@@ -2,6 +2,7 @@
 Application use case: UpdateVehicle.
 
 Updates a vehicle's display_name and, for Toyota, optionally re-encrypts credentials.
+Also supports updating the license_plate via a sentinel pattern.
 """
 
 from uuid import UUID
@@ -14,10 +15,14 @@ from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
 
+# Sentinel: distinguishes "caller did not pass license_plate" from "caller set it to None"
+_UNSET = object()
+
 
 class UpdateVehicle:
     """
     Update a vehicle's display_name; re-encrypt Toyota credentials when a new password is provided (D3).
+    Optionally update the license_plate using the _UNSET sentinel.
     """
 
     def __init__(
@@ -35,6 +40,7 @@ class UpdateVehicle:
         username: str | None = None,
         locale: str | None = None,
         password: str | None = None,
+        license_plate: str | None | object = _UNSET,
     ) -> None:
         """
         Update the vehicle.
@@ -45,6 +51,8 @@ class UpdateVehicle:
             username: Toyota account username (ignored for Generic).
             locale: Toyota locale string (ignored for Generic).
             password: New Toyota password. If None or empty string, skip re-encryption (D3).
+            license_plate: New license plate value.  Pass _UNSET (default) to leave it
+                untouched.  Pass None to clear it.  Pass a string to set it.
 
         Raises:
             VehicleNotFoundError: If no vehicle exists with the given ID.
@@ -54,6 +62,9 @@ class UpdateVehicle:
             raise VehicleNotFoundError(f"Vehicle {vehicle_id} not found")
 
         self._vehicle_repo.update_display_name(vehicle_id, display_name)
+
+        if license_plate is not _UNSET:
+            self._vehicle_repo.update_license_plate(vehicle_id, license_plate)  # type: ignore[arg-type]
 
         if vehicle.brand == Brand.TOYOTA and password:
             existing = self._config_repo.get_toyota_config(vehicle_id)

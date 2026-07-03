@@ -23,6 +23,7 @@ def _make_vehicle(user_id: UUID, brand: Brand = Brand.GENERIC) -> Vehicle:
         brand=brand,
         display_name="Test Car",
         vin=None,
+        license_plate=None,
         created_at=datetime.now(UTC),
         user_id=user_id,
     )
@@ -66,6 +67,9 @@ class InMemoryVehicleRepo:
         for v in self.vehicles:
             if v.id == vehicle_id:
                 object.__setattr__(v, "display_name", display_name)
+
+    def update_license_plate(self, vehicle_id: UUID, license_plate: str | None) -> None:
+        pass
 
 
 class InMemoryLocationRepo:

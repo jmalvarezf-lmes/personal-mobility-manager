@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: GET /vehicles/{id} returns a single vehicle with masked config
 The system SHALL expose `GET /vehicles/{id}` requiring a valid JWT session cookie. The response SHALL include vehicle metadata (including `license_plate`), and brand-specific configuration. Toyota passwords SHALL be masked (returned as the string `"●●●●●●●●"`). Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle not owned by the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404.
 

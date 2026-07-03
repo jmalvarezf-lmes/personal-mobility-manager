@@ -9,6 +9,7 @@ export interface VehicleListItem {
   brand: "toyota" | "generic";
   display_name: string;
   vin: string | null;
+  license_plate: string | null;
   location: VehicleLocation | null;
 }
 
@@ -27,5 +28,6 @@ export interface VehicleDetail {
   brand: "toyota" | "generic";
   display_name: string;
   vin: string | null;
+  license_plate: string | null;
   config: ToyotaConfig | GenericConfig;
 }

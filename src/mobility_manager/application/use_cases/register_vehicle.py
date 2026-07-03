@@ -30,6 +30,7 @@ class RegisterVehicleResult:
     display_name: str
     vin: str | None
     location_token: str | None  # populated only for Generic brand
+    license_plate: str | None = None
 
 
 class RegisterVehicle:
@@ -56,6 +57,7 @@ class RegisterVehicle:
         user_id: UUID,
         vin: str | None = None,
         toyota_config: ToyotaConfig | None = None,
+        license_plate: str | None = None,
     ) -> RegisterVehicleResult:
         """
         Register a vehicle.
@@ -84,6 +86,7 @@ class RegisterVehicle:
             brand=brand,
             display_name=display_name,
             vin=vin,
+            license_plate=license_plate,
             created_at=datetime.now(UTC),
             user_id=user_id,
         )
@@ -105,5 +108,6 @@ class RegisterVehicle:
             brand=vehicle.brand,
             display_name=vehicle.display_name,
             vin=vehicle.vin,
+            license_plate=vehicle.license_plate,
             location_token=location_token,
         )

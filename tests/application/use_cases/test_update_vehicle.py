@@ -23,6 +23,7 @@ def _make_vehicle(brand: Brand = Brand.GENERIC, owner_id: UUID | None = None) ->
         brand=brand,
         display_name="Original Name",
         vin="VIN001" if brand == Brand.TOYOTA else None,
+        license_plate=None,
         created_at=datetime.now(UTC),
         user_id=owner_id or _OWNER_ID,
     )
@@ -32,6 +33,7 @@ class InMemoryVehicleRepo:
     def __init__(self) -> None:
         self.vehicles: list[Vehicle] = []
         self.display_names: dict[UUID, str] = {}
+        self.license_plates: dict[UUID, str | None] = {}
 
     def save(self, vehicle: Vehicle) -> None:
         self.vehicles.append(vehicle)
@@ -53,6 +55,9 @@ class InMemoryVehicleRepo:
 
     def update_display_name(self, vehicle_id: UUID, display_name: str) -> None:
         self.display_names[vehicle_id] = display_name
+
+    def update_license_plate(self, vehicle_id: UUID, license_plate: str | None) -> None:
+        self.license_plates[vehicle_id] = license_plate
 
 
 class InMemoryConfigRepo:
@@ -167,3 +172,33 @@ class TestUpdateVehicleToyota:
         _, updated_config = c_repo.toyota_updates[0]
         assert updated_config.username == "alice"
         assert updated_config.locale == "en_GB"
+
+
+class TestUpdateVehicleLicensePlate:
+    def test_license_plate_is_updated_when_provided(self) -> None:
+        uc, v_repo, _ = _make_use_case()
+        v = _make_vehicle(Brand.GENERIC)
+        v_repo.save(v)
+
+        uc.execute(v.id, display_name="Name", license_plate="1234ABC")
+
+        assert v_repo.license_plates[v.id] == "1234ABC"
+
+    def test_license_plate_can_be_cleared_with_none(self) -> None:
+        uc, v_repo, _ = _make_use_case()
+        v = _make_vehicle(Brand.GENERIC)
+        v_repo.save(v)
+
+        uc.execute(v.id, display_name="Name", license_plate=None)
+
+        assert v_repo.license_plates[v.id] is None
+
+    def test_license_plate_unchanged_when_sentinel_passed(self) -> None:
+        uc, v_repo, _ = _make_use_case()
+        v = _make_vehicle(Brand.GENERIC)
+        v_repo.save(v)
+
+        # Do not pass license_plate — should use sentinel default
+        uc.execute(v.id, display_name="Name")
+
+        assert v.id not in v_repo.license_plates

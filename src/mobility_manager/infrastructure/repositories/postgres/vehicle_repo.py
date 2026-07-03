@@ -30,6 +30,7 @@ class PostgresVehicleRepository(VehicleRepository):
                     brand=vehicle.brand.value,
                     display_name=vehicle.display_name,
                     vin=vehicle.vin,
+                    license_plate=vehicle.license_plate,
                     created_at=vehicle.created_at,
                     user_id=vehicle.user_id,
                 )
@@ -56,9 +57,7 @@ class PostgresVehicleRepository(VehicleRepository):
     def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
         """Return all vehicles owned by the given user."""
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(vehicles_table).where(vehicles_table.c.user_id == user_id)
-            ).fetchall()
+            rows = conn.execute(select(vehicles_table).where(vehicles_table.c.user_id == user_id)).fetchall()
         return [self._row_to_vehicle(r) for r in rows]
 
     def delete(self, vehicle_id: UUID) -> None:
@@ -70,9 +69,14 @@ class PostgresVehicleRepository(VehicleRepository):
         """Update the display_name column for the given vehicle."""
         with self._engine.begin() as conn:
             conn.execute(
-                vehicles_table.update()
-                .where(vehicles_table.c.id == vehicle_id)
-                .values(display_name=display_name)
+                vehicles_table.update().where(vehicles_table.c.id == vehicle_id).values(display_name=display_name)
+            )
+
+    def update_license_plate(self, vehicle_id: UUID, license_plate: str | None) -> None:
+        """Update the license_plate column for the given vehicle (None clears it)."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                vehicles_table.update().where(vehicles_table.c.id == vehicle_id).values(license_plate=license_plate)
             )
 
     @staticmethod
@@ -82,6 +86,7 @@ class PostgresVehicleRepository(VehicleRepository):
             brand=Brand(row.brand),  # type: ignore[attr-defined]
             display_name=row.display_name,  # type: ignore[attr-defined]
             vin=row.vin,  # type: ignore[attr-defined]
+            license_plate=row.license_plate,  # type: ignore[attr-defined]
             created_at=row.created_at,  # type: ignore[attr-defined]
             user_id=row.user_id,  # type: ignore[attr-defined]
         )

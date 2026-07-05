@@ -26,3 +26,13 @@ class UserSerProviderConfigRepository(ABC):
     def find(self, user_id: UUID, provider: str) -> SerProviderSession | None:
         """Return the stored session for (user_id, provider), or None if none exists."""
         ...
+
+    @abstractmethod
+    def delete(self, user_id: UUID, provider: str) -> None:
+        """Remove the stored session for (user_id, provider), if present. Idempotent — never raises if absent."""
+        ...
+
+    @abstractmethod
+    def list_connected_providers(self, user_id: UUID) -> list[str]:
+        """Return the provider names for which `user_id` has a stored session."""
+        ...

@@ -34,3 +34,13 @@ class SerTicketProviderPort(ABC):
     def create_ticket(self, session: SerProviderSession, vehicle: Vehicle, duration_minutes: int) -> ParkingTicket:
         """Create a parking ticket for the given vehicle using a previously obtained session."""
         ...
+
+    @abstractmethod
+    def logout(self, session: SerProviderSession) -> None:
+        """
+        Invalidate the given session on the provider's side.
+
+        Raises:
+            SerProviderApiError: The logout call failed (network error, unexpected status).
+        """
+        ...

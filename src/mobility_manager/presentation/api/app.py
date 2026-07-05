@@ -25,6 +25,9 @@ from mobility_manager.application.use_cases.connect_ser_ticket_provider import (
 )
 from mobility_manager.application.use_cases.create_ser_ticket import CreateSerTicket
 from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
+from mobility_manager.application.use_cases.disconnect_ser_ticket_provider import (
+    DisconnectSerTicketProvider,
+)
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
 )
@@ -32,6 +35,9 @@ from mobility_manager.application.use_cases.get_latest_vehicle_location import (
     GetLatestVehicleLocation,
 )
 from mobility_manager.application.use_cases.ingest_ser_zones import IngestSerZones
+from mobility_manager.application.use_cases.list_ser_ticket_provider_connections import (
+    ListSerTicketProviderConnections,
+)
 from mobility_manager.application.use_cases.list_user_vehicles import ListUserVehicles
 from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
@@ -215,11 +221,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         ticket_repo=parking_ticket_repo,
         providers=ser_ticket_providers,
     )
+    disconnect_ser_ticket_provider_uc = DisconnectSerTicketProvider(
+        providers=ser_ticket_providers,
+        config_repo=user_ser_provider_config_repo,
+    )
+    list_ser_ticket_provider_connections_uc = ListSerTicketProviderConnections(
+        config_repo=user_ser_provider_config_repo,
+    )
     app.state.ser_ticket_provider_registry = ser_ticket_provider_registry
     app.state.user_ser_provider_config_repo = user_ser_provider_config_repo
     app.state.parking_ticket_repo = parking_ticket_repo
     app.state.connect_ser_ticket_provider = connect_ser_ticket_provider_uc
     app.state.create_ser_ticket = create_ser_ticket_uc
+    app.state.disconnect_ser_ticket_provider = disconnect_ser_ticket_provider_uc
+    app.state.list_ser_ticket_provider_connections = list_ser_ticket_provider_connections_uc
 
     yield
 

@@ -59,6 +59,9 @@ class FakeSerTicketProvider(SerTicketProviderPort):
             created_at=datetime.now(UTC),
         )
 
+    def logout(self, session: SerProviderSession) -> None:
+        raise NotImplementedError("Not exercised by CreateSerTicket tests")
+
 
 class InMemoryVehicleRepo:
     def __init__(self) -> None:

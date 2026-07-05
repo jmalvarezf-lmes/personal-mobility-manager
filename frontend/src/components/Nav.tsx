@@ -92,6 +92,14 @@ export default function Nav() {
                 >
                   {t("nav.preferences")}
                 </Link>
+                <Link
+                  to="/ser-providers"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {t("nav.serProviders")}
+                </Link>
                 <button
                   type="button"
                   role="menuitem"

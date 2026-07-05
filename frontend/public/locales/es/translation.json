@@ -3,6 +3,7 @@
     "cancel": "Cancelar",
     "displayName": "Nombre",
     "username": "Usuario",
+    "email": "Correo electrónico",
     "password": "Contraseña",
     "locale": "Región"
   },
@@ -11,6 +12,7 @@
     "map": "Mapa",
     "myVehicles": "Mis vehículos",
     "preferences": "Preferencias",
+    "serProviders": "Proveedores SER",
     "account": "Menú de cuenta",
     "logout": "Cerrar sesión",
     "loginGoogle": "Iniciar sesión con Google",
@@ -40,6 +42,21 @@
       "loadError": "No se pudieron cargar las preferencias.",
       "saveError": "No se pudieron guardar las preferencias.",
       "invalidDuration": "La duración debe ser mayor que 0."
+    },
+    "serProviders": {
+      "title": "Proveedores SER",
+      "loading": "Cargando proveedores…",
+      "connected": "Conectado",
+      "notConnected": "No conectado",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "confirmDisconnect": "¿Desconectar \"{{name}}\"?",
+      "logoutNotConfirmed": "Desconectado, pero no se pudo confirmar que la sesión del proveedor se cerrara correctamente.",
+      "connectError": "No se pudo conectar el proveedor.",
+      "disconnectError": "No se pudo desconectar el proveedor.",
+      "providers": {
+        "elparking": "ElParking"
+      }
     }
   },
   "modal": {
@@ -58,6 +75,11 @@
       "save": "Guardar",
       "newPassword": "Nueva contraseña",
       "keepBlank": "(dejar en blanco para no cambiar)"
+    },
+    "connectSerProvider": {
+      "title": "Conectar {{provider}}",
+      "connecting": "Conectando…",
+      "connect": "Conectar"
     }
   },
   "vehicle": {

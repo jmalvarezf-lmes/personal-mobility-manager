@@ -32,6 +32,9 @@ class FakeSerTicketProvider(SerTicketProviderPort):
     def create_ticket(self, session: SerProviderSession, vehicle: Vehicle, duration_minutes: int) -> ParkingTicket:
         raise NotImplementedError("Not exercised by ConnectSerTicketProvider tests")
 
+    def logout(self, session: SerProviderSession) -> None:
+        raise NotImplementedError("Not exercised by ConnectSerTicketProvider tests")
+
 
 class InMemoryUserSerProviderConfigRepo:
     def __init__(self) -> None:

@@ -3,6 +3,7 @@
     "cancel": "Cancel",
     "displayName": "Display Name",
     "username": "Username",
+    "email": "Email",
     "password": "Password",
     "locale": "Locale"
   },
@@ -11,6 +12,7 @@
     "map": "Map",
     "myVehicles": "My Vehicles",
     "preferences": "Preferences",
+    "serProviders": "SER Providers",
     "account": "Account menu",
     "logout": "Logout",
     "loginGoogle": "Login with Google",
@@ -40,6 +42,21 @@
       "loadError": "Failed to load preferences.",
       "saveError": "Failed to save preferences.",
       "invalidDuration": "Duration must be greater than 0."
+    },
+    "serProviders": {
+      "title": "SER Providers",
+      "loading": "Loading providers…",
+      "connected": "Connected",
+      "notConnected": "Not connected",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "confirmDisconnect": "Disconnect \"{{name}}\"?",
+      "logoutNotConfirmed": "Disconnected, but we couldn't confirm the provider-side session was revoked.",
+      "connectError": "Failed to connect provider.",
+      "disconnectError": "Failed to disconnect provider.",
+      "providers": {
+        "elparking": "ElParking"
+      }
     }
   },
   "modal": {
@@ -58,6 +75,11 @@
       "save": "Save",
       "newPassword": "New Password",
       "keepBlank": "(leave blank to keep current)"
+    },
+    "connectSerProvider": {
+      "title": "Connect {{provider}}",
+      "connecting": "Connecting…",
+      "connect": "Connect"
     }
   },
   "vehicle": {

@@ -162,6 +162,13 @@ test.describe("Navigation", () => {
     await expect(nav.myVehiclesLink).toBeVisible();
   });
 
+  test("shows SER Providers link in nav when logged in", async ({ page }) => {
+    await page.goto("/");
+    const nav = new NavPage(page, MOCK_USER.email);
+    await nav.open();
+    await expect(nav.serProvidersLink).toBeVisible();
+  });
+
   base("does not show My Vehicles link when logged out", async ({ page }) => {
     await page.route("**/api/auth/me", (route) =>
       route.fulfill({ status: 401 }),

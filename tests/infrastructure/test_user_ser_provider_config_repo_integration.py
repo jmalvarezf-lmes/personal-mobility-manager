@@ -149,9 +149,7 @@ def test_upsert_overwrites_existing_row_for_same_pair(pg_engine, fernet_key) -> 
 
     with pg_engine.connect() as conn:
         count = conn.execute(
-            text(
-                "SELECT COUNT(*) FROM user_ser_provider_configs WHERE user_id = :id AND provider = :provider"
-            ),
+            text("SELECT COUNT(*) FROM user_ser_provider_configs WHERE user_id = :id AND provider = :provider"),
             {"id": str(user_id), "provider": "madrid_ser_app"},
         ).scalar()
     assert count == 1
@@ -159,3 +157,64 @@ def test_upsert_overwrites_existing_row_for_same_pair(pg_engine, fernet_key) -> 
     recovered = repo.find(user_id, "madrid_ser_app")
     assert recovered is not None
     assert recovered.data == {"token": "second"}
+
+
+def test_delete_removes_existing_row(pg_engine, fernet_key) -> None:
+    from mobility_manager.domain.value_objects.ser_provider_session import (
+        SerProviderSession,
+    )
+    from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
+        PostgresUserSerProviderConfigRepository,
+    )
+
+    repo = PostgresUserSerProviderConfigRepository(pg_engine, fernet_key)
+    user_id = uuid4()
+    _insert_user(pg_engine, user_id)
+
+    repo.save(user_id, "madrid_ser_app", SerProviderSession(data={"token": "abc"}))
+    assert repo.find(user_id, "madrid_ser_app") is not None
+
+    repo.delete(user_id, "madrid_ser_app")
+
+    assert repo.find(user_id, "madrid_ser_app") is None
+
+
+def test_delete_is_idempotent_when_no_row_exists(pg_engine, fernet_key) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
+        PostgresUserSerProviderConfigRepository,
+    )
+
+    repo = PostgresUserSerProviderConfigRepository(pg_engine, fernet_key)
+    user_id = uuid4()
+    _insert_user(pg_engine, user_id)
+
+    repo.delete(user_id, "madrid_ser_app")  # should not raise
+
+
+def test_list_connected_providers_reflects_stored_rows(pg_engine, fernet_key) -> None:
+    from mobility_manager.domain.value_objects.ser_provider_session import (
+        SerProviderSession,
+    )
+    from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
+        PostgresUserSerProviderConfigRepository,
+    )
+
+    repo = PostgresUserSerProviderConfigRepository(pg_engine, fernet_key)
+    user_id = uuid4()
+    _insert_user(pg_engine, user_id)
+
+    repo.save(user_id, "elparking", SerProviderSession(data={"token": "abc"}))
+
+    assert repo.list_connected_providers(user_id) == ["elparking"]
+
+
+def test_list_connected_providers_returns_empty_for_user_with_no_connections(pg_engine, fernet_key) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
+        PostgresUserSerProviderConfigRepository,
+    )
+
+    repo = PostgresUserSerProviderConfigRepository(pg_engine, fernet_key)
+    user_id = uuid4()
+    _insert_user(pg_engine, user_id)
+
+    assert repo.list_connected_providers(user_id) == []

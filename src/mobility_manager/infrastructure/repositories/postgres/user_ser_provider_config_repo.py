@@ -10,6 +10,7 @@ since SER provider accounts are personal, not per-vehicle.
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
@@ -86,3 +87,22 @@ class PostgresUserSerProviderConfigRepository(UserSerProviderConfigRepository):
 
         data = decrypt(row.encrypted_payload, self._encryption_key)
         return SerProviderSession(data=data)
+
+    def delete(self, user_id: UUID, provider: str) -> None:
+        """Remove the stored session for (user_id, provider), if present. Idempotent — never raises if absent."""
+        stmt = sa_delete(user_ser_provider_configs_table).where(
+            user_ser_provider_configs_table.c.user_id == user_id,
+            user_ser_provider_configs_table.c.provider == provider,
+        )
+        with self._engine.begin() as conn:
+            conn.execute(stmt)
+
+    def list_connected_providers(self, user_id: UUID) -> list[str]:
+        """Return the provider names for which `user_id` has a stored session."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(user_ser_provider_configs_table.c.provider).where(
+                    user_ser_provider_configs_table.c.user_id == user_id,
+                )
+            ).fetchall()
+        return [row.provider for row in rows]

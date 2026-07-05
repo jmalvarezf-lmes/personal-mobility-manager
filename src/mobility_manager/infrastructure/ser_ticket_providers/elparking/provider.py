@@ -7,6 +7,10 @@ MadridCallejeroCsvFetcher.fetch()'s sync-client style rather than the async
 httpx.AsyncClient pattern used in the OAuth callback route. There is no async
 requirement here: SerTicketProviderPort.login is a plain synchronous method.
 
+logout() calls ElParking's DELETE /v1/logins/{access_token} using the same
+synchronous httpx.Client style, wrapping failures as SerProviderApiError,
+consistent with login()'s failure vocabulary.
+
 create_ticket() is a deliberate NotImplementedError stub — ElParking's
 ticket-creation API spec is not yet available and lands in a separate future
 change.
@@ -55,6 +59,8 @@ _LOGIN_TIMEOUT_SECONDS = 15.0
 # a single, isolated, easy-to-change signal. If real-API testing (task 8.3)
 # reveals a different code (e.g. 422), update only this constant.
 _INVALID_CREDENTIALS_STATUS_CODE = 401
+
+_LOGOUT_TIMEOUT_SECONDS = 15.0
 
 
 class ElParkingSerTicketProvider(SerTicketProviderPort):
@@ -126,3 +132,37 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
     def create_ticket(self, session: SerProviderSession, vehicle: Vehicle, duration_minutes: int) -> ParkingTicket:
         """Not yet implemented — ElParking's ticket-creation API spec isn't available yet."""
         raise NotImplementedError("ElParking ticket creation is not yet implemented")
+
+    def logout(self, session: SerProviderSession) -> None:
+        """
+        Invalidate the session on ElParking's side via DELETE /v1/logins/{access_token}.
+
+        Args:
+            session: A previously obtained session; `session.data["access_token"]`
+                is used both in the path and (see the ASSUMPTION note below) the
+                Authorization header.
+
+        Raises:
+            SerProviderApiError: Network error, timeout, or a non-2xx response.
+        """
+        access_token = session.data["access_token"]
+
+        # ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.4):
+        # ElParking's available documentation only shows the
+        # DELETE /v1/logins/{access_token} path shape; it does not confirm
+        # whether an Authorization: Bearer header is also required alongside
+        # the token already present in the path. Sending it is the safer
+        # default here — a single, isolated, easy-to-change point if
+        # real-API testing shows otherwise.
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        try:
+            with httpx.Client(timeout=_LOGOUT_TIMEOUT_SECONDS) as client:
+                response = client.delete(f"{self._base_url}/v1/logins/{access_token}", headers=headers)
+        except httpx.HTTPError as exc:
+            raise SerProviderApiError(f"ElParking logout request failed: {exc}") from exc
+
+        if not response.is_success:
+            raise SerProviderApiError(
+                f"ElParking logout returned unexpected status {response.status_code}: {response.text[:200]}"
+            )

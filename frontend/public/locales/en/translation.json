@@ -10,6 +10,8 @@
     "title": "Personal Mobility Manager",
     "map": "Map",
     "myVehicles": "My Vehicles",
+    "preferences": "Preferences",
+    "account": "Account menu",
     "logout": "Logout",
     "loginGoogle": "Login with Google",
     "language": "Language"
@@ -26,6 +28,18 @@
     },
     "map": {
       "loading": "Loading map data…"
+    },
+    "preferences": {
+      "title": "Preferences",
+      "loading": "Loading preferences…",
+      "durationLabel": "Default ticket duration (minutes)",
+      "autoCreateLabel": "Automatically create tickets instead of just notifying me",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Preferences saved.",
+      "loadError": "Failed to load preferences.",
+      "saveError": "Failed to save preferences.",
+      "invalidDuration": "Duration must be greater than 0."
     }
   },
   "modal": {

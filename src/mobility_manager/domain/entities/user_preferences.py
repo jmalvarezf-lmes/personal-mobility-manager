@@ -1,0 +1,19 @@
+"""
+Domain entity: UserPreferences.
+
+Represents a user's per-account settings (ticket-creation defaults).
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from uuid import UUID
+
+
+@dataclass(frozen=True)
+class UserPreferences:
+    """Core user preferences entity — 1:1 with a User."""
+
+    user_id: UUID
+    default_ticket_duration_minutes: int
+    auto_create_ticket: bool
+    updated_at: datetime

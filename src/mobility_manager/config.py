@@ -104,6 +104,55 @@ def get_vehicle_poll_interval_minutes() -> int:
         return 5
 
 
+def get_enabled_ser_providers() -> list[str]:
+    """
+    Return the list of enabled SER ticket provider codes from ENABLED_SER_PROVIDERS.
+
+    Parses the comma-separated string into lowercase codes. Unlike
+    get_enabled_brands(), values are plain strings rather than a domain enum,
+    since SER ticket provider codes aren't modeled as one. Default is
+    ["elparking"] when ENABLED_SER_PROVIDERS is not set — ElParking is meant
+    to be on by default, unlike brands (which default to "generic").
+    """
+    raw = os.environ.get("ENABLED_SER_PROVIDERS", "elparking")
+    return [code.strip().lower() for code in raw.split(",") if code.strip()]
+
+
+def get_elparking_base_url() -> str:
+    """
+    Return the ElParking API base URL from the ELPARKING_API_BASE_URL env var.
+
+    There is deliberately no default value here. ElParking's real API base
+    URL is not yet publicly known — the only documentation available when
+    this was written shows a placeholder (https://api.example.com) — so every
+    deployment that enables the elparking SER ticket provider must supply the
+    real base URL explicitly via environment variable.
+
+    Raises:
+        RuntimeError: If ELPARKING_API_BASE_URL is not set.
+    """
+    url = os.environ.get("ELPARKING_API_BASE_URL")
+    if not url:
+        raise RuntimeError(
+            "ELPARKING_API_BASE_URL environment variable is not set. "
+            "Set it to ElParking's real API base URL before enabling the elparking SER ticket provider."
+        )
+    return url
+
+
+def get_elparking_app_version() -> str:
+    """
+    Return the ep-app-version value ElParking's login API expects, from
+    ELPARKING_APP_VERSION.
+
+    Unlike the base URL, this has a sensible default (the version this
+    integration started with) since it's meant to evolve over time as
+    ElParking's app versioning does, not to gate whether the provider can
+    be enabled at all.
+    """
+    return os.environ.get("ELPARKING_APP_VERSION", "26.2")
+
+
 def get_google_client_id() -> str:
     """Return the Google OAuth2 client ID from environment."""
     value = os.environ.get("GOOGLE_CLIENT_ID")

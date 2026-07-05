@@ -41,6 +41,7 @@ from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.config import (
     get_cors_origins,
     get_enabled_brands,
+    get_enabled_ser_providers,
     get_encryption_key,
     get_ingestion_interval_hours,
     get_vehicle_poll_interval_minutes,
@@ -96,6 +97,9 @@ from mobility_manager.presentation.api.routers.config import router as config_ro
 from mobility_manager.presentation.api.routers.parking import router as parking_router
 from mobility_manager.presentation.api.routers.preferences import (
     router as preferences_router,
+)
+from mobility_manager.presentation.api.routers.ser_ticket_providers import (
+    router as ser_ticket_providers_router,
 )
 from mobility_manager.presentation.api.routers.vehicles import router as vehicles_router
 from mobility_manager.presentation.api.routers.zones import router as zones_router
@@ -186,16 +190,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_location_scheduler.start()
     app.state.vehicle_location_scheduler = vehicle_location_scheduler
 
-    # --- SER ticket provider (no HTTP surface yet) ---
-    # Reuse the Toyota encryption key if already resolved above, otherwise try to
-    # obtain one independently — it's optional at this stage since no provider is
-    # registered yet and nothing calls these use cases in production.
+    # --- SER ticket provider ---
+    # Reuse the Toyota encryption key if already resolved above. ElParking is
+    # enabled by default (ENABLED_SER_PROVIDERS defaults to "elparking"), so
+    # ENCRYPTION_KEY is now a hard startup requirement here too — no
+    # try/except, mirroring the non-swallowing Toyota pattern above: a real
+    # RuntimeError propagates and crashes startup rather than being silenced.
+    enabled_ser_providers = get_enabled_ser_providers()
     ser_encryption_key = encryption_key
-    if ser_encryption_key is None:
-        try:
-            ser_encryption_key = get_encryption_key()
-        except RuntimeError:
-            ser_encryption_key = None
+    if ser_encryption_key is None and "elparking" in enabled_ser_providers:
+        ser_encryption_key = get_encryption_key()
 
     ser_ticket_provider_registry = SerTicketProviderRegistry()
     ser_ticket_providers = ser_ticket_provider_registry.build_providers()
@@ -244,6 +248,7 @@ app.include_router(zones_router)
 app.include_router(config_router)
 app.include_router(vehicles_router)
 app.include_router(preferences_router)
+app.include_router(ser_ticket_providers_router)
 
 
 @app.middleware("http")

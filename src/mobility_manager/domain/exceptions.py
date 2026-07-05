@@ -49,3 +49,15 @@ class SerProviderSessionNotFoundError(Exception):
     """Raised when no stored session exists for a given (user_id, provider) pair."""
 
     pass
+
+
+class SerProviderAuthenticationError(Exception):
+    """Raised when a SER ticket provider rejects login credentials as invalid."""
+
+    pass
+
+
+class SerProviderApiError(Exception):
+    """Raised for non-authentication SER ticket provider failures (network, rate limit, 5xx, malformed)."""
+
+    pass

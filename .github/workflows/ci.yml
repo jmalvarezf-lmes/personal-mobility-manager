@@ -112,6 +112,7 @@ jobs:
 
     env:
       POSTGRES_DSN: postgresql://mobility:mobility@localhost:5432/mobility_manager
+      ENCRYPTION_KEY: test-encrytion-key
       CORS_ORIGINS: http://localhost:5173
 
     steps:

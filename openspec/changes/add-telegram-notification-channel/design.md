@@ -48,10 +48,10 @@ Unlike `SerTicketProviderPort.login()` (shared across all SER providers), Telegr
 ### 3. Per-user config storage: unencrypted
 `user_notification_channel_configs` (`user_id`, `channel`, `config` as plain JSON — not Fernet-encrypted, unlike `vehicle_configs`/`user_ser_provider_configs`). A Telegram `chat_id` is an identifier, not a credential — leaking it doesn't grant access to anything, unlike ElParking's `access_token`. Skipping encryption avoids requiring `ENCRYPTION_KEY` for a table that doesn't need confidentiality, and keeps the repository simpler (no dependency on `infrastructure/crypto.py`).
 
-### 4. Linking flow reuses the existing `itsdangerous` CSRF-state pattern
+### 4. Linking flow uses a compact, hand-rolled signed token — not `itsdangerous`
 ```
 POST /notifications/telegram/link-code   (authenticated)
-    → itsdangerous.URLSafeTimedSerializer(JWT_SECRET, salt="telegram-link").dumps({"user_id": ...})
+    → compact token: base64url(UUID bytes[16] + timestamp bytes[4] + truncated-HMAC-SHA256[12]), padding stripped
     → returns a deep link: https://t.me/<bot_username>?start=<signed-token>
 
 User clicks the link → Telegram sends "/start <signed-token>" to the bot
@@ -59,13 +59,16 @@ User clicks the link → Telegram sends "/start <signed-token>" to the bot
 POST /notifications/telegram/webhook   (Telegram → us; public, but validated)
     → verify X-Telegram-Bot-Api-Secret-Token header matches TELEGRAM_WEBHOOK_SECRET
     → extract the token from the "/start <token>" message text
-    → verify + decode via the same serializer (max_age enforced — matches csrf.py's _STATE_MAX_AGE pattern)
+    → verify signature + decode + check max-age (10 minutes)
     → extract user_id, store the incoming message's chat.id for (user_id, "telegram")
     → call NotificationChannelPort.send() to reply "✅ Linked!" — this is the live proof send() works
 ```
-Chosen over inventing a new "pending link codes" database table: `itsdangerous` already provides exactly this primitive (signed, time-limited, tamper-proof tokens) and is already a dependency used for the OAuth state parameter (`csrf.py`). A different `salt` value domain-separates this token from the OAuth state token and the session JWT, so a token generated for one purpose can't be replayed as another — same technique already established in this codebase. No new table, no expiry cleanup job needed.
 
-The `/start <payload>` mechanism is Telegram's own standard deep-linking convention (not a workaround) — this is the idiomatic way Telegram bots handle "link this chat to an external account."
+**This decision changed after implementation.** The original design reused `itsdangerous.URLSafeTimedSerializer` (the same pattern as `csrf.py`'s OAuth2 state token, different `salt`), on the reasoning that it already provides signed, time-limited, tamper-proof tokens with no new database table needed. That reasoning about *avoiding a new table* still holds — but manual end-to-end testing against a live Telegram bot surfaced a hard platform constraint neither the design nor the code review caught: **Telegram's `start` deep-link parameter is capped at 64 characters**, and an `itsdangerous` token for this payload came out to ~102 characters. The link silently failed — Telegram either drops or refuses the oversized parameter, so the bot never received a matching `/start <token>` message, and the webhook's "text doesn't start with `/start `" branch quietly no-op'd with no error logged (a design gap in its own right, since that branch has no logging — worth being noisier about in a future pass, though not fixed here since it isn't a functional defect).
+
+The fix keeps everything else about the design (signed, time-limited, tamper-proof, no new table) but replaces the encoding: raw bytes (16-byte UUID + 4-byte timestamp + 12-byte truncated HMAC-SHA256, keyed with `JWT_SECRET`) instead of `itsdangerous`'s JSON+full-HMAC+versioning envelope. The result is ~43 characters — comfortably under the 64-character limit, with room to spare. Verification uses `hmac.compare_digest` for the signature check and manual timestamp-age comparison, mirroring the same signed/tamper-proof/time-limited properties the original design specified, just without the `itsdangerous` dependency.
+
+The `/start <payload>` mechanism itself is still Telegram's own standard deep-linking convention (not a workaround) — this is the idiomatic way Telegram bots handle "link this chat to an external account." Only the token's *encoding* changed, not the overall linking flow shape.
 
 ### 5. Webhook security: validate Telegram's secret token header
 Telegram's `setWebhook` API accepts an optional `secret_token`, which Telegram then includes as `X-Telegram-Bot-Api-Secret-Token` on every webhook POST. The webhook handler validates this header against a configured `TELEGRAM_WEBHOOK_SECRET` before processing anything, rejecting requests that don't match. Without this, anyone who discovers the webhook URL could POST arbitrary fake "incoming messages." (The linking token itself is also signed and single-purpose, which limits the damage even without this check, but validating the header is free and standard practice — no reason to skip it.)

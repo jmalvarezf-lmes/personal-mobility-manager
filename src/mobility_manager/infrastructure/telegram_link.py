@@ -1,35 +1,50 @@
 """
 Infrastructure: Telegram account-linking token signing.
 
-Uses itsdangerous.URLSafeTimedSerializer to create and verify signed,
-time-limited linking tokens — the same library and pattern as
-presentation/api/csrf.py's OAuth2 state tokens, but with a distinct `salt`
-("telegram-link" instead of "oauth2-state") so a token generated for one
-purpose can't be replayed as another. See design.md decision 4.
+A compact, signed, time-limited linking token: raw bytes (UUID + timestamp +
+truncated HMAC-SHA256), base64url-encoded with padding stripped. This is a
+deliberate departure from the itsdangerous/JSON-based pattern used for OAuth2
+state tokens (presentation/api/csrf.py) -- that encoding produces a ~100+
+character token, but Telegram's deep-link `start` parameter is capped at 64
+characters. This encoding stays well under that limit while keeping the same
+security properties (signed, tamper-proof, time-limited). See design.md
+decision 4 for the full rationale, including why itsdangerous was tried first
+and didn't fit.
 """
 
+import base64
+import hashlib
+import hmac
+import struct
+import time
 from uuid import UUID
-
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from itsdangerous.exc import BadData
 
 from mobility_manager.config import get_jwt_secret
 
-_LINK_TOKEN_MAX_AGE = 600  # 10 minutes
+_LINK_TOKEN_MAX_AGE_SECONDS = 600  # 10 minutes
+_SIGNATURE_LENGTH_BYTES = 12
+_UUID_LENGTH_BYTES = 16
+_TIMESTAMP_LENGTH_BYTES = 4
+_PAYLOAD_LENGTH_BYTES = _UUID_LENGTH_BYTES + _TIMESTAMP_LENGTH_BYTES
 
 
-def _get_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_jwt_secret(), salt="telegram-link")
+def _sign(payload: bytes) -> bytes:
+    key = get_jwt_secret().encode()
+    return hmac.new(key, payload, hashlib.sha256).digest()[:_SIGNATURE_LENGTH_BYTES]
 
 
 def generate_link_token(user_id: UUID) -> str:
     """
-    Generate a signed, time-limited Telegram linking token for `user_id`.
+    Generate a compact, signed, time-limited Telegram linking token for `user_id`.
 
-    Expires after 10 minutes.
+    Expires after 10 minutes. The result is safe to embed in a Telegram deep
+    link (`t.me/<bot>?start=<token>`) -- comfortably under Telegram's
+    64-character limit for that parameter.
     """
-    payload = {"user_id": str(user_id)}
-    return _get_serializer().dumps(payload)
+    timestamp = int(time.time())
+    payload = user_id.bytes + struct.pack(">I", timestamp)
+    signature = _sign(payload)
+    return base64.urlsafe_b64encode(payload + signature).rstrip(b"=").decode("ascii")
 
 
 def verify_link_token(token: str) -> UUID:
@@ -40,16 +55,24 @@ def verify_link_token(token: str) -> UUID:
         The user_id encoded in the token.
 
     Raises:
-        ValueError: If the token is tampered, expired, or otherwise invalid.
+        ValueError: If the token is malformed, tampered, or expired.
     """
+    padded = token + "=" * (-len(token) % 4)
     try:
-        payload = _get_serializer().loads(token, max_age=_LINK_TOKEN_MAX_AGE)
-    except SignatureExpired as exc:
-        raise ValueError("Telegram link token has expired") from exc
-    except (BadSignature, BadData) as exc:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+    except (ValueError, TypeError) as exc:
         raise ValueError("Telegram link token is invalid") from exc
 
-    try:
-        return UUID(payload["user_id"])
-    except (KeyError, ValueError, TypeError) as exc:
-        raise ValueError("Telegram link token payload is invalid") from exc
+    if len(raw) != _PAYLOAD_LENGTH_BYTES + _SIGNATURE_LENGTH_BYTES:
+        raise ValueError("Telegram link token is invalid")
+
+    payload, signature = raw[:_PAYLOAD_LENGTH_BYTES], raw[_PAYLOAD_LENGTH_BYTES:]
+    if not hmac.compare_digest(signature, _sign(payload)):
+        raise ValueError("Telegram link token is invalid")
+
+    user_id_bytes = payload[:_UUID_LENGTH_BYTES]
+    (timestamp,) = struct.unpack(">I", payload[_UUID_LENGTH_BYTES:])
+    if time.time() - timestamp > _LINK_TOKEN_MAX_AGE_SECONDS:
+        raise ValueError("Telegram link token has expired")
+
+    return UUID(bytes=user_id_bytes)

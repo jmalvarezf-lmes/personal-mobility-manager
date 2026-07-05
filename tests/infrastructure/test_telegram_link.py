@@ -6,7 +6,6 @@ import time
 from uuid import uuid4
 
 import pytest
-from itsdangerous import URLSafeTimedSerializer
 
 from mobility_manager.infrastructure.telegram_link import (
     generate_link_token,
@@ -50,10 +49,25 @@ def test_tampered_token_raises_value_error() -> None:
         verify_link_token(tampered)
 
 
-def test_token_signed_with_a_different_salt_is_rejected() -> None:
+def test_token_signed_with_a_different_secret_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     user_id = uuid4()
-    other_serializer = URLSafeTimedSerializer(_JWT_SECRET, salt="oauth2-state")
-    token = other_serializer.dumps({"user_id": str(user_id)})
+    token = generate_link_token(user_id)
+
+    monkeypatch.setenv("JWT_SECRET", "a-completely-different-secret-value")
 
     with pytest.raises(ValueError):
         verify_link_token(token)
+
+
+def test_token_fits_telegram_deep_link_length_limit() -> None:
+    # Telegram's `start` deep-link parameter is capped at 64 characters —
+    # this is the actual bug that motivated the compact encoding in the
+    # first place (a prior itsdangerous-based token was ~100+ chars).
+    token = generate_link_token(uuid4())
+
+    assert len(token) <= 64
+
+
+def test_malformed_token_raises_value_error() -> None:
+    with pytest.raises(ValueError):
+        verify_link_token("not-a-valid-token-at-all")

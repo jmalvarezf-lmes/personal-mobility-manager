@@ -70,11 +70,12 @@ The system SHALL provide `TelegramNotificationChannel`, implementing `Notificati
 ---
 
 ### Requirement: Telegram account linking uses a signed, time-limited deep-link token
-The system SHALL expose `POST /notifications/telegram/link-code`, requiring an authenticated session, which generates a signed, time-limited token (containing the current user's id) and returns a Telegram deep link (`https://t.me/<bot_username>?start=<token>`). The token SHALL use a distinct signing salt from the OAuth CSRF state token and the session JWT, so tokens generated for one purpose cannot be replayed as another.
+The system SHALL expose `POST /notifications/telegram/link-code`, requiring an authenticated session, which generates a signed, time-limited token (containing the current user's id) and returns a Telegram deep link (`https://t.me/<bot_username>?start=<token>`). The token's encoding SHALL be distinct from the session JWT and the OAuth CSRF state token, so a token generated for one purpose cannot be verified as another. The token SHALL be at most 64 characters, since this is the maximum length Telegram accepts for the `start` deep-link parameter — a longer token silently fails to be delivered to the bot at all.
 
 #### Scenario: Authenticated user receives a deep link
 - **WHEN** an authenticated user calls `POST /notifications/telegram/link-code`
 - **THEN** the response contains a Telegram deep link with a signed token identifying that user
+- **THEN** the token portion of that deep link is at most 64 characters long
 
 #### Scenario: Anonymous request is rejected
 - **WHEN** a request without a valid session cookie is sent to `POST /notifications/telegram/link-code`

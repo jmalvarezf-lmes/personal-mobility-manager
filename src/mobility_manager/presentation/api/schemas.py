@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from mobility_manager.domain.value_objects.brand import Brand
 
@@ -206,3 +206,25 @@ class UpdateUserPreferencesRequest(BaseModel):
 
     default_ticket_duration_minutes: int = Field(..., gt=0)
     auto_create_ticket: bool
+
+
+# ---------------------------------------------------------------------------
+# SER ticket provider connect schemas (discriminated union by provider)
+# ---------------------------------------------------------------------------
+
+
+class ConnectElParkingRequest(BaseModel):
+    """Connect-account payload for the ElParking SER ticket provider."""
+
+    provider: Literal["elparking"]
+    email: EmailStr = Field(..., min_length=6, max_length=100)
+    password: str = Field(..., min_length=1, max_length=100)
+
+
+# Only one variant exists today, but the discriminated-union shape (mirroring
+# RegisterVehicleRequest) keeps the door open for a second provider later
+# without changing the endpoint's request contract.
+ConnectSerTicketProviderRequest = Annotated[
+    ConnectElParkingRequest,
+    Field(discriminator="provider"),
+]

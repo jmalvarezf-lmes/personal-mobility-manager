@@ -98,6 +98,15 @@ user_ser_provider_configs_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+user_notification_channel_configs_table = Table(
+    "user_notification_channel_configs",
+    metadata,
+    Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
+    Column("channel", Text, primary_key=True),
+    Column("config", Text, nullable=False),  # JSON, cleartext — not a credential, see design.md decision 3
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 parking_tickets_table = Table(
     "parking_tickets",
     metadata,

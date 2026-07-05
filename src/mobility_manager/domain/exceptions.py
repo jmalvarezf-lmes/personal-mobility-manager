@@ -61,3 +61,9 @@ class SerProviderApiError(Exception):
     """Raised for non-authentication SER ticket provider failures (network, rate limit, 5xx, malformed)."""
 
     pass
+
+
+class NotificationChannelApiError(Exception):
+    """Raised when a notification channel's API call fails (network error, unexpected status)."""
+
+    pass

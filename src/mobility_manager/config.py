@@ -169,6 +169,61 @@ def get_google_client_secret() -> str:
     return value
 
 
+def get_telegram_bot_token() -> str:
+    """
+    Return the Telegram bot token from the TELEGRAM_BOT_TOKEN env var.
+
+    There is deliberately no default value here, mirroring
+    get_elparking_base_url()'s pattern: a real bot token is obtained per
+    deployment via @BotFather and must be supplied explicitly.
+
+    Raises:
+        RuntimeError: If TELEGRAM_BOT_TOKEN is not set.
+    """
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN environment variable is not set. "
+            "Create a bot via @BotFather and set its token before enabling Telegram notifications."
+        )
+    return token
+
+
+def get_telegram_webhook_secret() -> str:
+    """
+    Return the Telegram webhook secret from the TELEGRAM_WEBHOOK_SECRET env var.
+
+    Used to validate the X-Telegram-Bot-Api-Secret-Token header on incoming
+    webhook requests. No default — every deployment must supply its own.
+
+    Raises:
+        RuntimeError: If TELEGRAM_WEBHOOK_SECRET is not set.
+    """
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    if not secret:
+        raise RuntimeError(
+            "TELEGRAM_WEBHOOK_SECRET environment variable is not set. "
+            "Set it to the secret_token value registered via Telegram's setWebhook API."
+        )
+    return secret
+
+
+def get_telegram_bot_username() -> str:
+    """
+    Return the Telegram bot's @username from the TELEGRAM_BOT_USERNAME env var.
+
+    Needed to build the t.me deep link returned by the link-code endpoint.
+    No default — every deployment must supply its own.
+
+    Raises:
+        RuntimeError: If TELEGRAM_BOT_USERNAME is not set.
+    """
+    username = os.environ.get("TELEGRAM_BOT_USERNAME")
+    if not username:
+        raise RuntimeError("TELEGRAM_BOT_USERNAME environment variable is not set.")
+    return username
+
+
 def get_jwt_secret() -> str:
     """Return the JWT signing secret from environment."""
     value = os.environ.get("JWT_SECRET")

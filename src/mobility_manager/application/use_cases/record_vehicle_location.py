@@ -10,6 +10,10 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+from mobility_manager.domain.events.vehicle_location_updated import (
+    VehicleLocationUpdated,
+)
+from mobility_manager.domain.ports.event_publisher import EventPublisher
 from mobility_manager.domain.ports.vehicle_location_repository import (
     VehicleLocationRepository,
 )
@@ -25,8 +29,9 @@ class RecordVehicleLocation:
     The caller provides source="pull" or source="push".
     """
 
-    def __init__(self, location_repo: VehicleLocationRepository) -> None:
+    def __init__(self, location_repo: VehicleLocationRepository, event_publisher: EventPublisher) -> None:
         self._location_repo = location_repo
+        self._event_publisher = event_publisher
 
     def execute(
         self,
@@ -71,3 +76,12 @@ class RecordVehicleLocation:
             source=source,
         )
         self._location_repo.save(location)
+        self._event_publisher.publish(
+            VehicleLocationUpdated(
+                vehicle_id=vehicle_id,
+                latitude=lat,
+                longitude=lon,
+                recorded_at=recorded_at_utc,
+                source=source,
+            )
+        )

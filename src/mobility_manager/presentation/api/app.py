@@ -14,9 +14,16 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from mobility_manager.application.event_handlers.ser_ticket_trigger_handler import (
+    SerTicketTriggerHandler,
+)
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
 )
+from mobility_manager.application.use_cases.connect_ser_ticket_provider import (
+    ConnectSerTicketProvider,
+)
+from mobility_manager.application.use_cases.create_ser_ticket import CreateSerTicket
 from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
@@ -38,10 +45,19 @@ from mobility_manager.config import (
     get_ingestion_interval_hours,
     get_vehicle_poll_interval_minutes,
 )
+from mobility_manager.domain.events.vehicle_location_updated import (
+    VehicleLocationUpdated,
+)
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.infrastructure.db import get_engine
+from mobility_manager.infrastructure.events.in_memory_event_publisher import (
+    InMemoryEventPublisher,
+)
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
+)
+from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+    PostgresParkingTicketRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
@@ -51,6 +67,9 @@ from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo
 )
 from mobility_manager.infrastructure.repositories.postgres.user_repo import (
     PostgresUserRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
+    PostgresUserSerProviderConfigRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.vehicle_config_repo import (
     PostgresVehicleConfigRepository,
@@ -62,6 +81,9 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
     PostgresVehicleRepository,
 )
 from mobility_manager.infrastructure.scheduler import ParkingIngestionScheduler
+from mobility_manager.infrastructure.ser_ticket_providers.registry import (
+    SerTicketProviderRegistry,
+)
 from mobility_manager.infrastructure.vehicle_location_scheduler import (
     VehicleLocationScheduler,
 )
@@ -122,12 +144,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_config_repo = PostgresVehicleConfigRepository(engine, encryption_key)
     vehicle_location_repo = PostgresVehicleLocationRepository(engine)
 
+    # --- Events (vehicle-location-events) ---
+    event_publisher = InMemoryEventPublisher()
+    ser_ticket_trigger_handler = SerTicketTriggerHandler()
+    event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_trigger_handler.handle)
+    app.state.event_publisher = event_publisher
+
     register_uc = RegisterVehicle(
         vehicle_repo=vehicle_repo,
         config_repo=vehicle_config_repo,
         enabled_brands=enabled_brands,
     )
-    record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo)
+    record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo, event_publisher=event_publisher)
     get_latest_uc = GetLatestVehicleLocation(location_repo=vehicle_location_repo)
 
     list_uc = ListUserVehicles(vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo)
@@ -157,6 +185,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     vehicle_location_scheduler.start()
     app.state.vehicle_location_scheduler = vehicle_location_scheduler
+
+    # --- SER ticket provider (no HTTP surface yet) ---
+    # Reuse the Toyota encryption key if already resolved above, otherwise try to
+    # obtain one independently — it's optional at this stage since no provider is
+    # registered yet and nothing calls these use cases in production.
+    ser_encryption_key = encryption_key
+    if ser_encryption_key is None:
+        try:
+            ser_encryption_key = get_encryption_key()
+        except RuntimeError:
+            ser_encryption_key = None
+
+    ser_ticket_provider_registry = SerTicketProviderRegistry()
+    ser_ticket_providers = ser_ticket_provider_registry.build_providers()
+    user_ser_provider_config_repo = PostgresUserSerProviderConfigRepository(engine, ser_encryption_key)
+    parking_ticket_repo = PostgresParkingTicketRepository(engine)
+    connect_ser_ticket_provider_uc = ConnectSerTicketProvider(
+        providers=ser_ticket_providers,
+        config_repo=user_ser_provider_config_repo,
+    )
+    create_ser_ticket_uc = CreateSerTicket(
+        vehicle_repo=vehicle_repo,
+        config_repo=user_ser_provider_config_repo,
+        ticket_repo=parking_ticket_repo,
+        providers=ser_ticket_providers,
+    )
+    app.state.ser_ticket_provider_registry = ser_ticket_provider_registry
+    app.state.user_ser_provider_config_repo = user_ser_provider_config_repo
+    app.state.parking_ticket_repo = parking_ticket_repo
+    app.state.connect_ser_ticket_provider = connect_ser_ticket_provider_uc
+    app.state.create_ser_ticket = create_ser_ticket_uc
 
     yield
 

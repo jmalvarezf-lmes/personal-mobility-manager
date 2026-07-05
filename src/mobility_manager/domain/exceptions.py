@@ -37,3 +37,15 @@ class BrandNotEnabledError(Exception):
     """Raised when a vehicle brand is not in the ENABLED_BRANDS list."""
 
     pass
+
+
+class SerTicketProviderNotFoundError(Exception):
+    """Raised when a requested SER ticket provider name is not registered."""
+
+    pass
+
+
+class SerProviderSessionNotFoundError(Exception):
+    """Raised when no stored session exists for a given (user_id, provider) pair."""
+
+    pass

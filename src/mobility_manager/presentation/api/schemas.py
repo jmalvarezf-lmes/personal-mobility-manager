@@ -245,3 +245,20 @@ class DisconnectSerTicketProviderResponse(BaseModel):
     """Result of disconnecting a SER ticket provider connection."""
 
     logout_succeeded: bool
+
+
+# ---------------------------------------------------------------------------
+# Notification channel schemas
+# ---------------------------------------------------------------------------
+
+
+class TelegramLinkCodeResponse(BaseModel):
+    """A Telegram deep link carrying a signed, time-limited linking token."""
+
+    deep_link: str
+
+
+class NotificationChannelsResponse(BaseModel):
+    """Notification channels the current user has configured."""
+
+    channels: list[str]

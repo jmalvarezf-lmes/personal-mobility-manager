@@ -14,6 +14,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from mobility_manager.application.event_handlers.notification_dispatch_handler import (
+    NotificationDispatchHandler,
+)
 from mobility_manager.application.event_handlers.ser_ticket_trigger_handler import (
     SerTicketTriggerHandler,
 )
@@ -31,10 +34,16 @@ from mobility_manager.application.use_cases.disconnect_ser_ticket_provider impor
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
 )
+from mobility_manager.application.use_cases.generate_telegram_link_code import (
+    GenerateTelegramLinkCode,
+)
 from mobility_manager.application.use_cases.get_latest_vehicle_location import (
     GetLatestVehicleLocation,
 )
 from mobility_manager.application.use_cases.ingest_ser_zones import IngestSerZones
+from mobility_manager.application.use_cases.list_notification_channels import (
+    ListNotificationChannels,
+)
 from mobility_manager.application.use_cases.list_ser_ticket_provider_connections import (
     ListSerTicketProviderConnections,
 )
@@ -43,6 +52,10 @@ from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
 )
 from mobility_manager.application.use_cases.register_vehicle import RegisterVehicle
+from mobility_manager.application.use_cases.remove_notification_channel import (
+    RemoveNotificationChannel,
+)
+from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.config import (
     get_cors_origins,
@@ -55,10 +68,14 @@ from mobility_manager.config import (
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
+from mobility_manager.domain.ports.notification_channel import NotificationChannelPort
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.infrastructure.db import get_engine
 from mobility_manager.infrastructure.events.in_memory_event_publisher import (
     InMemoryEventPublisher,
+)
+from mobility_manager.infrastructure.notification_channels.telegram.channel import (
+    TelegramNotificationChannel,
 )
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
@@ -68,6 +85,9 @@ from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo i
 )
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.user_notification_channel_config_repo import (
+    PostgresUserNotificationChannelConfigRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
     PostgresUserPreferencesRepository,
@@ -100,6 +120,9 @@ from mobility_manager.infrastructure.vehicle_providers.brand_registry import (
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.auth import router as auth_router
 from mobility_manager.presentation.api.routers.config import router as config_router
+from mobility_manager.presentation.api.routers.notifications import (
+    router as notifications_router,
+)
 from mobility_manager.presentation.api.routers.parking import router as parking_router
 from mobility_manager.presentation.api.routers.preferences import (
     router as preferences_router,
@@ -158,6 +181,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     event_publisher = InMemoryEventPublisher()
     ser_ticket_trigger_handler = SerTicketTriggerHandler()
     event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_trigger_handler.handle)
+    notification_dispatch_handler = NotificationDispatchHandler()
+    event_publisher.subscribe(VehicleLocationUpdated, notification_dispatch_handler.handle)
     app.state.event_publisher = event_publisher
 
     register_uc = RegisterVehicle(
@@ -236,6 +261,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.disconnect_ser_ticket_provider = disconnect_ser_ticket_provider_uc
     app.state.list_ser_ticket_provider_connections = list_ser_ticket_provider_connections_uc
 
+    # --- Notification channels ---
+    telegram_notification_channel = TelegramNotificationChannel()
+    notification_channels: dict[str, NotificationChannelPort] = {"telegram": telegram_notification_channel}
+    user_notification_channel_config_repo = PostgresUserNotificationChannelConfigRepository(engine)
+    send_notification_uc = SendNotification(
+        channels=notification_channels,
+        config_repo=user_notification_channel_config_repo,
+    )
+    generate_telegram_link_code_uc = GenerateTelegramLinkCode()
+    list_notification_channels_uc = ListNotificationChannels(config_repo=user_notification_channel_config_repo)
+    remove_notification_channel_uc = RemoveNotificationChannel(config_repo=user_notification_channel_config_repo)
+    app.state.notification_channels = notification_channels
+    app.state.user_notification_channel_config_repo = user_notification_channel_config_repo
+    app.state.send_notification = send_notification_uc
+    app.state.generate_telegram_link_code = generate_telegram_link_code_uc
+    app.state.list_notification_channels = list_notification_channels_uc
+    app.state.remove_notification_channel = remove_notification_channel_uc
+
     yield
 
     parking_scheduler.stop()
@@ -264,6 +307,7 @@ app.include_router(config_router)
 app.include_router(vehicles_router)
 app.include_router(preferences_router)
 app.include_router(ser_ticket_providers_router)
+app.include_router(notifications_router)
 
 
 @app.middleware("http")

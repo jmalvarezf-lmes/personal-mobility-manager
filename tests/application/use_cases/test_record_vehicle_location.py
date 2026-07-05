@@ -11,6 +11,9 @@ from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
 )
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+from mobility_manager.domain.events.vehicle_location_updated import (
+    VehicleLocationUpdated,
+)
 
 
 class InMemoryLocationRepo:
@@ -24,14 +27,23 @@ class InMemoryLocationRepo:
         return None
 
 
-def _make_use_case() -> tuple[RecordVehicleLocation, InMemoryLocationRepo]:
+class FakeEventPublisher:
+    def __init__(self) -> None:
+        self.published: list[object] = []
+
+    def publish(self, event: object) -> None:
+        self.published.append(event)
+
+
+def _make_use_case() -> tuple[RecordVehicleLocation, InMemoryLocationRepo, FakeEventPublisher]:
     repo = InMemoryLocationRepo()
-    uc = RecordVehicleLocation(location_repo=repo)
-    return uc, repo
+    publisher = FakeEventPublisher()
+    uc = RecordVehicleLocation(location_repo=repo, event_publisher=publisher)
+    return uc, repo, publisher
 
 
 def test_valid_push_location_is_saved() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     vehicle_id = uuid4()
     recorded_at = datetime.now(UTC)
 
@@ -46,7 +58,7 @@ def test_valid_push_location_is_saved() -> None:
 
 
 def test_valid_pull_location_source_is_pull() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     recorded_at = datetime.now(UTC)
 
     uc.execute(vehicle_id=uuid4(), lat=0.0, lon=0.0, recorded_at=recorded_at, source="pull")
@@ -55,43 +67,43 @@ def test_valid_pull_location_source_is_pull() -> None:
 
 
 def test_lat_above_90_raises_value_error() -> None:
-    uc, _ = _make_use_case()
+    uc, _repo, _publisher = _make_use_case()
     with pytest.raises(ValueError, match="lat"):
         uc.execute(uuid4(), lat=91.0, lon=0.0, recorded_at=datetime.now(UTC), source="push")
 
 
 def test_lat_below_minus_90_raises_value_error() -> None:
-    uc, _ = _make_use_case()
+    uc, _repo, _publisher = _make_use_case()
     with pytest.raises(ValueError, match="lat"):
         uc.execute(uuid4(), lat=-91.0, lon=0.0, recorded_at=datetime.now(UTC), source="push")
 
 
 def test_lon_above_180_raises_value_error() -> None:
-    uc, _ = _make_use_case()
+    uc, _repo, _publisher = _make_use_case()
     with pytest.raises(ValueError, match="lon"):
         uc.execute(uuid4(), lat=0.0, lon=181.0, recorded_at=datetime.now(UTC), source="push")
 
 
 def test_lon_below_minus_180_raises_value_error() -> None:
-    uc, _ = _make_use_case()
+    uc, _repo, _publisher = _make_use_case()
     with pytest.raises(ValueError, match="lon"):
         uc.execute(uuid4(), lat=0.0, lon=-181.0, recorded_at=datetime.now(UTC), source="push")
 
 
 def test_lat_boundary_90_is_valid() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     uc.execute(uuid4(), lat=90.0, lon=0.0, recorded_at=datetime.now(UTC), source="push")
     assert len(repo.saved) == 1
 
 
 def test_lon_boundary_minus_180_is_valid() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     uc.execute(uuid4(), lat=0.0, lon=-180.0, recorded_at=datetime.now(UTC), source="push")
     assert len(repo.saved) == 1
 
 
 def test_recorded_at_more_than_60s_future_raises() -> None:
-    uc, _ = _make_use_case()
+    uc, _repo, _publisher = _make_use_case()
     future = datetime.now(UTC) + timedelta(seconds=61)
     with pytest.raises(ValueError, match="future"):
         uc.execute(uuid4(), lat=0.0, lon=0.0, recorded_at=future, source="push")
@@ -99,7 +111,7 @@ def test_recorded_at_more_than_60s_future_raises() -> None:
 
 def test_recorded_at_exactly_60s_future_is_valid() -> None:
     """Boundary: exactly 60s in future should be accepted (not strictly greater than)."""
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     # Just under 60s — safe margin
     borderline = datetime.now(UTC) + timedelta(seconds=59)
     uc.execute(uuid4(), lat=0.0, lon=0.0, recorded_at=borderline, source="push")
@@ -107,15 +119,51 @@ def test_recorded_at_exactly_60s_future_is_valid() -> None:
 
 
 def test_naive_recorded_at_is_treated_as_utc() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     naive = datetime.utcnow()  # no tzinfo
     uc.execute(uuid4(), lat=0.0, lon=0.0, recorded_at=naive, source="push")
     assert repo.saved[0].recorded_at.tzinfo is not None
 
 
 def test_received_at_is_set_by_use_case() -> None:
-    uc, repo = _make_use_case()
+    uc, repo, _publisher = _make_use_case()
     before = datetime.now(UTC)
     uc.execute(uuid4(), lat=0.0, lon=0.0, recorded_at=before, source="push")
     after = datetime.now(UTC)
     assert before <= repo.saved[0].received_at <= after
+
+
+def test_event_published_after_successful_pull_save() -> None:
+    uc, _repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+    recorded_at = datetime.now(UTC)
+
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=recorded_at, source="pull")
+
+    assert len(publisher.published) == 1
+    event = publisher.published[0]
+    assert isinstance(event, VehicleLocationUpdated)
+    assert event.vehicle_id == vehicle_id
+    assert event.latitude == 40.4
+    assert event.longitude == -3.7
+    assert event.source == "pull"
+
+
+def test_event_published_after_successful_push_save() -> None:
+    uc, _repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+
+    uc.execute(vehicle_id=vehicle_id, lat=0.0, lon=0.0, recorded_at=datetime.now(UTC), source="push")
+
+    assert len(publisher.published) == 1
+    assert publisher.published[0].source == "push"
+
+
+def test_no_event_published_on_validation_failure() -> None:
+    uc, repo, publisher = _make_use_case()
+
+    with pytest.raises(ValueError):
+        uc.execute(uuid4(), lat=200.0, lon=0.0, recorded_at=datetime.now(UTC), source="push")
+
+    assert repo.saved == []
+    assert publisher.published == []

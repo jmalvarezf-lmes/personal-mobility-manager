@@ -88,3 +88,24 @@ vehicle_locations_table = Table(
     Column("received_at", DateTime(timezone=True), nullable=False),
     Column("source", String(10), nullable=False),
 )
+
+user_ser_provider_configs_table = Table(
+    "user_ser_provider_configs",
+    metadata,
+    Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
+    Column("provider", Text, primary_key=True),
+    Column("encrypted_payload", LargeBinary, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+parking_tickets_table = Table(
+    "parking_tickets",
+    metadata,
+    Column("id", Uuid, primary_key=True),
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id"), nullable=False),
+    Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
+    Column("provider", Text, nullable=False),
+    Column("duration_minutes", Integer, nullable=False),
+    Column("provider_reference", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)

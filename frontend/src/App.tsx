@@ -5,6 +5,7 @@ import LandingPage from "./pages/LandingPage";
 import MapPage from "./pages/MapPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
 import PreferencesPage from "./pages/PreferencesPage";
+import SerProvidersPage from "./pages/SerProvidersPage";
 
 export default function App() {
   return (
@@ -33,6 +34,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <PreferencesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ser-providers"
+            element={
+              <ProtectedRoute>
+                <SerProvidersPage />
               </ProtectedRoute>
             }
           />

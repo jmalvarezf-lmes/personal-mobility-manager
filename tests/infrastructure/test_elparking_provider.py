@@ -15,6 +15,9 @@ from mobility_manager.domain.exceptions import (
 from mobility_manager.domain.value_objects.ser_provider_credentials import (
     SerProviderCredentials,
 )
+from mobility_manager.domain.value_objects.ser_provider_session import (
+    SerProviderSession,
+)
 from mobility_manager.infrastructure.ser_ticket_providers.elparking.provider import (
     ElParkingSerTicketProvider,
 )
@@ -211,6 +214,47 @@ def test_connection_error_raises_api_error(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(SerProviderApiError):
         provider.login(credentials)
+
+
+def test_successful_logout_sends_delete_with_bearer_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url == f"{_BASE_URL}/v1/logins/fake-test-access-token-value"
+        assert request.headers["Authorization"] == "Bearer fake-test-access-token-value"
+        return httpx.Response(204)
+
+    _patch_client(monkeypatch, handler)
+
+    provider = _make_provider()
+    session = SerProviderSession(data={"access_token": "fake-test-access-token-value", "device_session_id": 1})
+
+    provider.logout(session)
+
+
+def test_logout_server_error_raises_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="internal error")
+
+    _patch_client(monkeypatch, handler)
+
+    provider = _make_provider()
+    session = SerProviderSession(data={"access_token": "tok"})
+
+    with pytest.raises(SerProviderApiError):
+        provider.logout(session)
+
+
+def test_logout_connection_error_raises_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    _patch_client(monkeypatch, handler)
+
+    provider = _make_provider()
+    session = SerProviderSession(data={"access_token": "tok"})
+
+    with pytest.raises(SerProviderApiError):
+        provider.logout(session)
 
 
 def test_create_ticket_raises_not_implemented_without_http_call(monkeypatch: pytest.MonkeyPatch) -> None:

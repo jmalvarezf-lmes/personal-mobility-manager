@@ -13,6 +13,7 @@ export class NavPage {
   readonly menu: Locator;
   readonly myVehiclesLink: Locator;
   readonly preferencesLink: Locator;
+  readonly serProvidersLink: Locator;
   readonly logoutButton: Locator;
 
   constructor(
@@ -22,6 +23,7 @@ export class NavPage {
     this.menu = page.getByRole("menu");
     this.myVehiclesLink = this.menu.getByRole("menuitem", { name: "My Vehicles" });
     this.preferencesLink = this.menu.getByRole("menuitem", { name: "Preferences" });
+    this.serProvidersLink = this.menu.getByRole("menuitem", { name: "SER Providers" });
     this.logoutButton = this.menu.getByRole("menuitem", { name: "Logout" });
   }
 

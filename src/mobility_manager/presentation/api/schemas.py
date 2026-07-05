@@ -228,3 +228,20 @@ ConnectSerTicketProviderRequest = Annotated[
     ConnectElParkingRequest,
     Field(discriminator="provider"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# SER ticket provider connection status / disconnect schemas
+# ---------------------------------------------------------------------------
+
+
+class SerTicketProviderConnectionsResponse(BaseModel):
+    """Providers the current user has connected."""
+
+    providers: list[str]
+
+
+class DisconnectSerTicketProviderResponse(BaseModel):
+    """Result of disconnecting a SER ticket provider connection."""
+
+    logout_succeeded: bool

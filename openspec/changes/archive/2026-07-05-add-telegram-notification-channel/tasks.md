@@ -58,4 +58,4 @@
 
 - [x] 8.1 Run backend test suite and linters (ruff, mypy)
 - [x] 8.2 Document `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME` in `.env.example`
-- [ ] 8.3 Manually verify against a real Telegram bot: create a bot via @BotFather, set the webhook (`setWebhook` with the secret token), call `POST /notifications/telegram/link-code`, open the returned deep link in Telegram, confirm the `/start` message results in a stored `chat_id` and a "✅ Linked!" confirmation message actually arriving — this is the live proof that `send()` works end-to-end, not just against a mock
+- [x] 8.3 Manually verified against a real Telegram bot: created a bot via @BotFather, registered the webhook with the secret token, called `POST /notifications/telegram/link-code`, opened the returned deep link, sent `/start <token>` — confirmed the `chat_id` was stored and the "✅ Linked!" confirmation message arrived. (This run also surfaced and fixed the token-length bug — see design.md decision 4 and tasks.md 4.3.)

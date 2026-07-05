@@ -114,6 +114,7 @@ jobs:
       POSTGRES_DSN: postgresql://mobility:mobility@localhost:5432/mobility_manager
       ENCRYPTION_KEY: test-encrytion-key
       CORS_ORIGINS: http://localhost:5173
+      ELPARKING_API_BASE_URL: https://api.example.com 
 
     steps:
       - uses: actions/checkout@v7

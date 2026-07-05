@@ -46,6 +46,9 @@ from mobility_manager.infrastructure.parking_services.provider_registry import (
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+    PostgresUserPreferencesRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.user_repo import (
     PostgresUserRepository,
 )
@@ -69,6 +72,9 @@ from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.auth import router as auth_router
 from mobility_manager.presentation.api.routers.config import router as config_router
 from mobility_manager.presentation.api.routers.parking import router as parking_router
+from mobility_manager.presentation.api.routers.preferences import (
+    router as preferences_router,
+)
 from mobility_manager.presentation.api.routers.vehicles import router as vehicles_router
 from mobility_manager.presentation.api.routers.zones import router as zones_router
 
@@ -95,8 +101,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # --- Auth (Users) ---
     user_repo = PostgresUserRepository(engine)
-    authenticate_google_user_uc = AuthenticateGoogleUser(user_repo=user_repo)
+    user_preferences_repo = PostgresUserPreferencesRepository(engine)
+    authenticate_google_user_uc = AuthenticateGoogleUser(
+        user_repo=user_repo,
+        user_preferences_repo=user_preferences_repo,
+    )
     app.state.user_repo = user_repo
+    app.state.user_preferences_repo = user_preferences_repo
     app.state.authenticate_google_user = authenticate_google_user_uc
 
     # --- Vehicles ---
@@ -173,6 +184,7 @@ app.include_router(parking_router)
 app.include_router(zones_router)
 app.include_router(config_router)
 app.include_router(vehicles_router)
+app.include_router(preferences_router)
 
 
 @app.middleware("http")

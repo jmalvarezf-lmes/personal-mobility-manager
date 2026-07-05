@@ -187,3 +187,22 @@ UpdateVehicleRequest = Annotated[
     UpdateToyotaRequest | UpdateGenericRequest,
     Field(discriminator="brand"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# User preferences schemas (GET/PUT /preferences)
+# ---------------------------------------------------------------------------
+
+
+class UserPreferencesResponse(BaseModel):
+    """Current user's preferences."""
+
+    default_ticket_duration_minutes: int
+    auto_create_ticket: bool
+
+
+class UpdateUserPreferencesRequest(BaseModel):
+    """Full-resource replace payload for /preferences."""
+
+    default_ticket_duration_minutes: int = Field(..., gt=0)
+    auto_create_ticket: bool

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { logout } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
@@ -7,8 +8,36 @@ import { useTranslation } from "react-i18next";
 export default function Nav() {
   const { user, setUser } = useAuth();
   const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    function handleOutsideClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   async function handleLogout() {
+    setMenuOpen(false);
     try {
       await logout();
       setUser(null);
@@ -30,21 +59,50 @@ export default function Nav() {
         <Link to="/map" className="text-blue-600 hover:underline">
           {t("nav.map")}
         </Link>
-        {user && (
-          <Link to="/my-vehicles" className="text-blue-600 hover:underline">
-            {t("nav.myVehicles")}
-          </Link>
-        )}
         {user ? (
-          <>
-            <span className="text-sm text-gray-600">{user.email}</span>
+          <div ref={menuRef} className="relative">
             <button
-              onClick={() => void handleLogout()}
-              className="rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
+              type="button"
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+              className="rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200"
             >
-              {t("nav.logout")}
+              {user.email}
             </button>
-          </>
+            {menuOpen && (
+              <div
+                role="menu"
+                aria-label={t("nav.account")}
+                className="absolute right-0 z-10 mt-2 w-48 rounded border border-gray-200 bg-white py-1 shadow-lg"
+              >
+                <Link
+                  to="/my-vehicles"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {t("nav.myVehicles")}
+                </Link>
+                <Link
+                  to="/preferences"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {t("nav.preferences")}
+                </Link>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void handleLogout()}
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {t("nav.logout")}
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <a
             href="/api/auth/google/login"

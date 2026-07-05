@@ -1,6 +1,7 @@
 import { expect, test as base, type Page } from "@playwright/test";
-import { test } from "./fixtures/auth";
+import { MOCK_USER, test } from "./fixtures/auth";
 import { MyVehiclesPage } from "./pages/MyVehiclesPage";
+import { NavPage } from "./pages/NavPage";
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -156,7 +157,9 @@ base.describe("Auth guard", () => {
 test.describe("Navigation", () => {
   test("shows My Vehicles link in nav when logged in", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("link", { name: "My Vehicles" })).toBeVisible();
+    const nav = new NavPage(page, MOCK_USER.email);
+    await nav.open();
+    await expect(nav.myVehiclesLink).toBeVisible();
   });
 
   base("does not show My Vehicles link when logged out", async ({ page }) => {
@@ -164,9 +167,8 @@ test.describe("Navigation", () => {
       route.fulfill({ status: 401 }),
     );
     await page.goto("/");
-    await expect(
-      page.getByRole("link", { name: "My Vehicles" }),
-    ).not.toBeVisible();
+    const nav = new NavPage(page, MOCK_USER.email);
+    await expect(nav.accountTrigger).not.toBeVisible();
   });
 });
 

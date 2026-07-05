@@ -7,6 +7,7 @@ can discover every table in one place.
 """
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Float,
@@ -55,6 +56,15 @@ vehicles_table = Table(
     Column("license_plate", String(20), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
+)
+
+user_preferences_table = Table(
+    "user_preferences",
+    metadata,
+    Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
+    Column("default_ticket_duration_minutes", Integer, nullable=False, server_default="60"),
+    Column("auto_create_ticket", Boolean, nullable=False, server_default="false"),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
 vehicle_configs_table = Table(

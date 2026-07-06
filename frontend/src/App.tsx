@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import LandingPage from "./pages/LandingPage";
 import MapPage from "./pages/MapPage";
 import MyVehiclesPage from "./pages/MyVehiclesPage";
+import NotificationChannelsPage from "./pages/NotificationChannelsPage";
 import PreferencesPage from "./pages/PreferencesPage";
 import SerProvidersPage from "./pages/SerProvidersPage";
 
@@ -42,6 +43,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <SerProvidersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notification-channels"
+            element={
+              <ProtectedRoute>
+                <NotificationChannelsPage />
               </ProtectedRoute>
             }
           />

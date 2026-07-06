@@ -45,30 +45,34 @@ def _make_preferences(
     user_id: UUID | None = None,
     default_ticket_duration_minutes: int = 60,
     auto_create_ticket: bool = False,
+    preferred_notification_channel: str | None = None,
 ) -> UserPreferences:
     return UserPreferences(
         user_id=user_id or _OWNER_ID,
         default_ticket_duration_minutes=default_ticket_duration_minutes,
         auto_create_ticket=auto_create_ticket,
+        preferred_notification_channel=preferred_notification_channel,
         updated_at=datetime.now(UTC),
     )
 
 
-def _build_app(user_repo=None, preferences_repo=None) -> FastAPI:
+def _build_app(user_repo=None, preferences_repo=None, config_repo=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     if user_repo is not None:
         app.state.user_repo = user_repo
     if preferences_repo is not None:
         app.state.user_preferences_repo = preferences_repo
+    if config_repo is not None:
+        app.state.user_notification_channel_config_repo = config_repo
     return app
 
 
-def _build_authed_app(preferences_repo=None) -> tuple[FastAPI, str]:
+def _build_authed_app(preferences_repo=None, config_repo=None) -> tuple[FastAPI, str]:
     user = _make_test_user()
     mock_user_repo = MagicMock()
     mock_user_repo.find_by_id.return_value = user
-    app = _build_app(user_repo=mock_user_repo, preferences_repo=preferences_repo)
+    app = _build_app(user_repo=mock_user_repo, preferences_repo=preferences_repo, config_repo=config_repo)
     cookie = _make_session_cookie(user)
     return app, cookie
 
@@ -91,7 +95,9 @@ class TestGetPreferences:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
         preferences_repo.find_by_user_id.return_value = _make_preferences(
-            default_ticket_duration_minutes=60, auto_create_ticket=False
+            default_ticket_duration_minutes=60,
+            auto_create_ticket=False,
+            preferred_notification_channel="telegram",
         )
         app, cookie = _build_authed_app(preferences_repo=preferences_repo)
         client = TestClient(app)
@@ -102,6 +108,7 @@ class TestGetPreferences:
         data = response.json()
         assert data["default_ticket_duration_minutes"] == 60
         assert data["auto_create_ticket"] is False
+        assert data["preferred_notification_channel"] == "telegram"
         preferences_repo.find_by_user_id.assert_called_once_with(_OWNER_ID)
 
     def test_missing_row_raises_assertion_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +136,11 @@ class TestUpdatePreferences:
 
         response = client.put(
             "/preferences",
-            json={"default_ticket_duration_minutes": 90, "auto_create_ticket": True},
+            json={
+                "default_ticket_duration_minutes": 90,
+                "auto_create_ticket": True,
+                "preferred_notification_channel": None,
+            },
         )
 
         assert response.status_code == 401
@@ -138,14 +149,22 @@ class TestUpdatePreferences:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
         preferences_repo.update.return_value = _make_preferences(
-            default_ticket_duration_minutes=90, auto_create_ticket=True
+            default_ticket_duration_minutes=90,
+            auto_create_ticket=True,
+            preferred_notification_channel="telegram",
         )
-        app, cookie = _build_authed_app(preferences_repo=preferences_repo)
+        config_repo = MagicMock()
+        config_repo.find.return_value = object()  # channel is connected
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo, config_repo=config_repo)
         client = TestClient(app)
 
         response = client.put(
             "/preferences",
-            json={"default_ticket_duration_minutes": 90, "auto_create_ticket": True},
+            json={
+                "default_ticket_duration_minutes": 90,
+                "auto_create_ticket": True,
+                "preferred_notification_channel": "telegram",
+            },
             cookies={"session": cookie},
         )
 
@@ -153,10 +172,13 @@ class TestUpdatePreferences:
         data = response.json()
         assert data["default_ticket_duration_minutes"] == 90
         assert data["auto_create_ticket"] is True
+        assert data["preferred_notification_channel"] == "telegram"
+        config_repo.find.assert_called_once_with(_OWNER_ID, "telegram")
         preferences_repo.update.assert_called_once_with(
             user_id=_OWNER_ID,
             default_ticket_duration_minutes=90,
             auto_create_ticket=True,
+            preferred_notification_channel="telegram",
         )
 
     def test_zero_duration_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,7 +189,11 @@ class TestUpdatePreferences:
 
         response = client.put(
             "/preferences",
-            json={"default_ticket_duration_minutes": 0, "auto_create_ticket": False},
+            json={
+                "default_ticket_duration_minutes": 0,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+            },
             cookies={"session": cookie},
         )
 
@@ -182,9 +208,67 @@ class TestUpdatePreferences:
 
         response = client.put(
             "/preferences",
-            json={"default_ticket_duration_minutes": -10, "auto_create_ticket": False},
+            json={
+                "default_ticket_duration_minutes": -10,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+            },
             cookies={"session": cookie},
         )
 
         assert response.status_code == 422
         preferences_repo.update.assert_not_called()
+
+    def test_preferred_channel_not_configured_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        config_repo = MagicMock()
+        config_repo.find.return_value = None  # channel not connected
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo, config_repo=config_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 90,
+                "auto_create_ticket": True,
+                "preferred_notification_channel": "telegram",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        config_repo.find.assert_called_once_with(_OWNER_ID, "telegram")
+        preferences_repo.update.assert_not_called()
+
+    def test_clearing_preferred_channel_with_null_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        preferences_repo.update.return_value = _make_preferences(
+            default_ticket_duration_minutes=60,
+            auto_create_ticket=False,
+            preferred_notification_channel=None,
+        )
+        config_repo = MagicMock()
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo, config_repo=config_repo)
+        client = TestClient(app)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["preferred_notification_channel"] is None
+        config_repo.find.assert_not_called()
+        preferences_repo.update.assert_called_once_with(
+            user_id=_OWNER_ID,
+            default_ticket_duration_minutes=60,
+            auto_create_ticket=False,
+            preferred_notification_channel=None,
+        )

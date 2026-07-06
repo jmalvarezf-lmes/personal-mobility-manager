@@ -9,6 +9,7 @@ import { PreferencesPage } from "./pages/PreferencesPage";
 const DEFAULT_PREFERENCES = {
   default_ticket_duration_minutes: 60,
   auto_create_ticket: false,
+  preferred_notification_channel: null as string | null,
 };
 
 // ---------------------------------------------------------------------------
@@ -16,14 +17,27 @@ const DEFAULT_PREFERENCES = {
 // ---------------------------------------------------------------------------
 
 /**
- * Wires up GET/PUT /api/preferences route handlers for a given test page.
- * `preferences` is mutated in-place by PUT so a subsequent GET (if any)
- * reflects the latest saved values within the same test.
+ * Wires up GET/PUT /api/preferences route handlers for a given test page,
+ * plus GET /api/notifications/channels (PreferencesPage's preferred-channel
+ * select is populated from the user's connected channels). `preferences` is
+ * mutated in-place by PUT so a subsequent GET (if any) reflects the latest
+ * saved values within the same test.
  */
 async function mockPreferencesApis(
   page: Page,
   preferences = { ...DEFAULT_PREFERENCES },
+  connectedChannels: string[] = [],
 ) {
+  await page.route("**/api/notifications/channels", async (route, request) => {
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ channels: connectedChannels }),
+      });
+    }
+  });
+
   await page.route("**/api/preferences", async (route, request) => {
     const method = request.method();
     if (method === "GET") {
@@ -36,6 +50,7 @@ async function mockPreferencesApis(
       const body = (await request.postDataJSON()) as {
         default_ticket_duration_minutes: number;
         auto_create_ticket: boolean;
+        preferred_notification_channel: string | null;
       };
       if (body.default_ticket_duration_minutes <= 0) {
         await route.fulfill({
@@ -48,6 +63,8 @@ async function mockPreferencesApis(
       preferences.default_ticket_duration_minutes =
         body.default_ticket_duration_minutes;
       preferences.auto_create_ticket = body.auto_create_ticket;
+      preferences.preferred_notification_channel =
+        body.preferred_notification_channel;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -136,5 +153,41 @@ test.describe("Preferences page", () => {
     await expect(preferences.errorMessage).toBeVisible();
     await expect(preferences.durationInput).toHaveValue("0");
     expect(putCalled).toBe(false);
+  });
+
+  test("user with no connected channels sees no selectable preferred-channel options", async ({
+    page,
+  }) => {
+    await mockPreferencesApis(page, { ...DEFAULT_PREFERENCES }, []);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await expect(preferences.heading).toBeVisible();
+    await expect(preferences.noChannelsConnectedMessage).toBeVisible();
+    await expect(preferences.preferredChannelSelect).toHaveCount(0);
+  });
+
+  test("picking a connected channel as preferred sends it in PUT and reflects on save", async ({
+    page,
+  }) => {
+    await mockPreferencesApis(page, { ...DEFAULT_PREFERENCES }, ["telegram"]);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await preferences.setPreferredChannel("Telegram");
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/preferences") && req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as {
+      preferred_notification_channel: string | null;
+    };
+    expect(body.preferred_notification_channel).toBe("telegram");
+    await expect(preferences.savedMessage).toBeVisible();
   });
 });

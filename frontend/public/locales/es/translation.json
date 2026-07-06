@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancelar",
+    "close": "Cerrar",
     "displayName": "Nombre",
     "username": "Usuario",
     "email": "Correo electrónico",
@@ -13,6 +14,7 @@
     "myVehicles": "Mis vehículos",
     "preferences": "Preferencias",
     "serProviders": "Proveedores SER",
+    "notificationChannels": "Canales de notificación",
     "account": "Menú de cuenta",
     "logout": "Cerrar sesión",
     "loginGoogle": "Iniciar sesión con Google",
@@ -41,7 +43,10 @@
       "saved": "Preferencias guardadas.",
       "loadError": "No se pudieron cargar las preferencias.",
       "saveError": "No se pudieron guardar las preferencias.",
-      "invalidDuration": "La duración debe ser mayor que 0."
+      "invalidDuration": "La duración debe ser mayor que 0.",
+      "preferredChannelLabel": "Canal de notificación preferido",
+      "noPreferredChannel": "Ninguno",
+      "noChannelsConnected": "Conecta un canal de notificación para elegir uno preferido."
     },
     "serProviders": {
       "title": "Proveedores SER",
@@ -56,6 +61,20 @@
       "disconnectError": "No se pudo desconectar el proveedor.",
       "providers": {
         "elparking": "ElParking"
+      }
+    },
+    "notificationChannels": {
+      "title": "Canales de notificación",
+      "loading": "Cargando canales de notificación…",
+      "connected": "Conectado",
+      "notConnected": "No conectado",
+      "notSupported": "Aún no disponible",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "confirmDisconnect": "¿Desconectar \"{{name}}\"?",
+      "disconnectError": "No se pudo desconectar el canal.",
+      "channels": {
+        "telegram": "Telegram"
       }
     }
   },
@@ -80,6 +99,14 @@
       "title": "Conectar {{provider}}",
       "connecting": "Conectando…",
       "connect": "Conectar"
+    },
+    "connectTelegram": {
+      "title": "Conectar Telegram",
+      "generatingLink": "Generando enlace…",
+      "linkError": "No se pudo generar un enlace de Telegram.",
+      "instructions": "Abre este enlace para vincular tu cuenta de Telegram:",
+      "waiting": "Esperando confirmación…",
+      "stillWaiting": "Todavía esperando — puedes cerrar esto y volver más tarde."
     }
   },
   "vehicle": {

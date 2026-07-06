@@ -64,6 +64,7 @@ user_preferences_table = Table(
     Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
     Column("default_ticket_duration_minutes", Integer, nullable=False, server_default="60"),
     Column("auto_create_ticket", Boolean, nullable=False, server_default="false"),
+    Column("preferred_notification_channel", Text, nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 

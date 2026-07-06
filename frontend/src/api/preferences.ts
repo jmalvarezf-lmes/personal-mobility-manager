@@ -1,6 +1,7 @@
 export interface UserPreferences {
   default_ticket_duration_minutes: number;
   auto_create_ticket: boolean;
+  preferred_notification_channel: string | null;
 }
 
 export async function getPreferences(): Promise<UserPreferences> {

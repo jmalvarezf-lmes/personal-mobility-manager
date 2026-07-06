@@ -33,6 +33,19 @@ class UserPreferencesRepository(ABC):
         user_id: UUID,
         default_ticket_duration_minutes: int,
         auto_create_ticket: bool,
+        preferred_notification_channel: str | None,
     ) -> UserPreferences:
-        """Replace both fields for the user's existing row and return the persisted UserPreferences."""
+        """Replace all three fields for the user's existing row and return the persisted UserPreferences."""
+        ...
+
+    @abstractmethod
+    def set_preferred_notification_channel(self, user_id: UUID, channel: str | None) -> None:
+        """
+        Update only preferred_notification_channel for the user's existing row.
+
+        Narrower than `update` — used by channel connect/disconnect flows
+        (auto-select on first connect, clear on disconnect) so they don't
+        need to round-trip the other preference fields they have no opinion
+        about.
+        """
         ...

@@ -39,6 +39,7 @@ def pg_engine():
                     user_id UUID PRIMARY KEY REFERENCES users(id),
                     default_ticket_duration_minutes INT NOT NULL DEFAULT 60,
                     auto_create_ticket BOOLEAN NOT NULL DEFAULT false,
+                    preferred_notification_channel TEXT NULL,
                     updated_at TIMESTAMPTZ NOT NULL
                 )
                 """
@@ -78,6 +79,7 @@ def test_ensure_default_creates_row_with_defaults(pg_engine) -> None:
     assert preferences is not None
     assert preferences.default_ticket_duration_minutes == 60
     assert preferences.auto_create_ticket is False
+    assert preferences.preferred_notification_channel is None
 
 
 def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
@@ -89,7 +91,12 @@ def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
     user_id = _insert_user(pg_engine)
 
     repo.ensure_default(user_id)
-    repo.update(user_id, default_ticket_duration_minutes=90, auto_create_ticket=True)
+    repo.update(
+        user_id,
+        default_ticket_duration_minutes=90,
+        auto_create_ticket=True,
+        preferred_notification_channel="telegram",
+    )
 
     # Calling ensure_default again must not touch the now-customized row.
     repo.ensure_default(user_id)
@@ -98,6 +105,7 @@ def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
     assert preferences is not None
     assert preferences.default_ticket_duration_minutes == 90
     assert preferences.auto_create_ticket is True
+    assert preferences.preferred_notification_channel == "telegram"
 
 
 def test_find_by_user_id_returns_none_when_missing(pg_engine) -> None:
@@ -120,13 +128,66 @@ def test_update_overwrites_values_and_updated_at(pg_engine) -> None:
     original = repo.find_by_user_id(user_id)
     assert original is not None
 
-    updated = repo.update(user_id, default_ticket_duration_minutes=120, auto_create_ticket=True)
+    updated = repo.update(
+        user_id,
+        default_ticket_duration_minutes=120,
+        auto_create_ticket=True,
+        preferred_notification_channel="telegram",
+    )
 
     assert updated.default_ticket_duration_minutes == 120
     assert updated.auto_create_ticket is True
+    assert updated.preferred_notification_channel == "telegram"
     assert updated.updated_at >= original.updated_at
 
     refetched = repo.find_by_user_id(user_id)
     assert refetched is not None
     assert refetched.default_ticket_duration_minutes == 120
     assert refetched.auto_create_ticket is True
+    assert refetched.preferred_notification_channel == "telegram"
+
+
+def test_set_preferred_notification_channel_updates_only_that_field(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+    repo.update(
+        user_id,
+        default_ticket_duration_minutes=90,
+        auto_create_ticket=True,
+        preferred_notification_channel=None,
+    )
+
+    repo.set_preferred_notification_channel(user_id, "telegram")
+
+    preferences = repo.find_by_user_id(user_id)
+    assert preferences is not None
+    assert preferences.preferred_notification_channel == "telegram"
+    assert preferences.default_ticket_duration_minutes == 90
+    assert preferences.auto_create_ticket is True
+
+
+def test_set_preferred_notification_channel_accepts_none_to_clear(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+    repo.update(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=False,
+        preferred_notification_channel="telegram",
+    )
+
+    repo.set_preferred_notification_channel(user_id, None)
+
+    preferences = repo.find_by_user_id(user_id)
+    assert preferences is not None
+    assert preferences.preferred_notification_channel is None

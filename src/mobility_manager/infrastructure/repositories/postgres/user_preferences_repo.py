@@ -66,8 +66,9 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
         user_id: UUID,
         default_ticket_duration_minutes: int,
         auto_create_ticket: bool,
+        preferred_notification_channel: str | None,
     ) -> UserPreferences:
-        """Replace both fields for the user's existing row and return the persisted UserPreferences."""
+        """Replace all three fields for the user's existing row and return the persisted UserPreferences."""
         now = datetime.now(UTC)
         stmt = (
             user_preferences_table.update()
@@ -75,6 +76,7 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
             .values(
                 default_ticket_duration_minutes=default_ticket_duration_minutes,
                 auto_create_ticket=auto_create_ticket,
+                preferred_notification_channel=preferred_notification_channel,
                 updated_at=now,
             )
             .returning(user_preferences_table)
@@ -86,11 +88,27 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
         assert row is not None
         return self._row_to_user_preferences(row)
 
+    def set_preferred_notification_channel(self, user_id: UUID, channel: str | None) -> None:
+        """Update only preferred_notification_channel for the user's existing row."""
+        now = datetime.now(UTC)
+        stmt = (
+            user_preferences_table.update()
+            .where(user_preferences_table.c.user_id == user_id)
+            .values(
+                preferred_notification_channel=channel,
+                updated_at=now,
+            )
+        )
+
+        with self._engine.begin() as conn:
+            conn.execute(stmt)
+
     @staticmethod
     def _row_to_user_preferences(row: object) -> UserPreferences:
         return UserPreferences(
             user_id=row.user_id,  # type: ignore[attr-defined]
             default_ticket_duration_minutes=row.default_ticket_duration_minutes,  # type: ignore[attr-defined]
             auto_create_ticket=row.auto_create_ticket,  # type: ignore[attr-defined]
+            preferred_notification_channel=row.preferred_notification_channel,  # type: ignore[attr-defined]
             updated_at=row.updated_at,  # type: ignore[attr-defined]
         )

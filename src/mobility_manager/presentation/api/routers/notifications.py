@@ -11,6 +11,9 @@ Endpoints:
     notification channels (authenticated).
   DELETE /notifications/channels/{channel} — remove a configured channel
     (authenticated). No server-side revocation step exists to report on.
+  GET /notifications/available-channels — list every channel registered in
+    the running system, independent of what any user has configured
+    (authenticated).
 """
 
 import logging
@@ -95,6 +98,15 @@ async def telegram_webhook(
     config_repo = request.app.state.user_notification_channel_config_repo
     config_repo.save(user_id, "telegram", NotificationRecipient(data={"chat_id": chat_id}))
 
+    # Auto-select "telegram" as the preferred channel if the user has no
+    # preference yet (see design.md decision 4) — never overrides an
+    # existing preference, so connecting a later channel doesn't silently
+    # switch what's already chosen.
+    preferences_repo = request.app.state.user_preferences_repo
+    preferences = preferences_repo.find_by_user_id(user_id)
+    if preferences is not None and preferences.preferred_notification_channel is None:
+        preferences_repo.set_preferred_notification_channel(user_id, "telegram")
+
     telegram_channel = request.app.state.notification_channels["telegram"]
     try:
         telegram_channel.send(
@@ -105,6 +117,22 @@ async def telegram_webhook(
         logger.exception("Failed to send Telegram link confirmation message")
 
     return {"ok": True}
+
+
+@router.get("/available-channels", response_model=NotificationChannelsResponse)
+def list_available_channels(
+    request: Request,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> NotificationChannelsResponse:
+    """
+    List every notification channel registered in the running system.
+
+    Sourced directly from app.state.notification_channels — the same dict
+    built once in app.py's lifespan setup — so there's exactly one place a
+    new channel gets registered (see design.md decision 1). Independent of
+    what the current user has configured; that's GET /notifications/channels.
+    """
+    return NotificationChannelsResponse(channels=list(request.app.state.notification_channels.keys()))
 
 
 @router.get("/channels", response_model=NotificationChannelsResponse)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getConfiguredChannels } from "../api/notifications";
 import { getPreferences, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
 
@@ -7,6 +8,8 @@ export default function PreferencesPage() {
   const { t } = useTranslation();
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [autoCreateTicket, setAutoCreateTicket] = useState(false);
+  const [preferredChannel, setPreferredChannel] = useState<string | null>(null);
+  const [connectedChannels, setConnectedChannels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,9 +18,11 @@ export default function PreferencesPage() {
   useEffect(() => {
     async function load() {
       try {
-        const prefs = await getPreferences();
+        const [prefs, channels] = await Promise.all([getPreferences(), getConfiguredChannels()]);
         setDurationMinutes(prefs.default_ticket_duration_minutes);
         setAutoCreateTicket(prefs.auto_create_ticket);
+        setPreferredChannel(prefs.preferred_notification_channel);
+        setConnectedChannels(channels.channels);
       } catch (err) {
         setError(err instanceof Error ? err.message : t("page.preferences.loadError"));
       } finally {
@@ -42,9 +47,11 @@ export default function PreferencesPage() {
       const updated = await updatePreferences({
         default_ticket_duration_minutes: durationMinutes,
         auto_create_ticket: autoCreateTicket,
+        preferred_notification_channel: preferredChannel,
       });
       setDurationMinutes(updated.default_ticket_duration_minutes);
       setAutoCreateTicket(updated.auto_create_ticket);
+      setPreferredChannel(updated.preferred_notification_channel);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("page.preferences.saveError"));
@@ -105,6 +112,34 @@ export default function PreferencesPage() {
             >
               {t("page.preferences.autoCreateLabel")}
             </label>
+          </div>
+
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="preferred-notification-channel"
+            >
+              {t("page.preferences.preferredChannelLabel")}
+            </label>
+            {connectedChannels.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                {t("page.preferences.noChannelsConnected")}
+              </p>
+            ) : (
+              <select
+                id="preferred-notification-channel"
+                value={preferredChannel ?? ""}
+                onChange={(e) => setPreferredChannel(e.target.value || null)}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">{t("page.preferences.noPreferredChannel")}</option>
+                {connectedChannels.map((channel) => (
+                  <option key={channel} value={channel}>
+                    {t(`page.notificationChannels.channels.${channel}`, { defaultValue: channel })}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {error && (

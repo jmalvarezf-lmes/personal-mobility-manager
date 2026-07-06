@@ -100,6 +100,14 @@ export default function Nav() {
                 >
                   {t("nav.serProviders")}
                 </Link>
+                <Link
+                  to="/notification-channels"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {t("nav.notificationChannels")}
+                </Link>
                 <button
                   type="button"
                   role="menuitem"

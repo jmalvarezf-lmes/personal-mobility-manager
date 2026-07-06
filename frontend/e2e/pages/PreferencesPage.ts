@@ -14,6 +14,8 @@ export class PreferencesPage {
   readonly saveButton: Locator;
   readonly errorMessage: Locator;
   readonly savedMessage: Locator;
+  readonly preferredChannelSelect: Locator;
+  readonly noChannelsConnectedMessage: Locator;
 
   constructor(private readonly page: Page) {
     this.heading = page.getByRole("heading", { name: "Preferences" });
@@ -22,6 +24,8 @@ export class PreferencesPage {
     this.saveButton = page.getByRole("button", { name: /^save$/i });
     this.errorMessage = page.getByRole("alert");
     this.savedMessage = page.getByText(/preferences saved/i);
+    this.preferredChannelSelect = page.getByLabel(/preferred notification channel/i);
+    this.noChannelsConnectedMessage = page.getByText(/connect a notification channel/i);
   }
 
   async goto() {
@@ -37,6 +41,10 @@ export class PreferencesPage {
     if (checked !== value) {
       await this.autoCreateCheckbox.click();
     }
+  }
+
+  async setPreferredChannel(displayName: string) {
+    await this.preferredChannelSelect.selectOption({ label: displayName });
   }
 
   async save() {

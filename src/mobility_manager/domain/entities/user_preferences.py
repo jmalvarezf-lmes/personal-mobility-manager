@@ -1,7 +1,8 @@
 """
 Domain entity: UserPreferences.
 
-Represents a user's per-account settings (ticket-creation defaults).
+Represents a user's per-account settings (ticket-creation defaults, preferred
+notification channel).
 """
 
 from dataclasses import dataclass
@@ -16,4 +17,5 @@ class UserPreferences:
     user_id: UUID
     default_ticket_duration_minutes: int
     auto_create_ticket: bool
+    preferred_notification_channel: str | None
     updated_at: datetime

@@ -5,6 +5,7 @@ POST /notifications/telegram/link-code
 POST /notifications/telegram/webhook
 GET /notifications/channels
 DELETE /notifications/channels/{channel}
+GET /notifications/available-channels
 """
 
 from datetime import UTC, datetime, timedelta
@@ -17,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mobility_manager.domain.entities.user import User
+from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.infrastructure.telegram_link import generate_link_token
 from mobility_manager.presentation.api.routers.notifications import router
 
@@ -45,6 +47,16 @@ def _make_session_cookie(user: User, secret: str = _JWT_SECRET) -> str:
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
+def _make_preferences(user_id: UUID, preferred_notification_channel: str | None = None) -> UserPreferences:
+    return UserPreferences(
+        user_id=user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=False,
+        preferred_notification_channel=preferred_notification_channel,
+        updated_at=datetime.now(UTC),
+    )
+
+
 def _build_app(
     generate_link_code_uc=None,
     list_channels_uc=None,
@@ -52,6 +64,7 @@ def _build_app(
     user_repo=None,
     config_repo=None,
     notification_channels=None,
+    preferences_repo=None,
 ) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -67,6 +80,8 @@ def _build_app(
         app.state.user_notification_channel_config_repo = config_repo
     if notification_channels is not None:
         app.state.notification_channels = notification_channels
+    if preferences_repo is not None:
+        app.state.user_preferences_repo = preferences_repo
     return app
 
 
@@ -157,7 +172,15 @@ def test_webhook_valid_start_message_stores_recipient_and_confirms() -> None:
     token = generate_link_token(user_id)
     mock_config_repo = MagicMock()
     mock_channel = MagicMock()
-    app = _build_app(config_repo=mock_config_repo, notification_channels={"telegram": mock_channel})
+    mock_preferences_repo = MagicMock()
+    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(
+        user_id, preferred_notification_channel=None
+    )
+    app = _build_app(
+        config_repo=mock_config_repo,
+        notification_channels={"telegram": mock_channel},
+        preferences_repo=mock_preferences_repo,
+    )
     client = TestClient(app)
 
     response = client.post(
@@ -173,6 +196,33 @@ def test_webhook_valid_start_message_stores_recipient_and_confirms() -> None:
     assert args[1] == "telegram"
     assert args[2].data == {"chat_id": 42}
     mock_channel.send.assert_called_once()
+    mock_preferences_repo.set_preferred_notification_channel.assert_called_once_with(user_id, "telegram")
+
+
+def test_webhook_does_not_override_an_existing_preference() -> None:
+    user_id = uuid4()
+    token = generate_link_token(user_id)
+    mock_config_repo = MagicMock()
+    mock_channel = MagicMock()
+    mock_preferences_repo = MagicMock()
+    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(
+        user_id, preferred_notification_channel="other"
+    )
+    app = _build_app(
+        config_repo=mock_config_repo,
+        notification_channels={"telegram": mock_channel},
+        preferences_repo=mock_preferences_repo,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/notifications/telegram/webhook",
+        json={"message": {"text": f"/start {token}", "chat": {"id": 42}}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
+    )
+
+    assert response.status_code == 200
+    mock_preferences_repo.set_preferred_notification_channel.assert_not_called()
 
 
 def test_webhook_expired_or_tampered_token_rejected_without_storing() -> None:
@@ -261,3 +311,31 @@ def test_delete_channel_returns_204() -> None:
     assert response.status_code == 204
     assert response.content == b""
     mock_uc.execute.assert_called_once_with(user_id=_OWNER_ID, channel="telegram")
+
+
+# ---------------------------------------------------------------------------
+# GET /notifications/available-channels
+# ---------------------------------------------------------------------------
+
+
+def test_available_channels_unauthenticated_returns_401() -> None:
+    mock_repo = MagicMock()
+    mock_repo.find_by_id.return_value = None
+    client = TestClient(
+        _build_app(user_repo=mock_repo, notification_channels={"telegram": MagicMock()}),
+        raise_server_exceptions=False,
+    )
+
+    response = client.get("/notifications/available-channels")
+
+    assert response.status_code == 401
+
+
+def test_available_channels_returns_registered_channels() -> None:
+    app, cookie = _build_authed_app(notification_channels={"telegram": MagicMock()})
+    client = TestClient(app)
+
+    response = client.get("/notifications/available-channels", cookies={"session": cookie})
+
+    assert response.status_code == 200
+    assert response.json() == {"channels": ["telegram"]}

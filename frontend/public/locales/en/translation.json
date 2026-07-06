@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancel",
+    "close": "Close",
     "displayName": "Display Name",
     "username": "Username",
     "email": "Email",
@@ -13,6 +14,7 @@
     "myVehicles": "My Vehicles",
     "preferences": "Preferences",
     "serProviders": "SER Providers",
+    "notificationChannels": "Notification Channels",
     "account": "Account menu",
     "logout": "Logout",
     "loginGoogle": "Login with Google",
@@ -41,7 +43,10 @@
       "saved": "Preferences saved.",
       "loadError": "Failed to load preferences.",
       "saveError": "Failed to save preferences.",
-      "invalidDuration": "Duration must be greater than 0."
+      "invalidDuration": "Duration must be greater than 0.",
+      "preferredChannelLabel": "Preferred notification channel",
+      "noPreferredChannel": "None",
+      "noChannelsConnected": "Connect a notification channel to choose a preferred one."
     },
     "serProviders": {
       "title": "SER Providers",
@@ -56,6 +61,20 @@
       "disconnectError": "Failed to disconnect provider.",
       "providers": {
         "elparking": "ElParking"
+      }
+    },
+    "notificationChannels": {
+      "title": "Notification Channels",
+      "loading": "Loading notification channels…",
+      "connected": "Connected",
+      "notConnected": "Not connected",
+      "notSupported": "Not yet supported",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "confirmDisconnect": "Disconnect \"{{name}}\"?",
+      "disconnectError": "Failed to disconnect channel.",
+      "channels": {
+        "telegram": "Telegram"
       }
     }
   },
@@ -80,6 +99,14 @@
       "title": "Connect {{provider}}",
       "connecting": "Connecting…",
       "connect": "Connect"
+    },
+    "connectTelegram": {
+      "title": "Connect Telegram",
+      "generatingLink": "Generating link…",
+      "linkError": "Failed to generate a Telegram link.",
+      "instructions": "Open this link to link your Telegram account:",
+      "waiting": "Waiting for confirmation…",
+      "stillWaiting": "Still waiting — you can close this and check back later."
     }
   },
   "vehicle": {

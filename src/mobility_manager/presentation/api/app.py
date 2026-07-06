@@ -268,10 +268,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     send_notification_uc = SendNotification(
         channels=notification_channels,
         config_repo=user_notification_channel_config_repo,
+        preferences_repo=user_preferences_repo,
     )
     generate_telegram_link_code_uc = GenerateTelegramLinkCode()
     list_notification_channels_uc = ListNotificationChannels(config_repo=user_notification_channel_config_repo)
-    remove_notification_channel_uc = RemoveNotificationChannel(config_repo=user_notification_channel_config_repo)
+    remove_notification_channel_uc = RemoveNotificationChannel(
+        config_repo=user_notification_channel_config_repo,
+        preferences_repo=user_preferences_repo,
+    )
     app.state.notification_channels = notification_channels
     app.state.user_notification_channel_config_repo = user_notification_channel_config_repo
     app.state.send_notification = send_notification_uc

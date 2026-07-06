@@ -47,12 +47,17 @@ def _make_session_cookie(user: User, secret: str = _JWT_SECRET) -> str:
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def _make_preferences(user_id: UUID, preferred_notification_channel: str | None = None) -> UserPreferences:
+def _make_preferences(
+    user_id: UUID,
+    preferred_notification_channel: str | None = None,
+    notification_language: str | None = None,
+) -> UserPreferences:
     return UserPreferences(
         user_id=user_id,
         default_ticket_duration_minutes=60,
         auto_create_ticket=False,
         preferred_notification_channel=preferred_notification_channel,
+        notification_language=notification_language,
         updated_at=datetime.now(UTC),
     )
 
@@ -173,9 +178,7 @@ def test_webhook_valid_start_message_stores_recipient_and_confirms() -> None:
     mock_config_repo = MagicMock()
     mock_channel = MagicMock()
     mock_preferences_repo = MagicMock()
-    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(
-        user_id, preferred_notification_channel=None
-    )
+    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(user_id, preferred_notification_channel=None)
     app = _build_app(
         config_repo=mock_config_repo,
         notification_channels={"telegram": mock_channel},
@@ -197,6 +200,62 @@ def test_webhook_valid_start_message_stores_recipient_and_confirms() -> None:
     assert args[2].data == {"chat_id": 42}
     mock_channel.send.assert_called_once()
     mock_preferences_repo.set_preferred_notification_channel.assert_called_once_with(user_id, "telegram")
+
+
+def test_webhook_confirmation_localized_to_notification_language() -> None:
+    user_id = uuid4()
+    token = generate_link_token(user_id)
+    mock_config_repo = MagicMock()
+    mock_channel = MagicMock()
+    mock_preferences_repo = MagicMock()
+    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(
+        user_id, preferred_notification_channel="telegram", notification_language="es"
+    )
+    app = _build_app(
+        config_repo=mock_config_repo,
+        notification_channels={"telegram": mock_channel},
+        preferences_repo=mock_preferences_repo,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/notifications/telegram/webhook",
+        json={"message": {"text": f"/start {token}", "chat": {"id": 42}}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
+    )
+
+    assert response.status_code == 200
+    mock_channel.send.assert_called_once()
+    args, _kwargs = mock_channel.send.call_args
+    assert args[1].text == "✅ ¡Vinculado!"
+
+
+def test_webhook_confirmation_falls_back_to_default_language_when_unset() -> None:
+    user_id = uuid4()
+    token = generate_link_token(user_id)
+    mock_config_repo = MagicMock()
+    mock_channel = MagicMock()
+    mock_preferences_repo = MagicMock()
+    mock_preferences_repo.find_by_user_id.return_value = _make_preferences(
+        user_id, preferred_notification_channel=None, notification_language=None
+    )
+    app = _build_app(
+        config_repo=mock_config_repo,
+        notification_channels={"telegram": mock_channel},
+        preferences_repo=mock_preferences_repo,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/notifications/telegram/webhook",
+        json={"message": {"text": f"/start {token}", "chat": {"id": 42}}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
+    )
+
+    assert response.status_code == 200
+    mock_channel.send.assert_called_once()
+    args, _kwargs = mock_channel.send.call_args
+    assert args[1].text == "✅ Linked!"
 
 
 def test_webhook_does_not_override_an_existing_preference() -> None:

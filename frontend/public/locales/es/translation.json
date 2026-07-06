@@ -46,7 +46,13 @@
       "invalidDuration": "La duración debe ser mayor que 0.",
       "preferredChannelLabel": "Canal de notificación preferido",
       "noPreferredChannel": "Ninguno",
-      "noChannelsConnected": "Conecta un canal de notificación para elegir uno preferido."
+      "noChannelsConnected": "Conecta un canal de notificación para elegir uno preferido.",
+      "notificationLanguageLabel": "Idioma de notificaciones",
+      "noNotificationLanguage": "Ninguno",
+      "languages": {
+        "en": "Inglés",
+        "es": "Español"
+      }
     },
     "serProviders": {
       "title": "Proveedores SER",

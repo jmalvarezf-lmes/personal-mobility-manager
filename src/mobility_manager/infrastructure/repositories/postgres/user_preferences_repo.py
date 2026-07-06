@@ -67,8 +67,9 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
         default_ticket_duration_minutes: int,
         auto_create_ticket: bool,
         preferred_notification_channel: str | None,
+        notification_language: str | None,
     ) -> UserPreferences:
-        """Replace all three fields for the user's existing row and return the persisted UserPreferences."""
+        """Replace all four fields for the user's existing row and return the persisted UserPreferences."""
         now = datetime.now(UTC)
         stmt = (
             user_preferences_table.update()
@@ -77,6 +78,7 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
                 default_ticket_duration_minutes=default_ticket_duration_minutes,
                 auto_create_ticket=auto_create_ticket,
                 preferred_notification_channel=preferred_notification_channel,
+                notification_language=notification_language,
                 updated_at=now,
             )
             .returning(user_preferences_table)
@@ -110,5 +112,6 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
             default_ticket_duration_minutes=row.default_ticket_duration_minutes,  # type: ignore[attr-defined]
             auto_create_ticket=row.auto_create_ticket,  # type: ignore[attr-defined]
             preferred_notification_channel=row.preferred_notification_channel,  # type: ignore[attr-defined]
+            notification_language=row.notification_language,  # type: ignore[attr-defined]
             updated_at=row.updated_at,  # type: ignore[attr-defined]
         )

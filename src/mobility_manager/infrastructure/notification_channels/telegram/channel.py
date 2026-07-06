@@ -7,11 +7,14 @@ ElParkingSerTicketProvider's sync-client style. There is no async
 requirement here: NotificationChannelPort.send is a plain synchronous method.
 """
 
+from typing import Any
+
 import httpx
 
 from mobility_manager.config import get_telegram_bot_token
 from mobility_manager.domain.exceptions import NotificationChannelApiError
 from mobility_manager.domain.ports.notification_channel import NotificationChannelPort
+from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
@@ -35,21 +38,46 @@ class TelegramNotificationChannel(NotificationChannelPort):
         """
         Send `message.text` to `recipient.data["chat_id"]` via Telegram's sendMessage API.
 
+        If `message.location` is set, additionally calls Telegram's
+        sendLocation endpoint with the same chat_id — a separate HTTP call,
+        since sendLocation has no caption parameter to combine both into one
+        request (see design.md decision 4).
+
         Raises:
             NotificationChannelApiError: Network error, timeout, or a
                 non-2xx response — no raw httpx exception escapes.
         """
         chat_id = recipient.data["chat_id"]
+
+        with httpx.Client(timeout=_SEND_TIMEOUT_SECONDS) as client:
+            self._send_message(client, chat_id, message.text)
+            if message.location is not None:
+                self._send_location(client, chat_id, message.location)
+
+    def _send_message(self, client: httpx.Client, chat_id: Any, text: str) -> None:
         url = f"{_TELEGRAM_API_BASE_URL}/bot{self._bot_token}/sendMessage"
-        body = {"chat_id": chat_id, "text": message.text}
+        body = {"chat_id": chat_id, "text": text}
 
         try:
-            with httpx.Client(timeout=_SEND_TIMEOUT_SECONDS) as client:
-                response = client.post(url, json=body)
+            response = client.post(url, json=body)
         except httpx.HTTPError as exc:
             raise NotificationChannelApiError(f"Telegram sendMessage request failed: {exc}") from exc
 
         if not response.is_success:
             raise NotificationChannelApiError(
                 f"Telegram sendMessage returned unexpected status {response.status_code}: {response.text[:200]}"
+            )
+
+    def _send_location(self, client: httpx.Client, chat_id: Any, location: GeoLocation) -> None:
+        url = f"{_TELEGRAM_API_BASE_URL}/bot{self._bot_token}/sendLocation"
+        body = {"chat_id": chat_id, "latitude": location.lat, "longitude": location.lng}
+
+        try:
+            response = client.post(url, json=body)
+        except httpx.HTTPError as exc:
+            raise NotificationChannelApiError(f"Telegram sendLocation request failed: {exc}") from exc
+
+        if not response.is_success:
+            raise NotificationChannelApiError(
+                f"Telegram sendLocation returned unexpected status {response.status_code}: {response.text[:200]}"
             )

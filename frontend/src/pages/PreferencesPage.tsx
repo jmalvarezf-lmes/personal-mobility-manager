@@ -4,11 +4,14 @@ import { getConfiguredChannels } from "../api/notifications";
 import { getPreferences, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
 
+const SUPPORTED_LANGUAGES = ["en", "es"];
+
 export default function PreferencesPage() {
   const { t } = useTranslation();
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [autoCreateTicket, setAutoCreateTicket] = useState(false);
   const [preferredChannel, setPreferredChannel] = useState<string | null>(null);
+  const [notificationLanguage, setNotificationLanguage] = useState<string | null>(null);
   const [connectedChannels, setConnectedChannels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,6 +25,7 @@ export default function PreferencesPage() {
         setDurationMinutes(prefs.default_ticket_duration_minutes);
         setAutoCreateTicket(prefs.auto_create_ticket);
         setPreferredChannel(prefs.preferred_notification_channel);
+        setNotificationLanguage(prefs.notification_language);
         setConnectedChannels(channels.channels);
       } catch (err) {
         setError(err instanceof Error ? err.message : t("page.preferences.loadError"));
@@ -48,10 +52,12 @@ export default function PreferencesPage() {
         default_ticket_duration_minutes: durationMinutes,
         auto_create_ticket: autoCreateTicket,
         preferred_notification_channel: preferredChannel,
+        notification_language: notificationLanguage,
       });
       setDurationMinutes(updated.default_ticket_duration_minutes);
       setAutoCreateTicket(updated.auto_create_ticket);
       setPreferredChannel(updated.preferred_notification_channel);
+      setNotificationLanguage(updated.notification_language);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("page.preferences.saveError"));
@@ -140,6 +146,28 @@ export default function PreferencesPage() {
                 ))}
               </select>
             )}
+          </div>
+
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="notification-language"
+            >
+              {t("page.preferences.notificationLanguageLabel")}
+            </label>
+            <select
+              id="notification-language"
+              value={notificationLanguage ?? ""}
+              onChange={(e) => setNotificationLanguage(e.target.value || null)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">{t("page.preferences.noNotificationLanguage")}</option>
+              {SUPPORTED_LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {t(`page.preferences.languages.${language}`)}
+                </option>
+              ))}
+            </select>
           </div>
 
           {error && (

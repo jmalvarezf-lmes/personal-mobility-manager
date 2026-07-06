@@ -54,6 +54,7 @@ class InMemoryUserPreferencesRepo:
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=preferred_notification_channel,
+            notification_language=None,
             updated_at=datetime.now(UTC),
         )
 
@@ -71,7 +72,7 @@ def test_sends_to_preferred_connected_channel_and_returns_true() -> None:
     preferences_repo.set(user_id, "telegram")
     uc = SendNotification(channels={"telegram": channel}, config_repo=config_repo, preferences_repo=preferences_repo)
 
-    result = uc.execute(user_id=user_id, text="hello")
+    result = uc.execute(user_id=user_id, message=NotificationMessage(text="hello"))
 
     assert result is True
     assert channel.send_calls == [(recipient, NotificationMessage(text="hello"))]
@@ -85,7 +86,7 @@ def test_no_preferred_channel_set_returns_false_without_raising() -> None:
     preferences_repo.set(user_id, None)
     uc = SendNotification(channels={"telegram": channel}, config_repo=config_repo, preferences_repo=preferences_repo)
 
-    result = uc.execute(user_id=user_id, text="hello")
+    result = uc.execute(user_id=user_id, message=NotificationMessage(text="hello"))
 
     assert result is False
     assert channel.send_calls == []
@@ -98,7 +99,7 @@ def test_missing_preferences_row_returns_false_without_raising() -> None:
     preferences_repo = InMemoryUserPreferencesRepo()  # no row for user_id
     uc = SendNotification(channels={"telegram": channel}, config_repo=config_repo, preferences_repo=preferences_repo)
 
-    result = uc.execute(user_id=user_id, text="hello")
+    result = uc.execute(user_id=user_id, message=NotificationMessage(text="hello"))
 
     assert result is False
 
@@ -119,7 +120,7 @@ def test_stale_preferred_channel_returns_false_with_no_fallback() -> None:
         preferences_repo=preferences_repo,
     )
 
-    result = uc.execute(user_id=user_id, text="hello")
+    result = uc.execute(user_id=user_id, message=NotificationMessage(text="hello"))
 
     assert result is False
     assert telegram_channel.send_calls == []
@@ -137,4 +138,4 @@ def test_channel_send_failure_propagates() -> None:
     uc = SendNotification(channels={"telegram": channel}, config_repo=config_repo, preferences_repo=preferences_repo)
 
     with pytest.raises(NotificationChannelApiError):
-        uc.execute(user_id=user_id, text="hello")
+        uc.execute(user_id=user_id, message=NotificationMessage(text="hello"))

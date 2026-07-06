@@ -10,6 +10,7 @@ const DEFAULT_PREFERENCES = {
   default_ticket_duration_minutes: 60,
   auto_create_ticket: false,
   preferred_notification_channel: null as string | null,
+  notification_language: null as string | null,
 };
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ async function mockPreferencesApis(
         default_ticket_duration_minutes: number;
         auto_create_ticket: boolean;
         preferred_notification_channel: string | null;
+        notification_language: string | null;
       };
       if (body.default_ticket_duration_minutes <= 0) {
         await route.fulfill({
@@ -65,6 +67,7 @@ async function mockPreferencesApis(
       preferences.auto_create_ticket = body.auto_create_ticket;
       preferences.preferred_notification_channel =
         body.preferred_notification_channel;
+      preferences.notification_language = body.notification_language;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -188,6 +191,30 @@ test.describe("Preferences page", () => {
       preferred_notification_channel: string | null;
     };
     expect(body.preferred_notification_channel).toBe("telegram");
+    await expect(preferences.savedMessage).toBeVisible();
+  });
+
+  test("picking a notification language sends it in PUT and reflects on save", async ({
+    page,
+  }) => {
+    await mockPreferencesApis(page);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await preferences.setNotificationLanguage("Spanish");
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/preferences") && req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as {
+      notification_language: string | null;
+    };
+    expect(body.notification_language).toBe("es");
     await expect(preferences.savedMessage).toBeVisible();
   });
 });

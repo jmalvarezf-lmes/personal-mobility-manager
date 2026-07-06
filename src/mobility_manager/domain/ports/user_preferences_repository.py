@@ -34,8 +34,9 @@ class UserPreferencesRepository(ABC):
         default_ticket_duration_minutes: int,
         auto_create_ticket: bool,
         preferred_notification_channel: str | None,
+        notification_language: str | None,
     ) -> UserPreferences:
-        """Replace all three fields for the user's existing row and return the persisted UserPreferences."""
+        """Replace all four fields for the user's existing row and return the persisted UserPreferences."""
         ...
 
     @abstractmethod

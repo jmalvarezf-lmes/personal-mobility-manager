@@ -104,6 +104,15 @@ def get_vehicle_poll_interval_minutes() -> int:
         return 5
 
 
+def get_notification_movement_threshold_meters() -> float:
+    """Return the minimum movement distance (metres) that triggers a location notification."""
+    raw = os.environ.get("NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
+    try:
+        return float(raw)
+    except ValueError:
+        return 50.0
+
+
 def get_enabled_ser_providers() -> list[str]:
     """
     Return the list of enabled SER ticket provider codes from ENABLED_SER_PROVIDERS.

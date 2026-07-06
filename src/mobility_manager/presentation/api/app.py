@@ -165,6 +165,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.user_preferences_repo = user_preferences_repo
     app.state.authenticate_google_user = authenticate_google_user_uc
 
+    # --- Notification channels ---
+    # Moved ahead of --- Vehicles --- and --- Events --- (was originally
+    # built much later, right before the lifespan's final `yield`):
+    # NotificationDispatchHandler (constructed in the Events block below)
+    # now needs send_notification_uc at construction time, so it must exist
+    # by then. user_preferences_repo (from Auth, above) is its only
+    # dependency, so this block only needed to move earlier, not depend on
+    # anything from Vehicles.
+    telegram_notification_channel = TelegramNotificationChannel()
+    notification_channels: dict[str, NotificationChannelPort] = {"telegram": telegram_notification_channel}
+    user_notification_channel_config_repo = PostgresUserNotificationChannelConfigRepository(engine)
+    send_notification_uc = SendNotification(
+        channels=notification_channels,
+        config_repo=user_notification_channel_config_repo,
+        preferences_repo=user_preferences_repo,
+    )
+    generate_telegram_link_code_uc = GenerateTelegramLinkCode()
+    list_notification_channels_uc = ListNotificationChannels(config_repo=user_notification_channel_config_repo)
+    remove_notification_channel_uc = RemoveNotificationChannel(
+        config_repo=user_notification_channel_config_repo,
+        preferences_repo=user_preferences_repo,
+    )
+    app.state.notification_channels = notification_channels
+    app.state.user_notification_channel_config_repo = user_notification_channel_config_repo
+    app.state.send_notification = send_notification_uc
+    app.state.generate_telegram_link_code = generate_telegram_link_code_uc
+    app.state.list_notification_channels = list_notification_channels_uc
+    app.state.remove_notification_channel = remove_notification_channel_uc
+
     # --- Vehicles ---
     enabled_brands = get_enabled_brands()
 
@@ -178,10 +207,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_location_repo = PostgresVehicleLocationRepository(engine)
 
     # --- Events (vehicle-location-events) ---
+    # NotificationDispatchHandler now needs vehicle_repo, vehicle_location_repo
+    # (both constructed just above), user_preferences_repo (Auth block), and
+    # send_notification_uc (Notification channels block, now moved ahead of
+    # Vehicles) — all four already exist by this point. record_uc below still
+    # needs event_publisher, so event_publisher's construction stays here
+    # rather than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
     ser_ticket_trigger_handler = SerTicketTriggerHandler()
     event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_trigger_handler.handle)
-    notification_dispatch_handler = NotificationDispatchHandler()
+    notification_dispatch_handler = NotificationDispatchHandler(
+        vehicle_repo=vehicle_repo,
+        vehicle_location_repo=vehicle_location_repo,
+        user_preferences_repo=user_preferences_repo,
+        send_notification=send_notification_uc,
+    )
     event_publisher.subscribe(VehicleLocationUpdated, notification_dispatch_handler.handle)
     app.state.event_publisher = event_publisher
 
@@ -260,28 +300,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.create_ser_ticket = create_ser_ticket_uc
     app.state.disconnect_ser_ticket_provider = disconnect_ser_ticket_provider_uc
     app.state.list_ser_ticket_provider_connections = list_ser_ticket_provider_connections_uc
-
-    # --- Notification channels ---
-    telegram_notification_channel = TelegramNotificationChannel()
-    notification_channels: dict[str, NotificationChannelPort] = {"telegram": telegram_notification_channel}
-    user_notification_channel_config_repo = PostgresUserNotificationChannelConfigRepository(engine)
-    send_notification_uc = SendNotification(
-        channels=notification_channels,
-        config_repo=user_notification_channel_config_repo,
-        preferences_repo=user_preferences_repo,
-    )
-    generate_telegram_link_code_uc = GenerateTelegramLinkCode()
-    list_notification_channels_uc = ListNotificationChannels(config_repo=user_notification_channel_config_repo)
-    remove_notification_channel_uc = RemoveNotificationChannel(
-        config_repo=user_notification_channel_config_repo,
-        preferences_repo=user_preferences_repo,
-    )
-    app.state.notification_channels = notification_channels
-    app.state.user_notification_channel_config_repo = user_notification_channel_config_repo
-    app.state.send_notification = send_notification_uc
-    app.state.generate_telegram_link_code = generate_telegram_link_code_uc
-    app.state.list_notification_channels = list_notification_channels_uc
-    app.state.remove_notification_channel = remove_notification_channel_uc
 
     yield
 

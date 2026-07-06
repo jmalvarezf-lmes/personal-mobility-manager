@@ -38,6 +38,7 @@ class InMemoryUserPreferencesRepo:
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=preferred_notification_channel,
+            notification_language=None,
             updated_at=datetime.now(UTC),
         )
 
@@ -53,6 +54,7 @@ class InMemoryUserPreferencesRepo:
                 default_ticket_duration_minutes=existing.default_ticket_duration_minutes,
                 auto_create_ticket=existing.auto_create_ticket,
                 preferred_notification_channel=channel,
+                notification_language=existing.notification_language,
                 updated_at=existing.updated_at,
             )
 

@@ -9,24 +9,13 @@ Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
 import math
 from typing import Any
 
-from pyproj import Transformer
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
-from mobility_manager.domain.value_objects.location import GeoLocation
+from mobility_manager.domain.value_objects.location import GeoLocation, _wgs84_to_utm
 from mobility_manager.infrastructure.orm.tables import ser_zones_table
-
-# WGS84 → EPSG:25830; always_xy=True means transform(lng, lat) → (easting, northing)
-_wgs84_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
-
-
-def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Euclidean distance in metres between two WGS84 points via UTM Zone 30N."""
-    x1, y1 = _wgs84_to_utm.transform(lng1, lat1)
-    x2, y2 = _wgs84_to_utm.transform(lng2, lat2)
-    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
 class PostgresSerZoneRepository(SerZoneRepository):

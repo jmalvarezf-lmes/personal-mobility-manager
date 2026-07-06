@@ -16,6 +16,7 @@ export class PreferencesPage {
   readonly savedMessage: Locator;
   readonly preferredChannelSelect: Locator;
   readonly noChannelsConnectedMessage: Locator;
+  readonly notificationLanguageSelect: Locator;
 
   constructor(private readonly page: Page) {
     this.heading = page.getByRole("heading", { name: "Preferences" });
@@ -26,6 +27,7 @@ export class PreferencesPage {
     this.savedMessage = page.getByText(/preferences saved/i);
     this.preferredChannelSelect = page.getByLabel(/preferred notification channel/i);
     this.noChannelsConnectedMessage = page.getByText(/connect a notification channel/i);
+    this.notificationLanguageSelect = page.getByLabel(/notification language/i);
   }
 
   async goto() {
@@ -45,6 +47,10 @@ export class PreferencesPage {
 
   async setPreferredChannel(displayName: string) {
     await this.preferredChannelSelect.selectOption({ label: displayName });
+  }
+
+  async setNotificationLanguage(displayName: string) {
+    await this.notificationLanguageSelect.selectOption({ label: displayName });
   }
 
   async save() {

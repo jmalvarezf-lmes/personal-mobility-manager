@@ -206,3 +206,60 @@ def test_get_latest_uses_recorded_at_not_received_at(pg_engine) -> None:
     latest = repo.get_latest(vehicle_id)
     assert latest is not None
     assert latest.latitude == 10.0  # loc_a has higher recorded_at
+
+
+def test_get_previous_returns_second_most_recent_row(pg_engine) -> None:
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    timestamps = [now - timedelta(hours=2), now - timedelta(hours=1), now]
+    for i, ts in enumerate(timestamps):
+        repo.save(
+            VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=float(i),
+                longitude=0.0,
+                recorded_at=ts,
+                received_at=ts,
+                source="pull",
+            )
+        )
+
+    previous = repo.get_previous(vehicle_id, before=timestamps[-1])
+    assert previous is not None
+    assert previous.recorded_at == timestamps[1]
+    assert previous.latitude == 1.0
+
+
+def test_get_previous_returns_none_for_first_ever_location(pg_engine) -> None:
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    only_loc = VehicleLocation(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        latitude=1.0,
+        longitude=1.0,
+        recorded_at=now,
+        received_at=now,
+        source="pull",
+    )
+    repo.save(only_loc)
+
+    previous = repo.get_previous(vehicle_id, before=now)
+    assert previous is None

@@ -200,6 +200,7 @@ class UserPreferencesResponse(BaseModel):
     default_ticket_duration_minutes: int
     auto_create_ticket: bool
     preferred_notification_channel: str | None
+    notification_language: str | None
 
 
 class UpdateUserPreferencesRequest(BaseModel):
@@ -208,6 +209,7 @@ class UpdateUserPreferencesRequest(BaseModel):
     default_ticket_duration_minutes: int = Field(..., gt=0)
     auto_create_ticket: bool
     preferred_notification_channel: str | None
+    notification_language: str | None
 
 
 # ---------------------------------------------------------------------------

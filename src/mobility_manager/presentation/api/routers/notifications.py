@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
 
+from mobility_manager.application.notification_templates import render
 from mobility_manager.config import get_telegram_bot_username, get_telegram_webhook_secret
 from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.exceptions import NotificationChannelApiError
@@ -44,7 +45,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 _START_COMMAND_PREFIX = "/start "
-_LINK_CONFIRMATION_TEXT = "✅ Linked!"
 
 
 @router.post("/telegram/link-code", response_model=TelegramLinkCodeResponse)
@@ -107,11 +107,12 @@ async def telegram_webhook(
     if preferences is not None and preferences.preferred_notification_channel is None:
         preferences_repo.set_preferred_notification_channel(user_id, "telegram")
 
+    language = preferences.notification_language if preferences is not None else None
     telegram_channel = request.app.state.notification_channels["telegram"]
     try:
         telegram_channel.send(
             NotificationRecipient(data={"chat_id": chat_id}),
-            NotificationMessage(text=_LINK_CONFIRMATION_TEXT),
+            NotificationMessage(text=render("telegram_linked", language)),
         )
     except NotificationChannelApiError:
         logger.exception("Failed to send Telegram link confirmation message")

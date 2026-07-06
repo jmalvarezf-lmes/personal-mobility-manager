@@ -3,8 +3,12 @@ Infrastructure: PostgresVehicleLocationRepository.
 
 Appends each location update as a new row; never overwrites.
 get_latest returns the row with the highest recorded_at for the given vehicle.
+get_previous returns the row immediately before a given timestamp, since by
+the time VehicleLocationUpdated fires the new row is already saved and
+get_latest would just return it back.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import desc, select
@@ -44,6 +48,22 @@ class PostgresVehicleLocationRepository(VehicleLocationRepository):
             row = conn.execute(
                 select(vehicle_locations_table)
                 .where(vehicle_locations_table.c.vehicle_id == vehicle_id)
+                .order_by(desc(vehicle_locations_table.c.recorded_at))
+                .limit(1)
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_location(row)
+
+    def get_previous(self, vehicle_id: UUID, before: datetime) -> VehicleLocation | None:
+        """Return the location recorded immediately before `before`, or None."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(vehicle_locations_table)
+                .where(
+                    vehicle_locations_table.c.vehicle_id == vehicle_id,
+                    vehicle_locations_table.c.recorded_at < before,
+                )
                 .order_by(desc(vehicle_locations_table.c.recorded_at))
                 .limit(1)
             ).fetchone()

@@ -46,7 +46,13 @@
       "invalidDuration": "Duration must be greater than 0.",
       "preferredChannelLabel": "Preferred notification channel",
       "noPreferredChannel": "None",
-      "noChannelsConnected": "Connect a notification channel to choose a preferred one."
+      "noChannelsConnected": "Connect a notification channel to choose a preferred one.",
+      "notificationLanguageLabel": "Notification language",
+      "noNotificationLanguage": "None",
+      "languages": {
+        "en": "English",
+        "es": "Spanish"
+      }
     },
     "serProviders": {
       "title": "SER Providers",

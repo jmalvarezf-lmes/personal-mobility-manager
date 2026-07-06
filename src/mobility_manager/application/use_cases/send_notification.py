@@ -1,18 +1,21 @@
 """
 Application use case: SendNotification.
 
-Sends a text message to a user's single preferred notification channel only
-(see design.md decision 3). This replaces the previous fan-out-to-every-
-configured-channel behaviour now that a preference exists to disambiguate
-"which one" — deliberately fail-closed: if the preference is unset, or set
-to a channel the user no longer has connected (a stale preference), nothing
-is sent and no other configured channel is used as a fallback. Reintroducing
-a fallback would reintroduce the same "which one, and why" ambiguity the
-preference exists to remove (see design.md decision 3's rejected alternative).
+Delivers a pre-built NotificationMessage to a user's single preferred
+notification channel only (see design.md decision 3). This replaces the
+previous fan-out-to-every-configured-channel behaviour now that a preference
+exists to disambiguate "which one" — deliberately fail-closed: if the
+preference is unset, or set to a channel the user no longer has connected (a
+stale preference), nothing is sent and no other configured channel is used
+as a fallback. Reintroducing a fallback would reintroduce the same "which
+one, and why" ambiguity the preference exists to remove (see design.md
+decision 3's rejected alternative).
 
-This is safe to change now because nothing in production calls
-SendNotification yet (NotificationDispatchHandler is still a no-op), so
-there's no live fan-out behaviour actually being relied upon.
+SendNotification does not build message text, look up templates, or resolve
+language preferences itself — callers (e.g. NotificationDispatchHandler, the
+Telegram webhook) construct the fully-formed, localized NotificationMessage
+before calling execute(). This keeps SendNotification a pure "deliver to the
+preferred channel" operation (see design.md decision 5).
 """
 
 from uuid import UUID
@@ -42,13 +45,13 @@ class SendNotification:
         self._config_repo = config_repo
         self._preferences_repo = preferences_repo
 
-    def execute(self, user_id: UUID, text: str) -> bool:
+    def execute(self, user_id: UUID, message: NotificationMessage) -> bool:
         """
-        Send `text` via `user_id`'s preferred notification channel, if connected.
+        Send `message` via `user_id`'s preferred notification channel, if connected.
 
         Args:
             user_id: The user to notify.
-            text: The message body.
+            message: The fully-built, already-localized message to deliver.
 
         Returns:
             True if the preferred channel is set, a configuration exists for
@@ -73,6 +76,6 @@ class SendNotification:
             return False
 
         channel = self._channels[preferred_channel]
-        channel.send(recipient, NotificationMessage(text=text))
+        channel.send(recipient, message)
 
         return True

@@ -55,6 +55,11 @@ def get_osm_tile_url() -> str | None:
     return os.environ.get("OSM_TILE_URL") or None
 
 
+def get_toyota_locale() -> str:
+    """Return the default Toyota account locale from TOYOTA_LOCALE, or 'en_GB' if unset."""
+    return os.environ.get("TOYOTA_LOCALE") or "en_GB"
+
+
 def get_enabled_brands() -> list[Any]:  # list[Brand] — avoids circular import at module level
     """
     Return the list of enabled vehicle brands from ENABLED_BRANDS env var.

@@ -22,6 +22,7 @@ class SerZoneResponse(BaseModel):
 
 class ConfigResponse(BaseModel):
     osm_tile_url: str | None
+    toyota_locale: str
 
 
 class SerZoneMapItem(BaseModel):

@@ -16,20 +16,32 @@ def _build_app() -> FastAPI:
 
 def test_config_returns_none_when_osm_tile_url_not_set(monkeypatch) -> None:
     monkeypatch.delenv("OSM_TILE_URL", raising=False)
+    monkeypatch.delenv("TOYOTA_LOCALE", raising=False)
     client = TestClient(_build_app())
 
     response = client.get("/config")
 
     assert response.status_code == 200
-    assert response.json() == {"osm_tile_url": None}
+    assert response.json() == {"osm_tile_url": None, "toyota_locale": "en_GB"}
 
 
 def test_config_returns_url_when_osm_tile_url_is_set(monkeypatch) -> None:
     tile_url = "http://tiles.local:8080/tile/{z}/{x}/{y}.png"
     monkeypatch.setenv("OSM_TILE_URL", tile_url)
+    monkeypatch.delenv("TOYOTA_LOCALE", raising=False)
     client = TestClient(_build_app())
 
     response = client.get("/config")
 
     assert response.status_code == 200
-    assert response.json() == {"osm_tile_url": tile_url}
+    assert response.json() == {"osm_tile_url": tile_url, "toyota_locale": "en_GB"}
+
+
+def test_config_returns_toyota_locale_when_set(monkeypatch) -> None:
+    monkeypatch.setenv("TOYOTA_LOCALE", "es_ES")
+    client = TestClient(_build_app())
+
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert response.json()["toyota_locale"] == "es_ES"

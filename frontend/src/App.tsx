@@ -14,14 +14,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route
-            path="/map"
-            element={
-              <ProtectedRoute>
-                <MapPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/map" element={<MapPage />} />
           <Route
             path="/my-vehicles"
             element={

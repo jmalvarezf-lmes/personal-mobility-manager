@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { fetchToyotaLocale } from "../api/config";
 import { createVehicle } from "../api/vehicles";
 import type { VehicleListItem } from "../types/vehicle";
 
@@ -19,6 +20,12 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
   const [locale, setLocale] = useState("en_GB");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    void fetchToyotaLocale().then((value) => {
+      if (value) setLocale(value);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

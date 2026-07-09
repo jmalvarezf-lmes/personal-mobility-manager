@@ -3,9 +3,13 @@ Infrastructure: PostgresVehicleLocationRepository.
 
 Appends each location update as a new row; never overwrites.
 get_latest returns the row with the highest recorded_at for the given vehicle.
-get_previous returns the row immediately before a given timestamp, since by
-the time VehicleLocationUpdated fires the new row is already saved and
-get_latest would just return it back.
+get_previous returns the row immediately before a given received_at cutoff,
+since by the time VehicleLocationUpdated fires the new row is already saved
+and get_latest would just return it back. received_at (server receipt time)
+is used rather than recorded_at (source GPS fix time) because some sources
+report the same recorded_at across many consecutive polls (a stale/cached
+fix) — comparing on recorded_at would then skip past the true previous row
+and fall back to an older, possibly distant, one.
 """
 
 from datetime import datetime
@@ -56,15 +60,15 @@ class PostgresVehicleLocationRepository(VehicleLocationRepository):
         return self._row_to_location(row)
 
     def get_previous(self, vehicle_id: UUID, before: datetime) -> VehicleLocation | None:
-        """Return the location recorded immediately before `before`, or None."""
+        """Return the location received immediately before `before`, or None."""
         with self._engine.connect() as conn:
             row = conn.execute(
                 select(vehicle_locations_table)
                 .where(
                     vehicle_locations_table.c.vehicle_id == vehicle_id,
-                    vehicle_locations_table.c.recorded_at < before,
+                    vehicle_locations_table.c.received_at < before,
                 )
-                .order_by(desc(vehicle_locations_table.c.recorded_at))
+                .order_by(desc(vehicle_locations_table.c.received_at))
                 .limit(1)
             ).fetchone()
         if row is None:

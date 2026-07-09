@@ -19,4 +19,5 @@ class VehicleLocationUpdated:
     latitude: float
     longitude: float
     recorded_at: datetime
+    received_at: datetime
     source: Literal["pull", "push"]

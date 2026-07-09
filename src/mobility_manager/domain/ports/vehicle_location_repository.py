@@ -32,13 +32,16 @@ class VehicleLocationRepository(ABC):
     @abstractmethod
     def get_previous(self, vehicle_id: UUID, before: datetime) -> VehicleLocation | None:
         """
-        Return the location recorded immediately before `before`, for the given vehicle.
+        Return the location received immediately before `before`, for the given vehicle.
 
-        Returns the row with the greatest recorded_at strictly less than
+        Returns the row with the greatest received_at strictly less than
         `before`, or None if no such row exists (e.g. `before` is the
         vehicle's first-ever recorded location). Needed because
         VehicleLocationUpdated fires after the new row is already saved, so
         get_latest can't be used to find the prior point (see design.md
-        decision 1).
+        decision 1). Comparison is on received_at (server receipt time)
+        rather than recorded_at (source GPS fix time): some sources report
+        the same recorded_at across many consecutive polls, and comparing on
+        recorded_at would then skip past the true previous row.
         """
         ...

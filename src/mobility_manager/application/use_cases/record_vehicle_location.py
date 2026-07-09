@@ -82,6 +82,7 @@ class RecordVehicleLocation:
                 latitude=lat,
                 longitude=lon,
                 recorded_at=recorded_at_utc,
+                received_at=now_utc,
                 source=source,
             )
         )

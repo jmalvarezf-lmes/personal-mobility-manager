@@ -239,6 +239,65 @@ def test_get_previous_returns_second_most_recent_row(pg_engine) -> None:
     assert previous.latitude == 1.0
 
 
+def test_get_previous_ties_on_recorded_at_use_received_at(pg_engine) -> None:
+    """
+    Reproduces a real production pattern: the source (e.g. Toyota's API)
+    reports the same recorded_at across several consecutive polls (a
+    stale/cached GPS fix), even though each poll is a genuinely new row with
+    its own received_at. get_previous must resolve ties by received_at, not
+    fall back past the whole tied group to an older, different position —
+    otherwise the notification handler recomputes a stale "moved" distance
+    on every poll instead of seeing distance 0 against the true previous row.
+    """
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    old_position = VehicleLocation(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        latitude=1.0,
+        longitude=0.0,
+        recorded_at=now - timedelta(hours=1),
+        received_at=now - timedelta(hours=1),
+        source="pull",
+    )
+    # Two later polls share the exact same recorded_at (stale source fix)
+    # but land in the same new position, at different received_at times.
+    new_position_poll_1 = VehicleLocation(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        latitude=2.0,
+        longitude=0.0,
+        recorded_at=now,
+        received_at=now,
+        source="pull",
+    )
+    new_position_poll_2 = VehicleLocation(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        latitude=2.0,
+        longitude=0.0,
+        recorded_at=now,  # identical to poll_1's recorded_at
+        received_at=now + timedelta(minutes=5),
+        source="pull",
+    )
+    repo.save(old_position)
+    repo.save(new_position_poll_1)
+    repo.save(new_position_poll_2)
+
+    previous = repo.get_previous(vehicle_id, before=new_position_poll_2.received_at)
+
+    assert previous is not None
+    assert previous.latitude == 2.0  # must be poll_1 (same position), not old_position
+
+
 def test_get_previous_returns_none_for_first_ever_location(pg_engine) -> None:
     from mobility_manager.domain.entities.vehicle_location import VehicleLocation
     from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (

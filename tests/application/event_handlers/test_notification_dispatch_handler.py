@@ -142,6 +142,7 @@ def test_movement_past_threshold_triggers_notification() -> None:
         latitude=_MOVED_LAT,
         longitude=_MOVED_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 
@@ -175,6 +176,7 @@ def test_movement_below_threshold_does_not_trigger_notification() -> None:
         latitude=_NEAR_LAT,
         longitude=_NEAR_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 
@@ -201,6 +203,7 @@ def test_first_ever_location_does_not_trigger_notification() -> None:
         latitude=_MOVED_LAT,
         longitude=_MOVED_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 
@@ -224,6 +227,7 @@ def test_missing_vehicle_is_skipped_without_error() -> None:
         latitude=_MOVED_LAT,
         longitude=_MOVED_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 
@@ -252,6 +256,7 @@ def test_message_localized_to_owner_notification_language() -> None:
         latitude=_MOVED_LAT,
         longitude=_MOVED_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 
@@ -280,6 +285,7 @@ def test_message_falls_back_to_default_language_when_unset() -> None:
         latitude=_MOVED_LAT,
         longitude=_MOVED_LNG,
         recorded_at=now,
+        received_at=now,
         source="push",
     )
 

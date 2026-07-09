@@ -43,7 +43,13 @@ def test_expired_token_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> No
 def test_tampered_token_raises_value_error() -> None:
     user_id = uuid4()
     token = generate_link_token(user_id)
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    # Flip a character in the middle rather than the last one: the token's
+    # final base64 character encodes trailing padding bits that base64
+    # decoding silently discards, so some last-character substitutions
+    # (e.g. "a" <-> "b", which share the same top 4 data bits) don't
+    # actually change the decoded payload -- flaky ~1/16 of the time.
+    middle = len(token) // 2
+    tampered = token[:middle] + ("a" if token[middle] != "a" else "b") + token[middle + 1 :]
 
     with pytest.raises(ValueError):
         verify_link_token(tampered)

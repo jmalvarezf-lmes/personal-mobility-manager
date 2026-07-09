@@ -26,6 +26,7 @@ def test_handle_does_not_raise_and_has_no_observable_side_effects() -> None:
         latitude=40.4168,
         longitude=-3.7038,
         recorded_at=datetime.now(UTC),
+        received_at=datetime.now(UTC),
         source="push",
     )
 

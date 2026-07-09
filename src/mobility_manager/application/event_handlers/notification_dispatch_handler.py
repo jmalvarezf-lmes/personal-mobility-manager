@@ -60,7 +60,7 @@ class NotificationDispatchHandler:
         if vehicle is None:
             return
 
-        previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.recorded_at)
+        previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
         if previous is None:
             return
 

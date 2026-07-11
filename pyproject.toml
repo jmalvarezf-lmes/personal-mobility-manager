@@ -20,6 +20,8 @@ dependencies = [
     "psycopg2-binary",
     "pyproj",
     "apscheduler",
+    "shapely",
+    "pyshp",
 ]
 
 [project.scripts]
@@ -60,6 +62,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "authlib.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "shapely.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "shapefile.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

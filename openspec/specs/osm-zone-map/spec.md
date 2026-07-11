@@ -22,23 +22,27 @@ The map page SHALL fetch the tile URL from `GET /config` on the backend and use 
 - **WHEN** the backend returns `{ "osm_tile_url": null }` or the `/config` request fails
 - **THEN** the Leaflet map uses `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
 
-### Requirement: Zone markers are rendered with their canonical colour
-The map page SHALL fetch all zones from `GET /parking/ser-zones?city=madrid` and render each as a filled `CircleMarker` using the zone's `colour` field as the fill and stroke colour.
+### Requirement: Zone boundaries are rendered as polygons with their canonical colour
+The map page SHALL fetch all zones from `GET /parking/ser-zones?city=madrid` and render each as a filled polygon shape (via `react-leaflet`'s `GeoJSON`/`Polygon`) using the zone's `colour` field as the fill and stroke colour.
 
-#### Scenario: Blue zone renders as blue marker
+#### Scenario: Blue zone renders as blue polygon
 - **WHEN** a zone with `zone_type: "Azul"` and `colour: "#2563EB"` is in the response
-- **THEN** a circle marker with fill colour `#2563EB` is rendered at the zone's coordinates
+- **THEN** a polygon with fill colour `#2563EB` is rendered using the zone's `geometry`
 
-#### Scenario: Grey marker for unknown zone type
+#### Scenario: Grey polygon for unknown zone type
 - **WHEN** a zone with `colour: "#6B7280"` is in the response
-- **THEN** a circle marker with fill colour `#6B7280` is rendered at the zone's coordinates
+- **THEN** a polygon with fill colour `#6B7280` is rendered using the zone's `geometry`
 
-### Requirement: Zone markers have tooltips showing street, type, and spots
-Each circle marker SHALL display a Leaflet tooltip on hover containing the zone's `street_name`, `zone_type`, and `spot_count`.
+#### Scenario: Multi-part zone renders as multiple polygon pieces
+- **WHEN** a zone's `geometry` is a GeoJSON `MultiPolygon`
+- **THEN** all constituent polygon parts are rendered as one visually grouped shape sharing the same colour and tooltip
+
+### Requirement: Zone polygons have tooltips showing zone number, district, and spots
+Each zone polygon SHALL display a Leaflet tooltip on hover containing the zone's `zone_number`, `district`, and `spot_count`. Street names SHALL NOT be shown in the tooltip — the bulk zones response this page consumes does not include them (see `zones-bulk-query`), and fetching them per-hover would require an extra network call per interaction.
 
 #### Scenario: Tooltip shows correct zone details
-- **WHEN** the user hovers over a zone marker
-- **THEN** a tooltip is displayed containing the street name, zone type label, and spot count for that zone
+- **WHEN** the user hovers over a zone polygon
+- **THEN** a tooltip is displayed containing the zone number, district, and spot count for that zone, with no street names and no additional network request
 
 ### Requirement: Dev proxy forwards API calls to FastAPI
 The Vite development configuration SHALL proxy requests from `frontend/` to the path prefix `/api` to `http://localhost:8000` so that the frontend can call FastAPI endpoints without CORS issues during development.
@@ -48,19 +52,19 @@ The Vite development configuration SHALL proxy requests from `frontend/` to the 
 - **THEN** the request is forwarded to `http://localhost:8000/parking/ser-zones?city=madrid`
 
 ### Requirement: Playwright e2e tests cover the map page
-The `frontend/` project SHALL include Playwright end-to-end tests in `frontend/e2e/`. Running `pnpm exec playwright test` SHALL execute the suite. Tests SHALL run against a live stack (backend + postgres reachable). The suite SHALL cover: map container present, at least one zone marker rendered, and tooltip content visible on interaction.
+The `frontend/` project SHALL include Playwright end-to-end tests in `frontend/e2e/`. Running `pnpm exec playwright test` SHALL execute the suite. Tests SHALL run against a live stack (backend + postgres reachable). The suite SHALL cover: map container present, at least one zone polygon rendered, and tooltip content visible on interaction.
 
 #### Scenario: Map container is present on load
 - **WHEN** Playwright navigates to the map page
 - **THEN** an element with the Leaflet map container class is present in the DOM
 
-#### Scenario: Zone markers appear after data loads
+#### Scenario: Zone polygons appear after data loads
 - **WHEN** Playwright navigates to the map page and waits for the zones API response
-- **THEN** at least one SVG or canvas element representing a zone marker is present
+- **THEN** at least one SVG path element representing a zone polygon is present
 
-#### Scenario: Tooltip shows zone details on marker interaction
-- **WHEN** Playwright clicks or hovers over a visible zone marker
-- **THEN** a tooltip element is visible containing a street name, a zone type string, and a spot count number
+#### Scenario: Tooltip shows zone details on polygon interaction
+- **WHEN** Playwright clicks or hovers over a visible zone polygon
+- **THEN** a tooltip element is visible containing a zone number, a district name, and a spot count number
 
 ### Requirement: Full stack starts with docker-compose up
 A `frontend` service SHALL be added to `docker-compose.yml` using a multi-stage build (`Dockerfile.frontend`): stage 1 installs dependencies with pnpm and runs `pnpm build`; stage 2 serves `dist/` via nginx on port 80. The service SHALL be exposed on host port 3000. Running `docker-compose up --build` SHALL start backend, postgres, and frontend together with no additional steps required.

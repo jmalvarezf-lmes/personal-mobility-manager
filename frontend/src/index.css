@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+/* Chromium draws a default focus outline around a clicked SVG path using its
+   bounding box, not its actual shape. For a MultiPolygon zone made of many
+   scattered pieces, that bounding box can span a huge area and look like a
+   stray rectangle unrelated to the real geometry. These layers aren't
+   meaningfully keyboard-interactive (hover/click just open a tooltip), so
+   suppressing the focus ring is safe. */
+.leaflet-interactive:focus,
+.leaflet-container:focus {
+  outline: none;
+}

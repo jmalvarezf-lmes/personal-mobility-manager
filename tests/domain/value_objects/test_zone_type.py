@@ -109,9 +109,9 @@ def test_colour_default_returns_grey() -> None:
     [
         (MadridZoneType.Azul, "#2563EB"),
         (MadridZoneType.Verde, "#16A34A"),
-        (MadridZoneType.AltaRotacion, "#6B7280"),
-        (MadridZoneType.Naranja, "#6B7280"),
-        (MadridZoneType.Rojo, "#6B7280"),
+        (MadridZoneType.AltaRotacion, "#7C3AED"),
+        (MadridZoneType.Naranja, "#F97316"),
+        (MadridZoneType.Rojo, "#DC2626"),
     ],
 )
 def test_madrid_colour_mapping(zone_type: MadridZoneType, expected_colour: str) -> None:

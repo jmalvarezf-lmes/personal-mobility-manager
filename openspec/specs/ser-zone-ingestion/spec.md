@@ -1,80 +1,74 @@
-### Requirement: Download Madrid SER Calles CSV
-The system SHALL download the Madrid SER Calles dataset (218228) from a configurable URL (`MADRID_SER_CALLES_URL` env var, default: `https://datos.madrid.es/dataset/218228-0-ser-calles/resource/218228-1-ser-calles-csv/download/218228-1-ser-calles-csv.csv`) via HTTP on each scheduled ingestion run. The response SHALL be decoded as Latin-1 (ISO-8859-1) to correctly handle accented characters.
+### Requirement: Download SER zone boundary shapefile and callejero CSV
+The system SHALL download the Madrid SER band shapefile (`SER_ZONE_SHP_URL` env var, default `https://geoportal.madrid.es/fsdescargas/IDEAM_WBGEOPORTAL/MOVILIDAD/ZONA_SER/SHP_ZIP.zip`) as a zip archive and extract `SER_BANDA_APARCAMIENTO.shp`/`.dbf`/`.prj`/`.shx` in memory, and SHALL download the callejero CSV (`MADRID_CALLEJERO_URL` env var, default `https://datos.madrid.es/dataset/200075-0-callejero/resource/200075-1-callejero-csv/download/200075-1-callejero-csv.csv`) decoded as Latin-1, on each scheduled ingestion run.
 
-#### Scenario: Successful download
-- **WHEN** the scheduler triggers an ingestion run and the URL is reachable
-- **THEN** the system downloads the CSV file content decoded as Latin-1 without writing a temp file
+#### Scenario: Successful download of both sources
+- **WHEN** the scheduler triggers an ingestion run and both URLs are reachable
+- **THEN** the system downloads and extracts the shapefile components and downloads the callejero CSV content, without writing either to a permanent temp file
 
-#### Scenario: Download failure
-- **WHEN** the HTTP request returns a non-2xx status or a network error occurs
-- **THEN** the system logs an error with the status code and skips the ingestion run, leaving existing data intact
+#### Scenario: Download failure on either source aborts the run
+- **WHEN** either HTTP request returns a non-2xx status or a network error occurs
+- **THEN** the system logs an error identifying which source failed and skips the ingestion run, leaving existing data intact
 
-#### Scenario: Configurable URL
-- **WHEN** the env var `MADRID_SER_CALLES_URL` is set
-- **THEN** the system uses that URL instead of the default
-
----
-
-### Requirement: Parse SER spot fields from 218228 CSV
-The system SHALL parse each CSV row from the 218228 SER Calles CSV (semicolon-delimited) and extract five fields: `calle` (street name), `color` (raw zone type from source), `gis_x` (UTM easting, metres), `gis_y` (UTM northing, metres), and `numero_plazas` (spot count, optional). The raw `color` value SHALL be extracted by splitting the RGB-prefixed string (e.g., `"043000255 Azul"`) on the first space and taking the remainder, yielding the plain name (e.g., `"Azul"`). That name SHALL then be validated via `MadridZoneType.from_raw()` — rows where it returns `None` SHALL be skipped. The `numero_plazas` field is optional: if it is absent, empty, or non-numeric, the system SHALL use `-1` as the spot count rather than skipping the row. Rows missing `calle`, `color`, `gis_x`, or `gis_y` SHALL be skipped.
-
-#### Scenario: Valid row parsed
-- **WHEN** a CSV row contains all fields including a numeric `numero_plazas`
-- **THEN** the system produces a `ParkingSpotRecord` with street name, `zone_type` set to the `display_name` of the matched `MadridZoneType`, UTM coordinates in metres, WGS84 lat/lng, and the actual spot count
-
-#### Scenario: Missing or non-numeric spot count uses sentinel
-- **WHEN** a CSV row has an empty or non-numeric `numero_plazas` field
-- **THEN** `ParkingSpotRecord.spot_count` is `-1` and the row is NOT skipped
-
-#### Scenario: Zone type extracted from RGB-prefixed string
-- **WHEN** the `color` CSV field is `"043000255 Azul"`
-- **THEN** the extracted name `"Azul"` is passed to `MadridZoneType.from_raw()` and `ParkingSpotRecord.zone_type` is `"Azul"`
-
-#### Scenario: Multi-word zone type extracted correctly
-- **WHEN** the `color` CSV field is `"081209246 Alta Rotación"`
-- **THEN** the extracted name `"Alta Rotación"` is passed to `MadridZoneType.from_raw()` and `ParkingSpotRecord.zone_type` is `"Alta Rotación"`
-
-#### Scenario: Unrecognised zone type skips the row
-- **WHEN** a CSV row has a zone type string not recognised by `MadridZoneType.from_raw()`
-- **THEN** the system skips that row, logs a warning with the unrecognised value, and increments the skipped-row counter
-
-#### Scenario: Row with missing required field skipped
-- **WHEN** a CSV row has an empty `calle`, `color`, `gis_x`, or `gis_y` field
-- **THEN** the system skips that row and increments the skipped-row counter
+#### Scenario: Configurable URLs
+- **WHEN** `SER_ZONE_SHP_URL` or `MADRID_CALLEJERO_URL` env vars are set
+- **THEN** the system uses those URLs instead of the defaults
 
 ---
 
-### Requirement: Use UTM coordinates directly without centimetre conversion
-The system SHALL use `gis_x` and `gis_y` from the 218228 CSV directly as EPSG:25830 easting and northing in metres. No division by 100 SHALL be applied. Both values SHALL be stored as-is and also reprojected to WGS84 (EPSG:4326) for bounding-box indexing.
+### Requirement: Parse and join SER zone boundary sources
+The system SHALL parse each shapefile band record (`Color`, `Res_NumPla`, and line geometry), discard bands where `Color` is `"Gris"`, and parse each callejero row's `Zona Servicio Estacionamiento Regulado` (zone number), `Nombre de la vía` (street name), `Nombre del distrito` (district), and WGS84 DMS coordinates. Callejero rows where `Zona Servicio Estacionamiento Regulado == "000"` (Madrid's code meaning the address is not part of any SER zone) SHALL be excluded from the callejero points used to build the spatial join index — they are not valid join targets. The system SHALL reproject the remaining callejero coordinates to EPSG:25830 and spatially join each band to its nearest (SER-zoned) callejero point to assign `zone_number`, street name, and district.
 
-#### Scenario: Coordinates used without conversion
-- **WHEN** a row has `gis_x = 438727.67` and `gis_y = 4473037.77`
-- **THEN** `utm_x = 438727.67` and `utm_y = 4473037.77` (no division applied)
+#### Scenario: Band matched to nearest address point
+- **WHEN** a retained band's midpoint is queried against the callejero spatial index
+- **THEN** the band inherits the `zone_number`, street name, and district of the nearest SER-zoned callejero address point
 
-#### Scenario: Valid UTM coordinates reprojected
-- **WHEN** a row contains valid UTM X/Y values in EPSG:25830 (metres)
-- **THEN** the system produces a WGS84 lat/lng pair within the bounding box of the Community of Madrid (lat 39.8–41.2, lng -4.6–-2.9)
+#### Scenario: Non-SER-zoned callejero rows are excluded from the join index
+- **WHEN** a callejero row has `Zona Servicio Estacionamiento Regulado == "000"`
+- **THEN** that row is not added to the spatial join index, even though it has valid street/coordinate data, so no band can be joined to it
 
-#### Scenario: Invalid coordinate values skipped
-- **WHEN** a row contains non-numeric coordinate values
-- **THEN** the system skips that row with a warning log
+#### Scenario: Unrecognised zone type skips the band
+- **WHEN** a band's `Color` field (after the `Gris` filter) does not match any `MadridZoneType` member
+- **THEN** the system skips that band, logs a warning with the unrecognised value, and increments the skipped-row counter
+
+### Requirement: Buffer and dissolve bands into zone boundary polygons
+The system SHALL buffer each retained band's line geometry into a polygon using a single fixed half-width constant (parking orientation is not used to vary the width — a zone-containment check does not need per-bay geometric precision), then group buffered polygons by `(zone_number, zone_type)` and dissolve each group into a single polygon or multi-polygon geometry, summing `spot_count` and collecting all distinct street names per group. The dissolved geometry SHALL be simplified (tolerance 0.5 metres, topology-preserving) before being stored, to keep coordinate counts and payload sizes practical for the map to render.
+
+#### Scenario: Bands dissolve into one zone geometry
+- **WHEN** all bands sharing a `(zone_number, zone_type)` pair are dissolved
+- **THEN** the resulting `SerZoneBoundaryRecord.geometry` covers the union of their buffered areas, and `spot_count` is their sum
+
+#### Scenario: Dissolved geometry is simplified before storage
+- **WHEN** a zone's dissolved geometry has a large coordinate count (e.g. from many unioned band parts)
+- **THEN** the stored `SerZoneBoundaryRecord.geometry` is simplified at a 0.5 metre tolerance, preserving overall shape and topology while substantially reducing coordinate count
+
+#### Scenario: Physically discontinuous zone produces a multi-part geometry
+- **WHEN** a zone's dissolved bands are not all spatially contiguous
+- **THEN** the resulting geometry is a valid multi-polygon, not an error
+
+#### Scenario: Buffer width is uniform across all bands
+- **WHEN** any two retained bands with different (or unknown) parking orientation are buffered
+- **THEN** both use the same fixed half-width constant
 
 ---
 
 ### Requirement: Upsert SER zone data into PostgreSQL
-The system SHALL store parsed records in the `ser_zones` PostgreSQL table using a truncate-and-reload strategy within a single transaction. The stored fields SHALL include `street_name`, `zone_type`, `spot_count`, `latitude`, `longitude`, `utm_x`, `utm_y`.
+The system SHALL store parsed zone boundary records in PostgreSQL using a truncate-and-reload strategy within a single transaction, across two tables: `ser_zones` (fields `zone_number`, `zone_type`, `district`, `spot_count`, `geometry_wkt`) and `ser_zone_streets` (one row per `(zone_number, zone_type, street_name)` triple).
 
 #### Scenario: Successful ingestion run
-- **WHEN** parsing completes with at least one valid record
-- **THEN** the system truncates `ser_zones` and bulk-inserts all valid records in a single transaction, then commits
+- **WHEN** parsing and joining completes with at least one valid zone boundary record
+- **THEN** the system truncates both `ser_zones` and `ser_zone_streets` and bulk-inserts all valid records into both tables in a single transaction, then commits
 
 #### Scenario: Partial failure rolls back
-- **WHEN** an error occurs during bulk insert
-- **THEN** the transaction is rolled back and the previous data remains unchanged
+- **WHEN** an error occurs during bulk insert into either table
+- **THEN** the transaction is rolled back and the previous data in both tables remains unchanged
 
 #### Scenario: Ingestion run logs summary
 - **WHEN** an ingestion run completes (success or failure)
-- **THEN** the system logs: total rows downloaded, rows parsed, rows skipped, rows inserted, and elapsed time
+- **THEN** the system logs: total bands downloaded, bands parsed, bands skipped, zone boundary records inserted, and elapsed time
+
+#### Scenario: Zero parsed records aborts the run
+- **WHEN** parsing and joining completes with zero valid zone boundary records (not a download/HTTP failure, but a successful fetch that yields no usable data)
+- **THEN** the system aborts the run without truncating or modifying `ser_zones`/`ser_zone_streets`, logs an error, and the failure propagates the same way a download failure would
 
 ---
 
@@ -100,12 +94,27 @@ The system SHALL run ingestion automatically on a configurable interval (default
 ---
 
 ### Requirement: ser_zones database table
-The system SHALL maintain a `ser_zones` table in PostgreSQL with columns: `id` (serial PK), `street_name` (text), `zone_type` (varchar(50), not-null), `spot_count` (integer, not-null, default -1), `latitude` (double precision), `longitude` (double precision), `utm_x` (double precision), `utm_y` (double precision). A composite index on `(latitude, longitude)` SHALL exist for bounding-box queries. `utm_x` and `utm_y` store EPSG:25830 easting/northing in metres and are used for Euclidean distance calculation. `spot_count = -1` is the sentinel for unknown spot count.
+The system SHALL maintain a `ser_zones` table in PostgreSQL with columns: `id` (serial PK), `zone_number` (varchar(10), not-null), `zone_type` (varchar(50), not-null), `district` (text, not-null), `spot_count` (integer, not-null, default -1), `geometry_wkt` (text, not-null, WKT in EPSG:25830). A `UNIQUE (zone_number, zone_type)` constraint SHALL exist. `spot_count = -1` is the sentinel for unknown spot count. Street names are NOT stored on this table — see the `ser_zone_streets` requirement below.
 
 #### Scenario: Table created by migration
 - **WHEN** the `db-migrate` Makefile target runs
-- **THEN** the `ser_zones` table and its index are created if they do not already exist
+- **THEN** the `ser_zones` table and its unique constraint are created if they do not already exist
 
-#### Scenario: utm_x and utm_y stored alongside WGS84
-- **WHEN** a record is inserted
-- **THEN** both the WGS84 lat/lng (for bounding-box SQL index) and the UTM metre coordinates (for Euclidean distance ranking) are persisted
+#### Scenario: Geometry stored in UTM metres
+- **WHEN** a zone boundary record is inserted
+- **THEN** `geometry_wkt` contains a valid WKT `POLYGON` or `MULTIPOLYGON` in EPSG:25830 coordinates
+
+#### Scenario: Duplicate zone_number and zone_type rejected
+- **WHEN** an insert would create a second row with the same `(zone_number, zone_type)` pair within one ingestion transaction
+- **THEN** the unique constraint prevents it (the ingestion pipeline dissolves bands before insert, so this should not occur in practice)
+
+### Requirement: ser_zone_streets database table
+The system SHALL maintain a `ser_zone_streets` table in PostgreSQL with columns: `id` (serial PK), `zone_number` (varchar(10), not-null), `zone_type` (varchar(50), not-null), `street_name` (text, not-null), with an index on `(zone_number, zone_type)`. Each row associates one street name with one zone; a zone spanning multiple streets has multiple rows.
+
+#### Scenario: Table created by migration
+- **WHEN** the `db-migrate` Makefile target runs
+- **THEN** the `ser_zone_streets` table and its index are created if they do not already exist
+
+#### Scenario: Zone with multiple streets has multiple rows
+- **WHEN** a `SerZoneBoundaryRecord` with three distinct `street_names` is inserted
+- **THEN** three rows are inserted into `ser_zone_streets`, all sharing that record's `zone_number` and `zone_type`

@@ -12,12 +12,14 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     MetaData,
     String,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
 )
 
@@ -27,13 +29,22 @@ ser_zones_table = Table(
     "ser_zones",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("street_name", Text, nullable=False),
+    Column("zone_number", String(10), nullable=False),
     Column("zone_type", String(50), nullable=False),
+    Column("district", Text, nullable=False),
     Column("spot_count", Integer, nullable=False, server_default="-1"),
-    Column("latitude", Float, nullable=False),  # WGS84 — bounding-box index
-    Column("longitude", Float, nullable=False),  # WGS84 — bounding-box index
-    Column("utm_x", Float, nullable=False),  # EPSG:25830 easting (metres)
-    Column("utm_y", Float, nullable=False),  # EPSG:25830 northing (metres)
+    Column("geometry_wkt", Text, nullable=False),  # WKT Polygon/MultiPolygon, EPSG:25830
+    UniqueConstraint("zone_number", "zone_type", name="uq_ser_zones_zone_number_zone_type"),
+)
+
+ser_zone_streets_table = Table(
+    "ser_zone_streets",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("zone_number", String(10), nullable=False),
+    Column("zone_type", String(50), nullable=False),
+    Column("street_name", Text, nullable=False),
+    Index("idx_ser_zone_streets_zone", "zone_number", "zone_type"),
 )
 
 users_table = Table(

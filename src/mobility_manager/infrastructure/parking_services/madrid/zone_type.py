@@ -16,6 +16,9 @@ from mobility_manager.domain.value_objects.zone_type import ZoneType
 _MADRID_COLOURS: dict[str, str] = {
     "Azul": "#2563EB",
     "Verde": "#16A34A",
+    "Naranja": "#F97316",
+    "Rojo": "#DC2626",
+    "Alta Rotación": "#7C3AED",
 }
 
 
@@ -39,10 +42,14 @@ class MadridZoneType(ZoneType, StrEnum):
     @classmethod
     def from_raw(cls, raw: str) -> MadridZoneType | None:
         """
-        Parse a raw zone type string from the CSV source.
+        Parse a raw zone type string.
 
-        Accepts the plain colour name after the RGB prefix has been stripped
-        (e.g. "Azul", "Alta Rotación"). Returns None for unrecognised values.
+        Accepts an already-plain colour name (e.g. "Azul", "Alta Rotación"),
+        as produced by the SHP source's `Color` field. The retired 218228 CSV
+        source used to prefix this value with an RGB triple (e.g.
+        "043000255 Azul"), which callers had to strip before calling this
+        method; that stripping is no longer relevant since that source was
+        removed. Returns None for unrecognised values.
         """
         try:
             return cls(raw)

@@ -1,10 +1,15 @@
+export interface ZoneGeometry {
+  type: "Polygon" | "MultiPolygon";
+  coordinates: number[][][] | number[][][][];
+}
+
 export interface Zone {
-  street_name: string;
+  zone_number: string;
   zone_type: string;
   colour: string;
+  district: string;
   spot_count: number;
-  lat: number;
-  lng: number;
+  geometry: ZoneGeometry;
 }
 
 export interface ZonesResponse {

@@ -12,16 +12,13 @@ import os
 from mobility_manager.domain.ports.city_parking_data_provider import (
     CityParkingDataProvider,
 )
-from mobility_manager.infrastructure.parking_services.madrid.ser_calles_provider import (
-    MadridSerCallesProvider,
+from mobility_manager.infrastructure.parking_services.madrid.ser_streets_provider import (
+    DEFAULT_MADRID_CALLEJERO_URL,
+    DEFAULT_SER_ZONE_SHP_URL,
+    MadridSerStreetsProvider,
 )
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_MADRID_SER_CALLES_URL = (
-    "https://datos.madrid.es/dataset/218228-0-ser-calles/resource/"
-    "218228-1-ser-calles-csv/download/218228-1-ser-calles-csv.csv"
-)
 
 _KNOWN_CITIES: set[str] = {"madrid"}
 
@@ -38,8 +35,9 @@ def build_providers() -> list[CityParkingDataProvider]:
     providers: list[CityParkingDataProvider] = []
     for code in city_codes:
         if code == "madrid":
-            url = os.environ.get("MADRID_SER_CALLES_URL", _DEFAULT_MADRID_SER_CALLES_URL)
-            providers.append(MadridSerCallesProvider(url=url))
+            shp_url = os.environ.get("SER_ZONE_SHP_URL", DEFAULT_SER_ZONE_SHP_URL)
+            callejero_url = os.environ.get("MADRID_CALLEJERO_URL", DEFAULT_MADRID_CALLEJERO_URL)
+            providers.append(MadridSerStreetsProvider(shp_url=shp_url, callejero_url=callejero_url))
         else:
             logger.warning("ENABLED_CITIES contains unknown city code %r — skipping", code)
 

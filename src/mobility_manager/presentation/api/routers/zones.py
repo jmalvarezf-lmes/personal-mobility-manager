@@ -2,7 +2,8 @@
 Presentation: Zones API router.
 
 Exposes GET /parking/ser-zones to return all stored SER zones for a city,
-suitable for bulk map rendering.
+suitable for bulk map rendering. Street names are deliberately excluded from
+this response — see design.md D9.
 """
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from mobility_manager.infrastructure.parking_services.madrid.zone_type import (
     MadridZoneType,
 )
+from mobility_manager.presentation.api.geojson import geometry_to_wgs84_geojson
 from mobility_manager.presentation.api.schemas import ListSerZonesResponse, SerZoneMapItem
 
 router = APIRouter(prefix="/parking", tags=["parking"])
@@ -29,7 +31,7 @@ def list_ser_zones(
     request: Request,
     city: str = Query(..., description="City code (e.g. 'madrid')"),
 ) -> ListSerZonesResponse:
-    """Return all SER zones for the given city."""
+    """Return all SER zones for the given city, with polygon geometry reprojected to WGS84 GeoJSON."""
     if city not in _SUPPORTED_CITIES:
         raise HTTPException(status_code=404, detail=f"City '{city}' is not supported")
 
@@ -40,12 +42,12 @@ def list_ser_zones(
         city=city,
         zones=[
             SerZoneMapItem(
-                street_name=z.street_name,
+                zone_number=z.zone_number,
                 zone_type=z.zone_type,
                 colour=_resolve_colour(city, z.zone_type),
+                district=z.district,
                 spot_count=z.spot_count,
-                lat=z.location.lat,
-                lng=z.location.lng,
+                geometry=geometry_to_wgs84_geojson(z.geometry),
             )
             for z in zones
         ],

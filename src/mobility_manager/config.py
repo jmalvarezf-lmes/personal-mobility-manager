@@ -11,11 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_DEFAULT_MADRID_SER_CALLES_URL = (
-    "https://datos.madrid.es/dataset/218228-0-ser-calles/resource/"
-    "218228-1-ser-calles-csv/download/218228-1-ser-calles-csv.csv"
-)
-
 
 def get_postgres_dsn() -> str:
     """Return the PostgreSQL connection DSN from environment."""
@@ -23,11 +18,6 @@ def get_postgres_dsn() -> str:
     if not dsn:
         raise RuntimeError("POSTGRES_DSN environment variable is not set")
     return dsn
-
-
-def get_madrid_ser_calles_url() -> str:
-    """Return the Madrid SER Calles CSV URL from environment."""
-    return os.environ.get("MADRID_SER_CALLES_URL", _DEFAULT_MADRID_SER_CALLES_URL)
 
 
 def get_ingestion_interval_hours() -> int:

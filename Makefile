@@ -1,8 +1,9 @@
 .PHONY: install install-dev run test lint docker-build docker-run db-migrate db-revision api
 
-VENV    := .venv
+VENV    := venv
 PYTHON  := $(VENV)/bin/python
 PIP     := $(VENV)/bin/pip
+POSTGRES_DSN :=postgresql://mobility:mobility@localhost:5432/mobility_manager
 
 install:
 	$(PIP) install -e .

@@ -1,58 +1,80 @@
 """
 Presentation tests for GET /parking/ser-zone endpoint.
 
-Uses FastAPI TestClient with mocked use case via app.state.
+Uses FastAPI TestClient with mocked use case + repo via app.state.
 """
 
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from shapely.geometry import Polygon
 
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
-from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.presentation.api.routers.parking import router
 
+# Square centred close to (lat=40.4168, lng=-3.7038) in EPSG:25830.
+_SQUARE = Polygon([(440280, 4474247), (440300, 4474247), (440300, 4474267), (440280, 4474267)])
 
-def _build_test_app(use_case_mock: MagicMock) -> FastAPI:
-    """Build a minimal FastAPI app with the parking router and a mocked use case."""
+
+def _build_test_app(use_case_mock: MagicMock, repo_mock: MagicMock | None = None) -> FastAPI:
+    """Build a minimal FastAPI app with the parking router and mocked collaborators."""
     app = FastAPI()
     app.include_router(router)
     app.state.find_nearest_ser_zone = use_case_mock
+    app.state.ser_zone_repo = repo_mock if repo_mock is not None else MagicMock(get_street_names=lambda *a: [])
     return app
 
 
 def _make_ser_zone(
-    street_name: str = "Calle Mayor",
+    zone_number: str = "163",
     zone_type: str = "Azul",
+    district: str = "CENTRO",
     spot_count: int = 15,
-    lat: float = 40.4168,
-    lng: float = -3.7038,
+    geometry: Polygon = _SQUARE,
 ) -> SerZone:
     return SerZone(
-        street_name=street_name,
+        zone_number=zone_number,
         zone_type=zone_type,
+        district=district,
         spot_count=spot_count,
-        location=GeoLocation(lat=lat, lng=lng),
+        geometry=geometry,
     )
 
 
 def test_valid_coords_returns_200_with_correct_json() -> None:
     use_case = MagicMock()
     use_case.execute.return_value = _make_ser_zone()
-    client = TestClient(_build_test_app(use_case))
+    repo = MagicMock()
+    repo.get_street_names.return_value = ["ABADA", "GRAN VIA"]
+    client = TestClient(_build_test_app(use_case, repo))
 
     response = client.get("/parking/ser-zone", params={"lat": 40.4168, "lng": -3.7038})
 
     assert response.status_code == 200
     data = response.json()
-    assert data["street_name"] == "Calle Mayor"
+    assert data["zone_number"] == "163"
     assert data["zone_type"] == "Azul"
+    assert data["district"] == "CENTRO"
+    assert data["street_names"] == ["ABADA", "GRAN VIA"]
     assert data["spot_count"] == 15
     assert isinstance(data["distance_meters"], int)
-    assert isinstance(data["latitude"], float)
-    assert isinstance(data["longitude"], float)
+    repo.get_street_names.assert_called_once_with("163", "Azul")
+
+
+def test_point_inside_zone_returns_zero_distance() -> None:
+    use_case = MagicMock()
+    use_case.execute.return_value = _make_ser_zone()
+    repo = MagicMock()
+    repo.get_street_names.return_value = []
+    client = TestClient(_build_test_app(use_case, repo))
+
+    # Centre of the square, which corresponds to roughly (40.4168, -3.7038).
+    response = client.get("/parking/ser-zone", params={"lat": 40.4168, "lng": -3.7038})
+
+    assert response.status_code == 200
+    assert response.json()["distance_meters"] == 0
 
 
 def test_response_has_no_zone_code_field() -> None:

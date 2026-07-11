@@ -7,7 +7,9 @@ implements this to own its full fetch-and-parse pipeline.
 
 from abc import ABC, abstractmethod
 
-from mobility_manager.domain.value_objects.parking_spot_record import ParkingSpotRecord
+from mobility_manager.domain.value_objects.ser_zone_boundary_record import (
+    SerZoneBoundaryRecord,
+)
 
 
 class CityParkingDataProvider(ABC):
@@ -20,7 +22,7 @@ class CityParkingDataProvider(ABC):
         ...
 
     @abstractmethod
-    def get_records(self) -> list[ParkingSpotRecord]:
+    def get_records(self) -> list[SerZoneBoundaryRecord]:
         """
         Fetch and parse parking spot records for this city.
 

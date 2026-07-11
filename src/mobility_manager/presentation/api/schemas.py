@@ -3,7 +3,7 @@ Presentation: Pydantic schemas for the FastAPI API layer.
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -12,12 +12,12 @@ from mobility_manager.domain.value_objects.brand import Brand
 
 
 class SerZoneResponse(BaseModel):
-    street_name: str
+    zone_number: str
     zone_type: str
+    district: str
+    street_names: list[str]
     spot_count: int
     distance_meters: int
-    latitude: float
-    longitude: float
 
 
 class ConfigResponse(BaseModel):
@@ -26,12 +26,12 @@ class ConfigResponse(BaseModel):
 
 
 class SerZoneMapItem(BaseModel):
-    street_name: str
+    zone_number: str
     zone_type: str
     colour: str
+    district: str
     spot_count: int
-    lat: float
-    lng: float
+    geometry: dict[str, Any]  # GeoJSON Polygon or MultiPolygon, WGS84
 
 
 class ListSerZonesResponse(BaseModel):

@@ -1,21 +1,47 @@
 """
 Domain entity: SerZone.
 
-Represents a SER (Servicio de Estacionamiento Regulado) parking zone
-associated with a street address. zone_type carries the city-specific
-zone classification (e.g. "Azul", "Verde") as a validated display name.
+Represents a SER (Servicio de Estacionamiento Regulado) bureaucratic parking
+zone with a real polygon boundary. zone_type carries the city-specific zone
+classification (e.g. "Azul", "Verde") as a validated display name.
+
+SerZone does NOT carry street names — a zone can span many streets, and this
+entity backs both the bulk zone-list query (used for map rendering, every
+zone at once) and the single-coordinate lookup. Street names are fetched
+separately, on demand, via SerZoneRepository.get_street_names() — see
+design.md D9.
 """
 
 from dataclasses import dataclass
 
+from pyproj import Transformer
+from shapely.geometry import Point
+from shapely.geometry.base import BaseGeometry
+
 from mobility_manager.domain.value_objects.location import GeoLocation
+
+# Reproject WGS84 EPSG:4326 -> UTM EPSG:25830, matching the geometry's storage CRS.
+_wgs84_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
 
 
 @dataclass(frozen=True)
 class SerZone:
-    """Immutable SER zone entity."""
+    """Immutable SER zone entity with a real polygon boundary."""
 
-    street_name: str
+    zone_number: str
     zone_type: str  # validated display_name from the city's ZoneType
+    district: str
     spot_count: int  # -1 means unknown
-    location: GeoLocation
+    geometry: BaseGeometry  # Polygon or MultiPolygon, EPSG:25830 metres
+
+    def contains(self, location: GeoLocation) -> bool:
+        """
+        Return True if the given location falls within this zone's boundary.
+
+        Boundary-inclusive: a point exactly on the polygon's edge counts as
+        contained (uses shapely's covers(), not the boundary-exclusive
+        contains()).
+        """
+        utm_x, utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
+        point = Point(utm_x, utm_y)
+        return bool(self.geometry.covers(point))

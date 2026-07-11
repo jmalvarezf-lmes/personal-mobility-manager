@@ -1,5 +1,5 @@
 ### Requirement: CityParkingDataProvider abstract port
-The system SHALL define a `CityParkingDataProvider` abstract base class in the domain ports layer (`domain/ports/city_parking_data_provider.py`). It SHALL declare one abstract property `city_code: str` and one abstract method `get_records() -> list[ParkingSpotRecord]`. All city-specific ingestion logic (fetching, parsing, transforming) SHALL live inside concrete provider implementations; the port itself SHALL import only domain types.
+The system SHALL define a `CityParkingDataProvider` abstract base class in the domain ports layer (`domain/ports/city_parking_data_provider.py`). It SHALL declare one abstract property `city_code: str` and one abstract method `get_records() -> list[SerZoneBoundaryRecord]`. All city-specific ingestion logic (fetching, parsing, transforming) SHALL live inside concrete provider implementations; the port itself SHALL import only domain types.
 
 #### Scenario: Port defines contract for any city provider
 - **WHEN** a new city provider class inherits from `CityParkingDataProvider`
@@ -11,20 +11,24 @@ The system SHALL define a `CityParkingDataProvider` abstract base class in the d
 
 ---
 
-### Requirement: ParkingSpotRecord domain value object
-The system SHALL define `ParkingSpotRecord` as a frozen dataclass in the domain value objects layer with fields: `street_name: str`, `zone_type: str`, `latitude: float`, `longitude: float`, `utm_x: float`, `utm_y: float`, `spot_count: int`. The `zone_type` field holds the `display_name` of the city-specific `ZoneType` subclass (always a valid, validated string). The `spot_count` field uses the sentinel value `-1` to indicate that the source data did not include spot count information; zero is NOT used as a sentinel. This replaces the infrastructure-scoped `SerZoneRecord`.
+### Requirement: SerZoneBoundaryRecord domain value object
+The system SHALL define `SerZoneBoundaryRecord` as a frozen dataclass in the domain value objects layer with fields: `zone_number: str`, `zone_type: str`, `district: str`, `street_names: list[str]`, `spot_count: int`, `geometry: shapely.geometry.base.BaseGeometry` (a `Polygon` or `MultiPolygon` in EPSG:25830 metres). This replaces `ParkingSpotRecord`. This is an ingestion-time record only — `street_names` exists so the ingestion use case can populate the separate `ser_zone_streets` table; it is not carried on the query-time `SerZone` entity.
 
-#### Scenario: Record created by any city provider
-- **WHEN** any concrete `CityParkingDataProvider.get_records()` returns a list
-- **THEN** each element is a `ParkingSpotRecord` with all fields populated; `zone_type` holds the validated zone type display name; `spot_count` is `-1` if the source did not include a spot count
+#### Scenario: Record created by the Madrid provider
+- **WHEN** `MadridSerStreetsProvider.get_records()` returns a list
+- **THEN** each element is a `SerZoneBoundaryRecord` with `zone_type` set to a validated `MadridZoneType.display_name`, `geometry` a valid `shapely` `Polygon` or `MultiPolygon`, and `spot_count` the sum of all bands dissolved into that record
 
 #### Scenario: Spot count unknown is -1 not zero
-- **WHEN** the source data has no spot count for a parking address
-- **THEN** `ParkingSpotRecord.spot_count` is `-1`, not `0`
+- **WHEN** none of the bands dissolved into a `SerZoneBoundaryRecord` have a known spot count
+- **THEN** `spot_count` is `-1`, not `0`
 
 #### Scenario: Record is immutable
-- **WHEN** code attempts to mutate a field on a `ParkingSpotRecord`
+- **WHEN** code attempts to mutate a field on a `SerZoneBoundaryRecord`
 - **THEN** a `FrozenInstanceError` is raised (frozen dataclass enforcement)
+
+#### Scenario: Multiple street names preserved
+- **WHEN** a dissolved zone spans bands originally matched to more than one distinct street name via the callejero join
+- **THEN** `street_names` contains all distinct street names, not just one
 
 ---
 
@@ -33,7 +37,7 @@ The system SHALL define a `ZoneType` abstract base class in `domain/value_object
 
 #### Scenario: Known zone type validated and stored
 - **WHEN** the source row for Madrid contains `"043000255 Azul"` and `MadridZoneType.from_raw("Azul")` returns `MadridZoneType.Azul`
-- **THEN** `ParkingSpotRecord.zone_type` is `"Azul"` (the `display_name` of the returned instance)
+- **THEN** `SerZoneBoundaryRecord.zone_type` is `"Azul"` (the `display_name` of the returned instance)
 
 #### Scenario: Unknown zone type skips the row
 - **WHEN** the source row has a zone type string that `from_raw()` cannot map to any known member
@@ -62,20 +66,36 @@ The system SHALL provide `MadridZoneType` in `infrastructure/parking_services/ma
 
 ---
 
-### Requirement: MadridSerCallesProvider concrete implementation
-The system SHALL provide `MadridSerCallesProvider` in the infrastructure layer (`infrastructure/parking_services/madrid/ser_calles_provider.py`). It SHALL implement `CityParkingDataProvider` with `city_code = "madrid"`. Its `get_records()` method SHALL fetch the 218228 CSV from the URL read from the `MADRID_SER_CALLES_URL` environment variable (default: the official Madrid Open Data URL), decode as Latin-1, parse all rows, and return a list of `ParkingSpotRecord`.
+### Requirement: MadridSerStreetsProvider combines two Madrid sources into zone boundaries
+The system SHALL provide `MadridSerStreetsProvider` in the infrastructure layer, implementing `CityParkingDataProvider` with `city_code = "madrid"`. Its `get_records()` method SHALL: (1) download and unzip the SER band shapefile from `SER_ZONE_SHP_URL`, parse `SER_BANDA_APARCAMIENTO.shp`/`.dbf`, and discard rows where `Color == "Gris"`; (2) download and parse the callejero CSV from `MADRID_CALLEJERO_URL`, decoded as Latin-1; (3) spatially join each retained band to its nearest callejero address point (by UTM 25830 distance) to obtain `zone_number`, street name, and district; (4) buffer each band's geometry by a single fixed half-width (parking orientation is not used — see design.md D4); (5) group by `(zone_number, zone_type)` and dissolve each group's polygons into one `SerZoneBoundaryRecord`.
 
-#### Scenario: Fetch and parse returns records
-- **WHEN** `MadridSerCallesProvider.get_records()` is called and the URL is reachable
-- **THEN** it returns a non-empty list of `ParkingSpotRecord` with `city_code = "madrid"`
+#### Scenario: Fetch and parse returns zone boundary records
+- **WHEN** `MadridSerStreetsProvider.get_records()` is called and both URLs are reachable
+- **THEN** it returns a non-empty list of `SerZoneBoundaryRecord` with `city_code = "madrid"`, one record per distinct `(zone_number, zone_type)` combination found
 
-#### Scenario: HTTP failure raises an exception
-- **WHEN** the HTTP request returns a non-2xx status or network error
-- **THEN** `get_records()` raises an exception; the caller (use case) logs the failure and aborts the ingestion run without mutating stored data
+#### Scenario: Non-SER bands are excluded
+- **WHEN** a band's `Color` field is `"Gris"`
+- **THEN** that band is excluded from every downstream zone boundary
 
-#### Scenario: Configurable URL
-- **WHEN** `MADRID_SER_CALLES_URL` env var is set
-- **THEN** `MadridSerCallesProvider` uses that URL instead of the default
+#### Scenario: All retained bands use the same buffer width regardless of orientation
+- **WHEN** any retained band is buffered into a polygon
+- **THEN** the same fixed half-width constant is used, independent of the band's parking orientation
+
+#### Scenario: Bands sharing a zone number and colour are dissolved into one record
+- **WHEN** multiple bands are matched to the same `zone_number` and the same `zone_type`
+- **THEN** they produce a single `SerZoneBoundaryRecord` whose geometry is the union of their buffered polygons and whose `spot_count` is their summed spot counts
+
+#### Scenario: A zone number with mixed colours produces multiple records
+- **WHEN** bands matched to the same `zone_number` have more than one distinct `zone_type`
+- **THEN** one `SerZoneBoundaryRecord` is produced per distinct `zone_type` present, all sharing the same `zone_number`, `district`, and overlapping `street_names`
+
+#### Scenario: HTTP failure on either source raises an exception
+- **WHEN** the shapefile download or the callejero CSV download returns a non-2xx status or a network error occurs
+- **THEN** `get_records()` raises an exception; the caller (ingestion use case) logs the failure and aborts the ingestion run without mutating stored data
+
+#### Scenario: Configurable URLs
+- **WHEN** `SER_ZONE_SHP_URL` or `MADRID_CALLEJERO_URL` env vars are set
+- **THEN** `MadridSerStreetsProvider` uses those URLs instead of the defaults
 
 ---
 
@@ -84,7 +104,7 @@ The system SHALL maintain a provider registry (a dict `city_code -> CityParkingD
 
 #### Scenario: Default config activates Madrid only
 - **WHEN** `ENABLED_CITIES` is unset
-- **THEN** only `MadridSerCallesProvider` is registered
+- **THEN** only `MadridSerStreetsProvider` is registered
 
 #### Scenario: Unknown city code is ignored with a warning
 - **WHEN** `ENABLED_CITIES` contains a city code with no registered implementation

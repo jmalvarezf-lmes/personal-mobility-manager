@@ -1,21 +1,26 @@
 """
 Infrastructure: PostgresSerZoneRepository.
 
-Uses UTM (EPSG:25830) Euclidean distance for maximum precision.
-Bounding-box SQL filter on WGS84 lat/lng narrows candidates; final sort uses
-Euclidean distance in UTM space — centimetre-accurate for the Madrid area.
+No PostGIS: geometry is stored as WKT text (EPSG:25830). find_containing()
+and find_nearest() load all zone rows via list_all() and run shapely checks
+in Python — no SQL bounding-box prefilter, since the post-dissolve row count
+is small (a few hundred). See design.md D5.
 """
 
-import math
+import logging
 from typing import Any
 
+from shapely import wkt as shapely_wkt
+from shapely.geometry import Point
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
 from mobility_manager.domain.value_objects.location import GeoLocation, _wgs84_to_utm
-from mobility_manager.infrastructure.orm.tables import ser_zones_table
+from mobility_manager.infrastructure.orm.tables import ser_zone_streets_table, ser_zones_table
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresSerZoneRepository(SerZoneRepository):
@@ -24,90 +29,119 @@ class PostgresSerZoneRepository(SerZoneRepository):
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def find_nearest(
-        self,
-        location: GeoLocation,
-        radius_deg: float = 0.01,
-    ) -> SerZone | None:
+    def find_nearest(self, location: GeoLocation) -> SerZone | None:
         """
-        Find the nearest SER zone within radius_deg degrees.
+        Find the nearest SER zone by distance to polygon geometry.
 
-        Queries the bounding box; doubles the radius once if no results.
-        Ranks candidates by Euclidean distance in UTM space.
+        Returns None if no zones are stored. Distance is zero if location
+        falls inside a zone's polygon.
         """
-        result = self._query_bbox(location, radius_deg)
-        if not result:
-            result = self._query_bbox(location, radius_deg * 2)
-        if not result:
+        zones = self.list_all()
+        if not zones:
             return None
 
-        # Convert query location to UTM once for distance ranking.
-        q_utm_x, q_utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
-        result.sort(key=lambda r: math.sqrt((r[2] - q_utm_x) ** 2 + (r[3] - q_utm_y) ** 2))
+        utm_x, utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
+        point = Point(utm_x, utm_y)
 
-        best = result[0]
-        return SerZone(
-            street_name=best[4],
-            zone_type=best[5],
-            spot_count=best[6],
-            location=GeoLocation(lat=best[0], lng=best[1]),
-        )
+        return min(zones, key=lambda z: z.geometry.distance(point))
 
-    def _query_bbox(
-        self,
-        location: GeoLocation,
-        radius_deg: float,
-    ) -> list[tuple[float, float, float, float, str, str, int]]:
-        """Return (lat, lng, utm_x, utm_y, street_name, zone_type, spot_count)."""
-        lat, lng = location.lat, location.lng
-        query = text(
-            """
-            SELECT latitude, longitude, utm_x, utm_y, street_name, zone_type, spot_count
-            FROM ser_zones
-            WHERE latitude  BETWEEN :lat_min  AND :lat_max
-              AND longitude BETWEEN :lng_min  AND :lng_max
-            """
-        )
-        params = {
-            "lat_min": lat - radius_deg,
-            "lat_max": lat + radius_deg,
-            "lng_min": lng - radius_deg,
-            "lng_max": lng + radius_deg,
-        }
-        with self._engine.connect() as conn:
-            rows = conn.execute(query, params).fetchall()
-        return [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
+    def find_containing(self, location: GeoLocation) -> SerZone | None:
+        """Return the first stored zone whose polygon contains the location, or None."""
+        for zone in self.list_all():
+            if zone.contains(location):
+                return zone
+        return None
 
     def list_all(self) -> list[SerZone]:
-        """Return all SER zones ordered by street name."""
+        """
+        Return all SER zones ordered by zone_number.
+
+        A row whose geometry_wkt fails to parse is logged and skipped rather
+        than raising, so one corrupt row does not take down every caller
+        (find_nearest, find_containing, and the bulk GET /parking/ser-zones
+        endpoint all depend on this method).
+        """
         query = text(
-            "SELECT latitude, longitude, street_name, zone_type, spot_count FROM ser_zones ORDER BY street_name"
+            "SELECT zone_number, zone_type, district, spot_count, geometry_wkt "
+            "FROM ser_zones ORDER BY zone_number, zone_type"
         )
         with self._engine.connect() as conn:
             rows = conn.execute(query).fetchall()
-        return [
-            SerZone(
-                street_name=row[2],
-                zone_type=row[3],
-                spot_count=row[4],
-                location=GeoLocation(lat=row[0], lng=row[1]),
+
+        zones: list[SerZone] = []
+        for row in rows:
+            try:
+                geometry = shapely_wkt.loads(row[4])
+            except Exception:
+                logger.warning(
+                    "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
+                    row[0],
+                    row[1],
+                )
+                continue
+            zones.append(
+                SerZone(
+                    zone_number=row[0],
+                    zone_type=row[1],
+                    district=row[2],
+                    spot_count=row[3],
+                    geometry=geometry,
+                )
             )
-            for row in rows
-        ]
+        return zones
+
+    def get_street_names(self, zone_number: str, zone_type: str) -> list[str]:
+        """Return all street names for the given (zone_number, zone_type)."""
+        query = text(
+            "SELECT street_name FROM ser_zone_streets "
+            "WHERE zone_number = :zone_number AND zone_type = :zone_type "
+            "ORDER BY street_name"
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(query, {"zone_number": zone_number, "zone_type": zone_type}).fetchall()
+        return [row[0] for row in rows]
 
     def bulk_replace(self, records: list[dict[str, Any]]) -> int:
         """
-        Replace all SER zone records in a single transaction.
+        Replace all SER zone records (and their street names) in a single transaction.
 
-        Truncates the table and inserts all records; returns the number inserted.
+        Truncates both ser_zones and ser_zone_streets and inserts all
+        records; returns the number of ser_zones rows inserted. Each record
+        dict is expected to carry a "street_names" key (list[str]) in
+        addition to the ser_zones columns.
         """
         if not records:
             with self._engine.begin() as conn:
                 conn.execute(text("TRUNCATE ser_zones"))
+                conn.execute(text("TRUNCATE ser_zone_streets"))
             return 0
+
+        zone_rows = [
+            {
+                "zone_number": r["zone_number"],
+                "zone_type": r["zone_type"],
+                "district": r["district"],
+                "spot_count": r["spot_count"],
+                "geometry_wkt": r["geometry_wkt"],
+            }
+            for r in records
+        ]
+
+        street_rows = [
+            {
+                "zone_number": r["zone_number"],
+                "zone_type": r["zone_type"],
+                "street_name": street_name,
+            }
+            for r in records
+            for street_name in r.get("street_names", [])
+        ]
 
         with self._engine.begin() as conn:
             conn.execute(text("TRUNCATE ser_zones"))
-            conn.execute(ser_zones_table.insert(), records)
+            conn.execute(text("TRUNCATE ser_zone_streets"))
+            conn.execute(ser_zones_table.insert(), zone_rows)
+            if street_rows:
+                conn.execute(ser_zone_streets_table.insert(), street_rows)
 
-        return len(records)
+        return len(zone_rows)

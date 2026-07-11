@@ -31,6 +31,9 @@ from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
 from mobility_manager.application.use_cases.disconnect_ser_ticket_provider import (
     DisconnectSerTicketProvider,
 )
+from mobility_manager.application.use_cases.find_containing_ser_zone import (
+    FindContainingSerZone,
+)
 from mobility_manager.application.use_cases.find_nearest_ser_zone import (
     FindNearestSerZone,
 )
@@ -144,7 +147,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     providers = build_providers()
     city_use_cases = [(provider.city_code, IngestSerZones(provider=provider, repo=repo)) for provider in providers]
     find_uc = FindNearestSerZone(repo=repo)
+    find_containing_uc = FindContainingSerZone(repo=repo)
     app.state.find_nearest_ser_zone = find_uc
+    app.state.find_containing_ser_zone = find_containing_uc
     app.state.ser_zone_repo = repo
 
     parking_scheduler = ParkingIngestionScheduler(

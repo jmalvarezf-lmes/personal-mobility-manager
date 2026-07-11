@@ -1,38 +1,12 @@
 import { expect, test } from "./fixtures/auth";
 
-// Retrieves the Leaflet map instance from the MapContainer's React ref
-// by walking the fiber hook chain of the .leaflet-container element.
-function leafletMapFromFiber(): { x: number; y: number } | null {
-  const container = document.querySelector(".leaflet-container");
-  if (!container) return null;
-  const fiberKey = Object.keys(container).find((k) =>
-    k.startsWith("__reactFiber"),
-  );
-  if (!fiberKey) return null;
-  // The map ref sits in hook[2] of the MapContainer fiber (parent of the container div)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let hook = (container as any)[fiberKey].return?.memoizedState;
-  for (let i = 0; i < 2; i++) hook = hook?.next;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const map = hook?.memoizedState?.current;
-  if (!map?.eachLayer) return null;
-  let pos: { x: number; y: number } | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  map.eachLayer((layer: any) => {
-    if (pos || typeof layer.getLatLng !== "function") return;
-    const pt = map.latLngToContainerPoint(layer.getLatLng());
-    pos = { x: Math.round(pt.x), y: Math.round(pt.y) };
-  });
-  return pos;
-}
-
 test.describe("Map page", () => {
   test("map container is present on load", async ({ page }) => {
     await page.goto("/map");
     await expect(page.locator(".leaflet-container")).toBeVisible({ timeout: 15000 });
   });
 
-  test("zone markers appear after data loads", async ({ page }) => {
+  test("zone polygons appear after data loads", async ({ page }) => {
     const zonesResponsePromise = page.waitForResponse(
       (resp) =>
         resp.url().includes("/api/parking/ser-zones") && resp.status() === 200,
@@ -44,13 +18,14 @@ test.describe("Map page", () => {
 
     expect(data.zones.length).toBeGreaterThan(0);
 
-    // CircleMarkers use canvas renderer — verify the canvas is painted
-    await expect(page.locator("canvas.leaflet-zoom-animated")).toBeVisible({
-      timeout: 10_000,
-    });
+    // react-leaflet's GeoJSON layer renders each zone as an SVG <path> element
+    // inside the overlay pane — verify at least one polygon path is present.
+    await expect(
+      page.locator(".leaflet-overlay-pane path.leaflet-interactive"),
+    ).not.toHaveCount(0, { timeout: 10_000 });
   });
 
-  test("tooltip shows zone details on marker interaction", async ({ page }) => {
+  test("tooltip shows zone details on polygon interaction", async ({ page }) => {
     const zonesResponsePromise = page.waitForResponse(
       (resp) =>
         resp.url().includes("/api/parking/ser-zones") && resp.status() === 200,
@@ -59,18 +34,17 @@ test.describe("Map page", () => {
     await page.goto("/map");
     await zonesResponsePromise;
 
-    await expect(page.locator("canvas.leaflet-zoom-animated")).toBeVisible({
-      timeout: 10_000,
-    });
+    const polygon = page
+      .locator(".leaflet-overlay-pane path.leaflet-interactive")
+      .first();
+    await expect(polygon).toBeVisible({ timeout: 10_000 });
 
-    // Get viewport pixel coords of the first CircleMarker via the Leaflet map instance
-    const markerPos = await page.evaluate(leafletMapFromFiber);
-    expect(markerPos).not.toBeNull();
-
-    await page.mouse.move(markerPos!.x, markerPos!.y);
+    await polygon.hover();
 
     const tooltip = page.locator(".leaflet-tooltip");
     await expect(tooltip).toBeVisible({ timeout: 5_000 });
+    // Tooltip shows zone number, district, and (optionally) spot count —
+    // no street names (see design.md D9 / osm-zone-map spec).
     await expect(tooltip).toContainText(/\d+/);
   });
 });

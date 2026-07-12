@@ -12,7 +12,14 @@ export interface Zone {
   geometry: ZoneGeometry;
 }
 
+export interface Frontier {
+  zone_number: string;
+  neighbourhood: string;
+  geometry: ZoneGeometry;
+}
+
 export interface ZonesResponse {
   city: string;
   zones: Zone[];
+  frontiers: Frontier[];
 }

@@ -43,7 +43,14 @@ def _joined_band(
         spot_count=spot_count,
         geometry=LineString([(x, y), (x + dx, y)]),
     )
-    return JoinedBand(band=band, zone_number=zone_number, street_name=street_name, district=district)
+    return JoinedBand(
+        band=band,
+        zone_number=zone_number,
+        street_name=street_name,
+        district=district,
+        district_code="01",
+        barrio_code="06",
+    )
 
 
 def test_two_bands_same_zone_and_colour_dissolve_into_one_record() -> None:

@@ -32,6 +32,8 @@ class JoinedBand:
     zone_number: str
     street_name: str
     district: str
+    district_code: str  # "Codigo de distrito", verbatim from the callejero (may be zero-padded)
+    barrio_code: str  # "Codigo de barrio", verbatim from the callejero (may be zero-padded)
 
 
 def build_callejero_index(points: list[CallejeroPoint]) -> STRtree:
@@ -68,6 +70,8 @@ def join_bands_to_callejero(
                 zone_number=nearest_point.zone_number,
                 street_name=nearest_point.street_name,
                 district=nearest_point.district,
+                district_code=nearest_point.district_code,
+                barrio_code=nearest_point.barrio_code,
             )
         )
 

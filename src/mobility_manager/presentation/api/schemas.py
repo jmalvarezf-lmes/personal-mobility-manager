@@ -15,6 +15,7 @@ class SerZoneResponse(BaseModel):
     zone_number: str
     zone_type: str
     district: str
+    neighbourhood: str | None
     street_names: list[str]
     spot_count: int
     distance_meters: int
@@ -34,9 +35,16 @@ class SerZoneMapItem(BaseModel):
     geometry: dict[str, Any]  # GeoJSON Polygon or MultiPolygon, WGS84
 
 
+class FrontierMapItem(BaseModel):
+    zone_number: str
+    neighbourhood: str
+    geometry: dict[str, Any]  # GeoJSON Polygon or MultiPolygon, WGS84 — no colour field, see design.md D8
+
+
 class ListSerZonesResponse(BaseModel):
     city: str
     zones: list[SerZoneMapItem]
+    frontiers: list[FrontierMapItem]
 
 
 # ---------------------------------------------------------------------------

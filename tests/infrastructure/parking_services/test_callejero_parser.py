@@ -16,12 +16,21 @@ from mobility_manager.infrastructure.parking_services.madrid.callejero_parser im
 
 _HEADER = (
     "Nombre de la vía;Zona Servicio Estacionamiento Regulado;Nombre del distrito;"
+    "Codigo de distrito;Codigo de barrio;"
     "Longitud en S R  ETRS89 WGS84;Latitud en S R  ETRS89 WGS84"
 )
 
 
-def _row(street: str, zone: str, district: str, lng: str, lat: str) -> str:
-    return f"{street};{zone};{district};{lng};{lat}"
+def _row(
+    street: str,
+    zone: str,
+    district: str,
+    lng: str,
+    lat: str,
+    district_code: str = "01",
+    barrio_code: str = "06",
+) -> str:
+    return f"{street};{zone};{district};{district_code};{barrio_code};{lng};{lat}"
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +86,23 @@ def test_known_row_parses_expected_fields() -> None:
     # UTM 25830 near Puerta del Sol, consistent with values used elsewhere in the test suite.
     assert point.utm_x == pytest.approx(440594.0, abs=1000.0)
     assert point.utm_y == pytest.approx(4474469.0, abs=1000.0)
+
+
+def test_known_row_parses_expected_district_and_barrio_codes() -> None:
+    # Real callejero row for zone 163 (Sol) has district code "01", barrio
+    # code "06" — verified against real cached callejero data.
+    csv_text = textwrap.dedent(
+        f"""\
+        {_HEADER}
+        {_row("ABADA", "163", "CENTRO", "3º42'14.2'' W", "40º25'0.5'' N", district_code="01", barrio_code="06")}
+        """
+    )
+    points = parse_callejero_csv(csv_text)
+
+    assert len(points) == 1
+    point = points[0]
+    assert point.district_code == "01"
+    assert point.barrio_code == "06"
 
 
 def test_row_missing_street_name_is_skipped() -> None:

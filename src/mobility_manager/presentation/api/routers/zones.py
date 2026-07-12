@@ -1,9 +1,10 @@
 """
 Presentation: Zones API router.
 
-Exposes GET /parking/ser-zones to return all stored SER zones for a city,
-suitable for bulk map rendering. Street names are deliberately excluded from
-this response — see design.md D9.
+Exposes GET /parking/ser-zones to return all stored SER zones (and their
+presentation-only frontiers) for a city, suitable for bulk map rendering.
+Street names are deliberately excluded from this response — see design.md
+D9 of add-ser-zone-boundaries.
 """
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -12,7 +13,11 @@ from mobility_manager.infrastructure.parking_services.madrid.zone_type import (
     MadridZoneType,
 )
 from mobility_manager.presentation.api.geojson import geometry_to_wgs84_geojson
-from mobility_manager.presentation.api.schemas import ListSerZonesResponse, SerZoneMapItem
+from mobility_manager.presentation.api.schemas import (
+    FrontierMapItem,
+    ListSerZonesResponse,
+    SerZoneMapItem,
+)
 
 router = APIRouter(prefix="/parking", tags=["parking"])
 
@@ -31,12 +36,13 @@ def list_ser_zones(
     request: Request,
     city: str = Query(..., description="City code (e.g. 'madrid')"),
 ) -> ListSerZonesResponse:
-    """Return all SER zones for the given city, with polygon geometry reprojected to WGS84 GeoJSON."""
+    """Return all SER zones (and frontiers) for the given city, with geometry reprojected to WGS84 GeoJSON."""
     if city not in _SUPPORTED_CITIES:
         raise HTTPException(status_code=404, detail=f"City '{city}' is not supported")
 
     repo = request.app.state.ser_zone_repo
     zones = repo.list_all()
+    zone_areas = repo.list_zone_areas()
 
     return ListSerZonesResponse(
         city=city,
@@ -50,5 +56,13 @@ def list_ser_zones(
                 geometry=geometry_to_wgs84_geojson(z.geometry),
             )
             for z in zones
+        ],
+        frontiers=[
+            FrontierMapItem(
+                zone_number=za.zone_number,
+                neighbourhood=za.neighbourhood,
+                geometry=geometry_to_wgs84_geojson(za.geometry),
+            )
+            for za in zone_areas
         ],
     )

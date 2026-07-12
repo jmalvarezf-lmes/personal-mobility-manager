@@ -44,6 +44,21 @@ Each zone polygon SHALL display a Leaflet tooltip on hover containing the zone's
 - **WHEN** the user hovers over a zone polygon
 - **THEN** a tooltip is displayed containing the zone number, district, and spot count for that zone, with no street names and no additional network request
 
+### Requirement: Zone frontiers are rendered as a pale neutral layer beneath the precise zone polygons
+The map page SHALL fetch the `frontiers` array from `GET /parking/ser-zones?city=madrid` and render each as a filled polygon shape using a single fixed pale grey style (not derived from any zone's `colour`), drawn beneath the existing precise per-`(zone_number, zone_type)` polygons so both are visible at once.
+
+#### Scenario: Frontier renders in neutral grey regardless of the zone_number's colours
+- **WHEN** a zone_number with both Azul and Verde precise zones is rendered
+- **THEN** its single frontier entry renders in the same fixed pale grey used for every other frontier, not a colour derived from either zone_type
+
+#### Scenario: Frontier renders beneath precise zone polygons
+- **WHEN** both a frontier and its zone_number's precise zone polygons are visible in the same viewport
+- **THEN** the precise, fully-coloured polygons render on top of the pale grey frontier, not the other way around
+
+#### Scenario: Frontier tooltip shows the neighbourhood name
+- **WHEN** the user hovers over a frontier polygon (in an area not covered by a precise zone polygon)
+- **THEN** a tooltip is displayed containing the zone number and neighbourhood name
+
 ### Requirement: Dev proxy forwards API calls to FastAPI
 The Vite development configuration SHALL proxy requests from `frontend/` to the path prefix `/api` to `http://localhost:8000` so that the frontend can call FastAPI endpoints without CORS issues during development.
 
@@ -65,6 +80,10 @@ The `frontend/` project SHALL include Playwright end-to-end tests in `frontend/e
 #### Scenario: Tooltip shows zone details on polygon interaction
 - **WHEN** Playwright clicks or hovers over a visible zone polygon
 - **THEN** a tooltip element is visible containing a zone number, a district name, and a spot count number
+
+#### Scenario: Frontier polygons appear after data loads
+- **WHEN** Playwright navigates to the map page and waits for the zones API response
+- **THEN** at least one frontier polygon element is present, in addition to the existing precise zone polygon assertions
 
 ### Requirement: Full stack starts with docker-compose up
 A `frontend` service SHALL be added to `docker-compose.yml` using a multi-stage build (`Dockerfile.frontend`): stage 1 installs dependencies with pnpm and runs `pnpm build`; stage 2 serves `dist/` via nginx on port 80. The service SHALL be exposed on host port 3000. Running `docker-compose up --build` SHALL start backend, postgres, and frontend together with no additional steps required.

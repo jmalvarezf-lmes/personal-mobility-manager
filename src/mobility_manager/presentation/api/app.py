@@ -5,6 +5,7 @@ Wires together all infrastructure and starts/stops the schedulers
 via the FastAPI lifespan context manager.
 """
 
+import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -66,6 +67,7 @@ from mobility_manager.config import (
     get_enabled_ser_providers,
     get_encryption_key,
     get_ingestion_interval_hours,
+    get_log_level,
     get_vehicle_poll_interval_minutes,
 )
 from mobility_manager.domain.events.vehicle_location_updated import (
@@ -135,6 +137,11 @@ from mobility_manager.presentation.api.routers.ser_ticket_providers import (
 )
 from mobility_manager.presentation.api.routers.vehicles import router as vehicles_router
 from mobility_manager.presentation.api.routers.zones import router as zones_router
+
+logging.basicConfig(
+    level=get_log_level(),
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager

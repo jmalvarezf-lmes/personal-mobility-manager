@@ -45,3 +45,20 @@ def test_execute_returns_none_without_raising_when_outside_all_zones() -> None:
     result = use_case.execute(location)
 
     assert result is None
+
+
+def test_execute_never_consults_zone_area_frontier_data() -> None:
+    """
+    Containment logic must depend only on ser_zones precise geometry, never
+    on ser_zone_areas frontier data (ser-zone-query spec: "Containment logic
+    is unaffected by frontier data").
+    """
+    repo = MagicMock()
+    repo.find_containing.return_value = _make_ser_zone()
+
+    use_case = FindContainingSerZone(repo=repo)
+    location = GeoLocation(lat=40.4168, lng=-3.7038)
+    use_case.execute(location)
+
+    repo.get_zone_area.assert_not_called()
+    repo.list_zone_areas.assert_not_called()

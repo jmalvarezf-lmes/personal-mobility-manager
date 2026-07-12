@@ -9,6 +9,7 @@ fixture since it is never parsed (design.md D4).
 """
 
 import io
+from unittest.mock import MagicMock, patch
 
 import pytest
 import shapefile
@@ -120,6 +121,11 @@ def test_geometry_is_linestring_with_expected_points() -> None:
 # ---------------------------------------------------------------------------
 # SSRF hostname allowlist
 # ---------------------------------------------------------------------------
+#
+# fetch_ser_band_zip delegates the generic hostname-check/download/extract
+# logic to shapefile_zip.py (tested exhaustively in test_shapefile_zip.py) —
+# these tests just confirm this module wires that shared helper with its own
+# URL/allowlist correctly.
 
 
 def test_fetch_ser_band_zip_rejects_disallowed_hostname() -> None:
@@ -129,3 +135,18 @@ def test_fetch_ser_band_zip_rejects_disallowed_hostname() -> None:
     """
     with pytest.raises(ValueError, match="allowed list"):
         fetch_ser_band_zip("https://evil.example.com/SHP_ZIP.zip")
+
+
+def test_fetch_ser_band_zip_accepts_allowed_hostname() -> None:
+    """fetch_ser_band_zip must accept geoportal.madrid.es URLs (no ValueError raised)."""
+    response = MagicMock()
+    response.is_success = True
+    response.content = b"zip-bytes"
+
+    with patch("httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value.__enter__.return_value
+        mock_client.get.return_value = response
+
+        content = fetch_ser_band_zip("https://geoportal.madrid.es/fsdescargas/SHP_ZIP.zip")
+
+    assert content == b"zip-bytes"

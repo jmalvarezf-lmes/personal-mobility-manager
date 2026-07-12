@@ -6,6 +6,14 @@ here solely as a source of administrative `zone_number`, street name, and
 district per address point. Coordinates are published as WGS84 DMS strings
 and are converted to decimal degrees, then reprojected to EPSG:25830 so they
 can be spatially joined against the SER band shapefile (see design.md D3).
+
+Also captures `Codigo de distrito`/`Codigo de barrio` — previously-unused
+numeric codes needed to resolve each zone_number's frontier via a
+compound-code lookup against the Barrios shapefile (see
+add-ser-zone-frontiers design.md D2). These codes are zero-padded strings in
+the real CSV (e.g. "01", "06") — callers that build a Barrios-style compound
+key (e.g. "1-6") must strip leading zeros first; this module deliberately
+does not normalize them, keeping them verbatim as parsed from the source.
 """
 
 from __future__ import annotations
@@ -44,6 +52,8 @@ class CallejeroPoint:
     zone_number: str
     street_name: str
     district: str
+    district_code: str  # "Codigo de distrito", e.g. "01" — zero-padded in the source CSV
+    barrio_code: str  # "Codigo de barrio", e.g. "06" — zero-padded in the source CSV
     lat: float  # WGS84
     lng: float  # WGS84
     utm_x: float  # EPSG:25830 easting
@@ -89,6 +99,8 @@ def parse_callejero_csv(csv_text: str) -> list[CallejeroPoint]:
         street_name = (row.get("Nombre de la vía") or "").strip()
         zone_number = (row.get("Zona Servicio Estacionamiento Regulado") or "").strip()
         district = (row.get("Nombre del distrito") or "").strip()
+        district_code = (row.get("Codigo de distrito") or "").strip()
+        barrio_code = (row.get("Codigo de barrio") or "").strip()
         raw_lng = (row.get("Longitud en S R  ETRS89 WGS84") or "").strip()
         raw_lat = (row.get("Latitud en S R  ETRS89 WGS84") or "").strip()
 
@@ -119,6 +131,8 @@ def parse_callejero_csv(csv_text: str) -> list[CallejeroPoint]:
                 zone_number=zone_number,
                 street_name=street_name,
                 district=district,
+                district_code=district_code,
+                barrio_code=barrio_code,
                 lat=lat,
                 lng=lng,
                 utm_x=utm_x,

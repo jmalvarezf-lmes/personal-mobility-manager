@@ -65,3 +65,70 @@ def test_list_all_returns_all_rows_when_all_valid() -> None:
     zones = repo.list_all()
 
     assert len(zones) == 2
+
+
+# ---------------------------------------------------------------------------
+# get_zone_area / list_zone_areas
+# ---------------------------------------------------------------------------
+
+
+def _make_engine_with_fetchone(row: tuple | None) -> MagicMock:
+    engine = MagicMock()
+    conn = MagicMock()
+    engine.connect.return_value.__enter__.return_value = conn
+    conn.execute.return_value.fetchone.return_value = row
+    return engine
+
+
+def test_get_zone_area_returns_zone_area_for_known_zone_number() -> None:
+    engine = _make_engine_with_fetchone(("163", "Sol", _VALID_WKT))
+    repo = PostgresSerZoneRepository(engine)
+
+    zone_area = repo.get_zone_area("163")
+
+    assert zone_area is not None
+    assert zone_area.zone_number == "163"
+    assert zone_area.neighbourhood == "Sol"
+    assert zone_area.geometry.is_valid
+
+
+def test_get_zone_area_returns_none_for_unknown_zone_number() -> None:
+    engine = _make_engine_with_fetchone(None)
+    repo = PostgresSerZoneRepository(engine)
+
+    assert repo.get_zone_area("999") is None
+
+
+def test_get_zone_area_returns_none_for_invalid_geometry() -> None:
+    engine = _make_engine_with_fetchone(("163", "Sol", "NOT VALID WKT"))
+    repo = PostgresSerZoneRepository(engine)
+
+    assert repo.get_zone_area("163") is None
+
+
+def test_list_zone_areas_returns_all_rows() -> None:
+    rows = [
+        ("100", "Palacio", _VALID_WKT),
+        ("200", "Sol", _VALID_WKT),
+    ]
+    engine = _make_engine_with_rows(rows)
+    repo = PostgresSerZoneRepository(engine)
+
+    zone_areas = repo.list_zone_areas()
+
+    assert len(zone_areas) == 2
+    assert {za.zone_number for za in zone_areas} == {"100", "200"}
+
+
+def test_list_zone_areas_skips_invalid_geometry_row() -> None:
+    rows = [
+        ("100", "Palacio", _VALID_WKT),
+        ("200", "Sol", "garbage"),
+    ]
+    engine = _make_engine_with_rows(rows)
+    repo = PostgresSerZoneRepository(engine)
+
+    zone_areas = repo.list_zone_areas()
+
+    assert len(zone_areas) == 1
+    assert zone_areas[0].zone_number == "100"

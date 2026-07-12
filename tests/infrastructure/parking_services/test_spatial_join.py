@@ -13,11 +13,21 @@ from mobility_manager.infrastructure.parking_services.madrid.spatial_join import
 )
 
 
-def _make_point(zone_number: str, street_name: str, district: str, utm_x: float, utm_y: float) -> CallejeroPoint:
+def _make_point(
+    zone_number: str,
+    street_name: str,
+    district: str,
+    utm_x: float,
+    utm_y: float,
+    district_code: str = "01",
+    barrio_code: str = "06",
+) -> CallejeroPoint:
     return CallejeroPoint(
         zone_number=zone_number,
         street_name=street_name,
         district=district,
+        district_code=district_code,
+        barrio_code=barrio_code,
         lat=40.4168,
         lng=-3.7038,
         utm_x=utm_x,
@@ -45,6 +55,19 @@ def test_band_inherits_nearest_callejero_point() -> None:
     assert joined[0].zone_number == "163"
     assert joined[0].street_name == "ABADA"
     assert joined[0].district == "CENTRO"
+
+
+def test_band_inherits_nearest_callejero_points_district_and_barrio_code() -> None:
+    near_point = _make_point(
+        "163", "ABADA", "CENTRO", utm_x=440590.0, utm_y=4474460.0, district_code="01", barrio_code="06"
+    )
+    band = _make_band(utm_x=440590.0, utm_y=4474460.0)
+
+    joined = join_bands_to_callejero([band], [near_point])
+
+    assert len(joined) == 1
+    assert joined[0].district_code == "01"
+    assert joined[0].barrio_code == "06"
 
 
 def test_multiple_bands_each_join_independently() -> None:

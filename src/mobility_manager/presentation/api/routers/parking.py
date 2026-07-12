@@ -38,11 +38,13 @@ def get_ser_zone(
     distance = int(round(ser_zone.geometry.distance(Point(utm_x, utm_y))))
 
     street_names = repo.get_street_names(ser_zone.zone_number, ser_zone.zone_type)
+    zone_area = repo.get_zone_area(ser_zone.zone_number)
 
     return SerZoneResponse(
         zone_number=ser_zone.zone_number,
         zone_type=ser_zone.zone_type,
         district=ser_zone.district,
+        neighbourhood=zone_area.neighbourhood if zone_area is not None else None,
         street_names=street_names,
         spot_count=ser_zone.spot_count,
         distance_meters=distance,

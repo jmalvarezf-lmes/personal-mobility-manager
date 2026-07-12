@@ -12,15 +12,16 @@ from __future__ import annotations
 
 import io
 import logging
-import zipfile
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
-import httpx
 import shapefile
 import shapely
 from shapely.geometry import LineString
 
+from mobility_manager.infrastructure.parking_services.madrid.shapefile_zip import (
+    extract_shapefile_components,
+    fetch_zip,
+)
 from mobility_manager.infrastructure.parking_services.madrid.zone_type import (
     MadridZoneType,
 )
@@ -43,24 +44,9 @@ class SerBand:
     geometry: LineString
 
 
-def _hostname_allowed(url: str) -> None:
-    hostname = urlparse(url).hostname or ""
-    if hostname not in _ALLOWED_HOSTNAMES:
-        raise ValueError(f"URL hostname {hostname!r} is not in the allowed list: {_ALLOWED_HOSTNAMES}")
-
-
 def fetch_ser_band_zip(url: str) -> bytes:
     """Download the SER band shapefile zip archive and return its raw bytes."""
-    _hostname_allowed(url)
-    logger.info("Fetching Madrid SER band shapefile zip from %s", url)
-    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
-        response = client.get(url)
-
-    if not response.is_success:
-        raise RuntimeError(f"Failed to fetch Madrid SER band shapefile zip: HTTP {response.status_code}")
-
-    logger.info("Fetched Madrid SER band shapefile zip (%d bytes)", len(response.content))
-    return response.content
+    return fetch_zip(url, _ALLOWED_HOSTNAMES, source_label="Madrid SER band shapefile zip")
 
 
 def _extract_shapefile_components(zip_bytes: bytes) -> tuple[io.BytesIO, io.BytesIO]:
@@ -68,22 +54,7 @@ def _extract_shapefile_components(zip_bytes: bytes) -> tuple[io.BytesIO, io.Byte
     Extract .shp and .dbf members matching SER_BANDA_APARCAMIENTO from the zip,
     entirely in memory.
     """
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
-        shp_name = next(
-            (n for n in archive.namelist() if n.lower().endswith(f"{_SHAPEFILE_BASENAME.lower()}.shp")),
-            None,
-        )
-        dbf_name = next(
-            (n for n in archive.namelist() if n.lower().endswith(f"{_SHAPEFILE_BASENAME.lower()}.dbf")),
-            None,
-        )
-        if shp_name is None or dbf_name is None:
-            raise RuntimeError(
-                f"SER band shapefile zip did not contain {_SHAPEFILE_BASENAME}.shp/.dbf; found: {archive.namelist()}"
-            )
-        shp_bytes = io.BytesIO(archive.read(shp_name))
-        dbf_bytes = io.BytesIO(archive.read(dbf_name))
-    return shp_bytes, dbf_bytes
+    return extract_shapefile_components(zip_bytes, _SHAPEFILE_BASENAME, zip_label="SER band shapefile")
 
 
 def parse_ser_bands(shp_bytes: io.BytesIO, dbf_bytes: io.BytesIO) -> list[SerBand]:

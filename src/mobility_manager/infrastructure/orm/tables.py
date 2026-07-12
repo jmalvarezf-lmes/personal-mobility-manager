@@ -47,6 +47,14 @@ ser_zone_streets_table = Table(
     Index("idx_ser_zone_streets_zone", "zone_number", "zone_type"),
 )
 
+ser_zone_areas_table = Table(
+    "ser_zone_areas",
+    metadata,
+    Column("zone_number", String(10), primary_key=True),
+    Column("neighbourhood", Text, nullable=False),
+    Column("geometry_wkt", Text, nullable=False),  # WKT Polygon/MultiPolygon, EPSG:25830
+)
+
 users_table = Table(
     "users",
     metadata,

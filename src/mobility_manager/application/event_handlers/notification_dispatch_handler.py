@@ -13,6 +13,8 @@ receives this notification kind unconditionally whenever the threshold is
 met.
 """
 
+import logging
+
 from mobility_manager.application.notification_templates import render
 from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.config import get_notification_movement_threshold_meters
@@ -31,6 +33,7 @@ from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
 
+logger = logging.getLogger(__name__)
 
 class NotificationDispatchHandler:
     """Notifies a vehicle's owner when it moves more than a configured distance."""
@@ -58,14 +61,17 @@ class NotificationDispatchHandler:
         """
         vehicle = self._vehicle_repo.get_by_id(event.vehicle_id)
         if vehicle is None:
+            logger.warning("Vehicle not found: %s", event.vehicle_id)
             return
 
         previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
         if previous is None:
+            logger.info("No previous location for vehicle: %s", event.vehicle_id)
             return
 
         distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
         if distance < get_notification_movement_threshold_meters():
+            logger.info("Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id)
             return
 
         preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
@@ -79,3 +85,4 @@ class NotificationDispatchHandler:
                 location=GeoLocation(lat=event.latitude, lng=event.longitude),
             ),
         )
+        logger.info("Notification sent for vehicle: %s", event.vehicle_id)

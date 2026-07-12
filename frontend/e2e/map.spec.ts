@@ -14,7 +14,10 @@ test.describe("Map page", () => {
 
     await page.goto("/map");
     const zonesResponse = await zonesResponsePromise;
-    const data = (await zonesResponse.json()) as { zones: unknown[] };
+    const data = (await zonesResponse.json()) as {
+      zones: unknown[];
+      frontiers: unknown[];
+    };
 
     expect(data.zones.length).toBeGreaterThan(0);
 
@@ -22,6 +25,29 @@ test.describe("Map page", () => {
     // inside the overlay pane — verify at least one polygon path is present.
     await expect(
       page.locator(".leaflet-overlay-pane path.leaflet-interactive"),
+    ).not.toHaveCount(0, { timeout: 10_000 });
+  });
+
+  test("frontier polygons appear after data loads", async ({ page }) => {
+    const zonesResponsePromise = page.waitForResponse(
+      (resp) =>
+        resp.url().includes("/api/parking/ser-zones") && resp.status() === 200,
+    );
+
+    await page.goto("/map");
+    const zonesResponse = await zonesResponsePromise;
+    const data = (await zonesResponse.json()) as {
+      zones: unknown[];
+      frontiers: unknown[];
+    };
+
+    expect(data.frontiers.length).toBeGreaterThan(0);
+
+    // Frontier polygons are rendered as a separate react-leaflet GeoJSON
+    // layer with a fixed "zone-frontier" className (see ZoneMap.tsx),
+    // distinguishing them from the precise zone polygons in the DOM.
+    await expect(
+      page.locator(".leaflet-overlay-pane path.zone-frontier"),
     ).not.toHaveCount(0, { timeout: 10_000 });
   });
 
@@ -34,8 +60,14 @@ test.describe("Map page", () => {
     await page.goto("/map");
     await zonesResponsePromise;
 
+    // Exclude frontier polygons: they render beneath (before, in DOM order)
+    // the precise zone polygons, so an unqualified ".leaflet-interactive"
+    // locator would grab a frontier here and its hover point can be
+    // covered by a zone polygon on top, causing hover() to time out.
     const polygon = page
-      .locator(".leaflet-overlay-pane path.leaflet-interactive")
+      .locator(
+        ".leaflet-overlay-pane path.leaflet-interactive:not(.zone-frontier)",
+      )
       .first();
     await expect(polygon).toBeVisible({ timeout: 10_000 });
 

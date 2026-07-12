@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from mobility_manager.domain.value_objects.ser_zone_boundary_record import (
     SerZoneBoundaryRecord,
 )
+from mobility_manager.domain.value_objects.zone_area import ZoneArea
 
 
 class CityParkingDataProvider(ABC):
@@ -28,5 +29,17 @@ class CityParkingDataProvider(ABC):
 
         Raises an exception on unrecoverable fetch errors. Rows that fail
         parsing or have unrecognised zone types are skipped internally.
+        """
+        ...
+
+    @abstractmethod
+    def get_zone_areas(self) -> list[ZoneArea]:
+        """
+        Fetch and resolve one presentation-only frontier (ZoneArea) per
+        resolvable zone_number for this city.
+
+        Raises an exception on unrecoverable fetch errors. A zone_number
+        whose frontier cannot be resolved is skipped internally (absent from
+        the result), not given a fallback/synthesized geometry.
         """
         ...

@@ -29,6 +29,12 @@ def get_ingestion_interval_hours() -> int:
         return 24
 
 
+def get_log_level() -> str:
+    """Return the root logging level from environment (default INFO)."""
+    raw = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    return raw if raw in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"} else "INFO"
+
+
 def _mask_dsn_password(dsn: str) -> str:
     """Replace password in DSN with *** for safe logging."""
     return re.sub(r"(://[^:@/]+:)[^@]+(@)", r"\1***\2", dsn)

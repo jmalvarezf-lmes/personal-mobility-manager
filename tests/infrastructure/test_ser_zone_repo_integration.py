@@ -60,12 +60,25 @@ def pg_engine():
         conn.execute(
             text("CREATE INDEX IF NOT EXISTS idx_ser_zone_streets_zone ON ser_zone_streets (zone_number, zone_type)")
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS ser_zone_areas (
+                    zone_number    VARCHAR(10) PRIMARY KEY,
+                    neighbourhood  TEXT NOT NULL,
+                    geometry_wkt   TEXT NOT NULL
+                )
+                """
+            )
+        )
         conn.execute(text("TRUNCATE ser_zones"))
         conn.execute(text("TRUNCATE ser_zone_streets"))
+        conn.execute(text("TRUNCATE ser_zone_areas"))
     yield engine
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE ser_zones"))
         conn.execute(text("TRUNCATE ser_zone_streets"))
+        conn.execute(text("TRUNCATE ser_zone_areas"))
     engine.dispose()
 
 
@@ -84,6 +97,18 @@ def _make_zone_record(
         "spot_count": spot_count,
         "geometry_wkt": geometry_wkt,
         "street_names": street_names if street_names is not None else ["ABADA"],
+    }
+
+
+def _make_zone_area_record(
+    zone_number: str = "163",
+    neighbourhood: str = "Sol",
+    geometry_wkt: str = _SQUARE_A_WKT,
+) -> dict:
+    return {
+        "zone_number": zone_number,
+        "neighbourhood": neighbourhood,
+        "geometry_wkt": geometry_wkt,
     }
 
 
@@ -281,3 +306,101 @@ def test_old_point_columns_are_absent(pg_engine) -> None:
     assert "utm_x" not in columns, "utm_x column must be dropped"
     assert "utm_y" not in columns, "utm_y column must be dropped"
     assert "street_name" not in columns, "street_name column must be dropped from ser_zones"
+
+
+# ---------------------------------------------------------------------------
+# ser_zone_areas: get_zone_area / list_zone_areas / bulk_replace
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_replace_persists_zone_areas(pg_engine) -> None:
+    repo = PostgresSerZoneRepository(pg_engine)
+
+    inserted = repo.bulk_replace(
+        [_make_zone_record()],
+        zone_areas=[_make_zone_area_record()],
+    )
+
+    assert inserted == 1
+    zone_area = repo.get_zone_area("163")
+    assert zone_area is not None
+    assert zone_area.neighbourhood == "Sol"
+
+
+def test_get_zone_area_returns_none_for_unknown_zone_number(pg_engine) -> None:
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record()], zone_areas=[_make_zone_area_record()])
+
+    assert repo.get_zone_area("999") is None
+
+
+def test_list_zone_areas_returns_all_rows(pg_engine) -> None:
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace(
+        [
+            _make_zone_record(zone_number="100", zone_type="Azul", geometry_wkt=_SQUARE_A_WKT),
+            _make_zone_record(zone_number="200", zone_type="Verde", geometry_wkt=_SQUARE_B_WKT),
+        ],
+        zone_areas=[
+            _make_zone_area_record(zone_number="100", neighbourhood="Palacio", geometry_wkt=_SQUARE_A_WKT),
+            _make_zone_area_record(zone_number="200", neighbourhood="Sol", geometry_wkt=_SQUARE_B_WKT),
+        ],
+    )
+
+    zone_areas = repo.list_zone_areas()
+
+    assert len(zone_areas) == 2
+    assert {za.zone_number for za in zone_areas} == {"100", "200"}
+
+
+def test_bulk_replace_truncates_old_zone_areas(pg_engine) -> None:
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace(
+        [_make_zone_record(zone_number="100", geometry_wkt=_SQUARE_A_WKT)],
+        zone_areas=[_make_zone_area_record(zone_number="100", geometry_wkt=_SQUARE_A_WKT)],
+    )
+    repo.bulk_replace(
+        [_make_zone_record(zone_number="200", geometry_wkt=_SQUARE_B_WKT)],
+        zone_areas=[_make_zone_area_record(zone_number="200", geometry_wkt=_SQUARE_B_WKT)],
+    )
+
+    zone_areas = repo.list_zone_areas()
+
+    assert len(zone_areas) == 1
+    assert zone_areas[0].zone_number == "200"
+
+
+def test_list_all_find_nearest_find_containing_never_query_ser_zone_areas(pg_engine) -> None:
+    """
+    list_all()/find_nearest()/find_containing() must never depend on
+    ser_zone_areas — frontier data is fetched only via its own explicit
+    method call (design.md D6 of add-ser-zone-frontiers).
+    """
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record()], zone_areas=[])
+
+    zones = repo.list_all()
+    assert len(zones) == 1
+    assert not hasattr(zones[0], "neighbourhood")
+
+    from pyproj import Transformer
+
+    square = Polygon([(440584, 4474459), (440604, 4474459), (440604, 4474479), (440584, 4474479)])
+    centroid = square.centroid
+    utm_to_wgs84 = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+    lng, lat = utm_to_wgs84.transform(centroid.x, centroid.y)
+
+    containing = repo.find_containing(GeoLocation(lat=lat, lng=lng))
+    assert containing is not None
+
+    nearest = repo.find_nearest(GeoLocation(lat=lat, lng=lng))
+    assert nearest is not None
+
+
+def test_bulk_replace_with_no_zone_areas_argument_still_works(pg_engine) -> None:
+    """bulk_replace's zone_areas argument is optional and defaults sanely."""
+    repo = PostgresSerZoneRepository(pg_engine)
+    inserted = repo.bulk_replace([_make_zone_record()])
+
+    assert inserted == 1
+    assert repo.list_zone_areas() == []

@@ -43,3 +43,16 @@ class CityParkingDataProvider(ABC):
         the result), not given a fallback/synthesized geometry.
         """
         ...
+
+    @abstractmethod
+    def get_records_and_zone_areas(self) -> tuple[list[SerZoneBoundaryRecord], list[ZoneArea]]:
+        """
+        Fetch records and zone areas together, sharing one fetch/parse of any
+        upstream sources both need.
+
+        Equivalent to calling get_records() followed by get_zone_areas(), but
+        without re-fetching/re-parsing shared sources twice within the same
+        call — use this instead of calling both separately when both results
+        are needed for the same ingestion run.
+        """
+        ...

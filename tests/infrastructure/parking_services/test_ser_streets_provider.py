@@ -356,6 +356,47 @@ def test_get_zone_areas_and_get_records_do_not_share_cache() -> None:
     assert len(zone_areas) == 1
 
 
+def test_get_records_and_zone_areas_fetches_each_source_exactly_once() -> None:
+    """
+    get_records_and_zone_areas() must issue exactly 3 HTTP calls (SER band
+    shapefile, callejero CSV, Barrios shapefile) — not 5 — proving it shares
+    one fetch of the SER band shapefile/callejero CSV between the records and
+    zone_areas halves, instead of calling get_records() then get_zone_areas()
+    back to back (which independently re-fetches both per design.md D7).
+    """
+    provider = MadridSerStreetsProvider(
+        shp_url="https://geoportal.madrid.es/fsdescargas/fake_ser.zip",
+        callejero_url="https://datos.madrid.es/fake.csv",
+        barrios_shp_url="https://geoportal.madrid.es/fsdescargas/fake_barrios.zip",
+    )
+
+    shp_response = MagicMock()
+    shp_response.is_success = True
+    shp_response.content = _build_shp_zip()
+
+    csv_response = MagicMock()
+    csv_response.is_success = True
+    csv_response.content = _CALLEJERO_CSV.encode("latin-1")
+
+    barrios_response = MagicMock()
+    barrios_response.is_success = True
+    barrios_response.content = _build_barrios_zip()
+
+    with patch("httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value.__enter__.return_value
+        mock_client.get.side_effect = [shp_response, csv_response, barrios_response]
+
+        records, zone_areas = provider.get_records_and_zone_areas()
+
+        assert mock_client.get.call_count == 3
+
+    assert len(records) == 1
+    assert records[0].zone_number == "163"
+    assert len(zone_areas) == 1
+    assert zone_areas[0].zone_number == "163"
+    assert zone_areas[0].neighbourhood == "Sol"
+
+
 # ---------------------------------------------------------------------------
 # get_records() output freshness across repeated calls (no stale cache)
 # ---------------------------------------------------------------------------

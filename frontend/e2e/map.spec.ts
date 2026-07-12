@@ -60,8 +60,14 @@ test.describe("Map page", () => {
     await page.goto("/map");
     await zonesResponsePromise;
 
+    // Exclude frontier polygons: they render beneath (before, in DOM order)
+    // the precise zone polygons, so an unqualified ".leaflet-interactive"
+    // locator would grab a frontier here and its hover point can be
+    // covered by a zone polygon on top, causing hover() to time out.
     const polygon = page
-      .locator(".leaflet-overlay-pane path.leaflet-interactive")
+      .locator(
+        ".leaflet-overlay-pane path.leaflet-interactive:not(.zone-frontier)",
+      )
       .first();
     await expect(polygon).toBeVisible({ timeout: 10_000 });
 

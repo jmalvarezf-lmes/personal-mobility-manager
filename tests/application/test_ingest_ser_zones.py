@@ -40,8 +40,7 @@ def _make_zone_area(**kwargs) -> ZoneArea:
 def test_execute_maps_records_to_repo_dicts_and_persists() -> None:
     provider = MagicMock()
     provider.city_code = "madrid"
-    provider.get_records.return_value = [_make_record()]
-    provider.get_zone_areas.return_value = [_make_zone_area()]
+    provider.get_records_and_zone_areas.return_value = ([_make_record()], [_make_zone_area()])
 
     repo = MagicMock()
     repo.bulk_replace.return_value = 1
@@ -78,7 +77,7 @@ def test_execute_raises_and_does_not_touch_repo_for_empty_records() -> None:
     """
     provider = MagicMock()
     provider.city_code = "madrid"
-    provider.get_records.return_value = []
+    provider.get_records_and_zone_areas.return_value = ([], [])
 
     repo = MagicMock()
 
@@ -92,13 +91,13 @@ def test_execute_raises_and_does_not_touch_repo_for_empty_records() -> None:
 
 def test_execute_raises_and_does_not_touch_repo_when_provider_raises() -> None:
     """
-    When provider.get_records() raises (simulating any of the sources
-    failing), bulk_replace must never be called — the failure must propagate
-    before any persistence is attempted.
+    When provider.get_records_and_zone_areas() raises (simulating any of the
+    sources failing), bulk_replace must never be called — the failure must
+    propagate before any persistence is attempted.
     """
     provider = MagicMock()
     provider.city_code = "madrid"
-    provider.get_records.side_effect = RuntimeError("HTTP 500 fetching source")
+    provider.get_records_and_zone_areas.side_effect = RuntimeError("HTTP 500 fetching source")
 
     repo = MagicMock()
 
@@ -120,8 +119,7 @@ def test_execute_raises_and_does_not_touch_repo_when_zone_areas_empty() -> None:
     """
     provider = MagicMock()
     provider.city_code = "madrid"
-    provider.get_records.return_value = [_make_record()]
-    provider.get_zone_areas.return_value = []
+    provider.get_records_and_zone_areas.return_value = ([_make_record()], [])
 
     repo = MagicMock()
 
@@ -133,16 +131,18 @@ def test_execute_raises_and_does_not_touch_repo_when_zone_areas_empty() -> None:
     repo.bulk_replace.assert_not_called()
 
 
-def test_get_records_and_get_zone_areas_are_each_called_exactly_once() -> None:
+def test_get_records_and_zone_areas_is_called_exactly_once() -> None:
     """
-    Resilience test (design.md D7 of add-ser-zone-frontiers): IngestSerZones
-    itself introduces no caching around the provider calls — each method is
-    invoked exactly once per execute() call, with no memoization wrapper.
+    IngestSerZones fetches records and zone areas via a single combined
+    provider call (get_records_and_zone_areas), not two separate get_records()
+    + get_zone_areas() calls — this avoids the SER band shapefile/callejero
+    CSV being downloaded twice per ingestion run. See design.md D7 of
+    add-ser-zone-frontiers for why get_records()/get_zone_areas() themselves
+    still don't share a cache with each other.
     """
     provider = MagicMock()
     provider.city_code = "madrid"
-    provider.get_records.return_value = [_make_record()]
-    provider.get_zone_areas.return_value = [_make_zone_area()]
+    provider.get_records_and_zone_areas.return_value = ([_make_record()], [_make_zone_area()])
 
     repo = MagicMock()
     repo.bulk_replace.return_value = 1
@@ -150,5 +150,4 @@ def test_get_records_and_get_zone_areas_are_each_called_exactly_once() -> None:
     use_case = IngestSerZones(provider=provider, repo=repo)
     use_case.execute()
 
-    provider.get_records.assert_called_once()
-    provider.get_zone_areas.assert_called_once()
+    provider.get_records_and_zone_areas.assert_called_once()

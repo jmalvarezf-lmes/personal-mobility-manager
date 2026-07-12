@@ -5,6 +5,7 @@ Shared entry point for both pull (scheduler) and push (HTTP endpoint) location i
 Validates coordinates and timestamp before persisting.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
@@ -17,6 +18,8 @@ from mobility_manager.domain.ports.event_publisher import EventPublisher
 from mobility_manager.domain.ports.vehicle_location_repository import (
     VehicleLocationRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 _MAX_FUTURE_SECONDS = 60
 
@@ -65,6 +68,17 @@ class RecordVehicleLocation:
         now_utc = datetime.now(UTC)
         if recorded_at_utc > now_utc + timedelta(seconds=_MAX_FUTURE_SECONDS):
             raise ValueError(f"recorded_at is more than {_MAX_FUTURE_SECONDS}s in the future")
+
+        latest = self._location_repo.get_latest(vehicle_id)
+        if latest is not None and latest.latitude == lat and latest.longitude == lon:
+            logger.info(
+                "Discarding duplicate location for vehicle %s (source=%s): unchanged since last stored (%s, %s)",
+                vehicle_id,
+                source,
+                lat,
+                lon,
+            )
+            return
 
         location = VehicleLocation(
             id=uuid4(),

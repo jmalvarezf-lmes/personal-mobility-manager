@@ -2,6 +2,7 @@
 Unit tests for RecordVehicleLocation use case.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -24,6 +25,9 @@ class InMemoryLocationRepo:
         self.saved.append(location)
 
     def get_latest(self, vehicle_id) -> VehicleLocation | None:
+        for location in reversed(self.saved):
+            if location.vehicle_id == vehicle_id:
+                return location
         return None
 
 
@@ -167,3 +171,64 @@ def test_no_event_published_on_validation_failure() -> None:
 
     assert repo.saved == []
     assert publisher.published == []
+
+
+def test_duplicate_location_is_not_saved_or_published() -> None:
+    uc, repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+    first_time = datetime.now(UTC) - timedelta(minutes=5)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=first_time, source="pull")
+
+    second_time = datetime.now(UTC)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=second_time, source="pull")
+
+    assert len(repo.saved) == 1
+    assert len(publisher.published) == 1
+
+
+def test_duplicate_location_across_pull_and_push_sources_is_not_saved() -> None:
+    """Dedup applies regardless of which source (pull/push) reported the identical fix."""
+    uc, repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+    first_time = datetime.now(UTC) - timedelta(minutes=5)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=first_time, source="pull")
+
+    second_time = datetime.now(UTC)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=second_time, source="push")
+
+    assert len(repo.saved) == 1
+    assert len(publisher.published) == 1
+
+
+def test_changed_location_is_saved_and_published() -> None:
+    uc, repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+    first_time = datetime.now(UTC) - timedelta(minutes=5)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=first_time, source="pull")
+
+    second_time = datetime.now(UTC)
+    uc.execute(vehicle_id=vehicle_id, lat=40.5, lon=-3.7, recorded_at=second_time, source="pull")
+
+    assert len(repo.saved) == 2
+    assert len(publisher.published) == 2
+
+
+def test_duplicate_location_for_different_vehicle_is_still_saved() -> None:
+    uc, repo, _publisher = _make_use_case()
+    vehicle_a = uuid4()
+    vehicle_b = uuid4()
+    uc.execute(vehicle_id=vehicle_a, lat=40.4, lon=-3.7, recorded_at=datetime.now(UTC), source="pull")
+    uc.execute(vehicle_id=vehicle_b, lat=40.4, lon=-3.7, recorded_at=datetime.now(UTC), source="pull")
+
+    assert len(repo.saved) == 2
+
+
+def test_duplicate_location_logs_discard(caplog: pytest.LogCaptureFixture) -> None:
+    uc, _repo, _publisher = _make_use_case()
+    vehicle_id = uuid4()
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=datetime.now(UTC), source="pull")
+
+    with caplog.at_level(logging.INFO):
+        uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=datetime.now(UTC), source="pull")
+
+    assert "duplicate" in caplog.text.lower()

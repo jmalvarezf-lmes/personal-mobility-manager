@@ -1,6 +1,7 @@
 import "leaflet/dist/leaflet.css";
 import type { Feature, Geometry } from "geojson";
 import type { PathOptions } from "leaflet";
+import { useMemo } from "react";
 import { GeoJSON, MapContainer, TileLayer, Tooltip } from "react-leaflet";
 import type { Frontier, Zone } from "../types/zone";
 
@@ -28,7 +29,46 @@ interface ZoneMapProps {
   tileUrl: string | null;
 }
 
+interface SpotBreakdown {
+  zoneType: string;
+  colour: string;
+  spotCount: number;
+}
+
+// Groups each zone_number's street/band polygons by zone_type (colour) and
+// sums their spot_count, so the frontier tooltip can show a single
+// per-colour breakdown instead of the street layer needing its own tooltip.
+function groupSpotsByZoneNumber(zones: Zone[]): Map<string, SpotBreakdown[]> {
+  const byZoneNumber = new Map<string, Map<string, SpotBreakdown>>();
+  for (const zone of zones) {
+    let byType = byZoneNumber.get(zone.zone_number);
+    if (!byType) {
+      byType = new Map();
+      byZoneNumber.set(zone.zone_number, byType);
+    }
+    const existing = byType.get(zone.zone_type);
+    if (existing) {
+      existing.spotCount += zone.spot_count;
+    } else {
+      byType.set(zone.zone_type, {
+        zoneType: zone.zone_type,
+        colour: zone.colour,
+        spotCount: zone.spot_count,
+      });
+    }
+  }
+  const result = new Map<string, SpotBreakdown[]>();
+  for (const [zoneNumber, byType] of byZoneNumber) {
+    result.set(
+      zoneNumber,
+      [...byType.values()].filter((breakdown) => breakdown.spotCount > 0),
+    );
+  }
+  return result;
+}
+
 export default function ZoneMap({ zones, frontiers, tileUrl }: ZoneMapProps) {
+  const spotBreakdownByZoneNumber = useMemo(() => groupSpotsByZoneNumber(zones), [zones]);
   return (
     <MapContainer
       center={MADRID_CENTER}
@@ -59,6 +99,7 @@ export default function ZoneMap({ zones, frontiers, tileUrl }: ZoneMapProps) {
           properties: {},
           geometry: frontier.geometry as Geometry,
         };
+        const spotBreakdown = spotBreakdownByZoneNumber.get(frontier.zone_number) ?? [];
         return (
           <GeoJSON
             key={`frontier-${frontier.zone_number}`}
@@ -69,6 +110,15 @@ export default function ZoneMap({ zones, frontiers, tileUrl }: ZoneMapProps) {
               <span className="font-semibold">{frontier.zone_number}</span>
               <br />
               {frontier.neighbourhood}
+              {spotBreakdown.map((breakdown) => (
+                <div key={breakdown.zoneType} className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: breakdown.colour }}
+                  />
+                  {breakdown.zoneType}: {breakdown.spotCount} plazas
+                </div>
+              ))}
             </Tooltip>
           </GeoJSON>
         );
@@ -79,31 +129,18 @@ export default function ZoneMap({ zones, frontiers, tileUrl }: ZoneMapProps) {
           properties: {},
           geometry: zone.geometry as Geometry,
         };
+        // Non-interactive: purely a colour fill. Mouse events must pass
+        // through to the frontier polygon beneath so hovering anywhere in
+        // the neighbourhood — including over a street band — shows the
+        // single frontier tooltip instead of a separate one here.
         const pathOptions: PathOptions = {
           color: zone.colour,
           fillColor: zone.colour,
           fillOpacity: 0.5,
           weight: 2,
+          interactive: false,
         };
-        return (
-          <GeoJSON
-            key={`${zone.zone_number}-${zone.zone_type}`}
-            data={feature}
-            style={pathOptions}
-          >
-            <Tooltip sticky>
-              <span className="font-semibold">{zone.zone_number}</span>
-              <br />
-              {zone.district}
-              {zone.spot_count > 0 && (
-                <>
-                  <br />
-                  {zone.spot_count} plazas
-                </>
-              )}
-            </Tooltip>
-          </GeoJSON>
-        );
+        return <GeoJSON key={`${zone.zone_number}-${zone.zone_type}`} data={feature} style={pathOptions} />;
       })}
     </MapContainer>
   );

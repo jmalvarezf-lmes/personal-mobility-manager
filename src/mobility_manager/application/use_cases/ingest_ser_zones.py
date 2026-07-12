@@ -42,7 +42,7 @@ class IngestSerZones:
         city = self._provider.city_code
         logger.info("Starting parking data ingestion for city: %s", city)
 
-        records = self._provider.get_records()
+        records, zone_areas = self._provider.get_records_and_zone_areas()
 
         if not records:
             logger.error(
@@ -53,15 +53,14 @@ class IngestSerZones:
                 f"Ingestion for city {city!r} produced zero zone records; aborting without touching stored data"
             )
 
-        zone_areas = self._provider.get_zone_areas()
-
         if not zone_areas:
             # records is non-empty at this point (checked above), so a
-            # zero-length zone_areas result here means get_zone_areas()
-            # degraded independently (e.g. the Barrios shapefile fetch
-            # yielded zero usable records) — abort before touching any of
-            # the three tables, the same partial-write bug class fixed for
-            # the discarded Voronoi-based attempt's review pass.
+            # zero-length zone_areas result here means the zone-area half of
+            # the pipeline degraded independently (e.g. the Barrios
+            # shapefile fetch yielded zero usable records) — abort before
+            # touching any of the three tables, the same partial-write bug
+            # class fixed for the discarded Voronoi-based attempt's review
+            # pass.
             logger.error(
                 "Ingestion produced non-empty records but zero zone areas [%s] — "
                 "aborting to avoid a partial write that would silently leave ser_zone_areas empty",

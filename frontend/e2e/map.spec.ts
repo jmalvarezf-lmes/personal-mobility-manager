@@ -21,10 +21,14 @@ test.describe("Map page", () => {
 
     expect(data.zones.length).toBeGreaterThan(0);
 
-    // react-leaflet's GeoJSON layer renders each zone as an SVG <path> element
-    // inside the overlay pane — verify at least one polygon path is present.
+    // react-leaflet's GeoJSON layer renders each zone as an SVG <path>
+    // element inside the overlay pane. Zone (street-band) polygons are
+    // non-interactive — pure colour fills, with mouse events passing
+    // through to the frontier layer beneath (see ZoneMap.tsx) — so they
+    // don't carry the "leaflet-interactive" class; exclude the frontier
+    // paths instead to isolate them.
     await expect(
-      page.locator(".leaflet-overlay-pane path.leaflet-interactive"),
+      page.locator(".leaflet-overlay-pane path:not(.zone-frontier)"),
     ).not.toHaveCount(0, { timeout: 10_000 });
   });
 
@@ -60,14 +64,13 @@ test.describe("Map page", () => {
     await page.goto("/map");
     await zonesResponsePromise;
 
-    // Exclude frontier polygons: they render beneath (before, in DOM order)
-    // the precise zone polygons, so an unqualified ".leaflet-interactive"
-    // locator would grab a frontier here and its hover point can be
-    // covered by a zone polygon on top, causing hover() to time out.
+    // Zone (street-band) polygons are non-interactive colour fills — mouse
+    // events pass through to the frontier layer beneath, which carries the
+    // single unified tooltip (zone code + neighbourhood + spot counts
+    // grouped by colour; see ZoneMap.tsx). So the frontier polygon is the
+    // only interactive target on the map.
     const polygon = page
-      .locator(
-        ".leaflet-overlay-pane path.leaflet-interactive:not(.zone-frontier)",
-      )
+      .locator(".leaflet-overlay-pane path.leaflet-interactive.zone-frontier")
       .first();
     await expect(polygon).toBeVisible({ timeout: 10_000 });
 
@@ -75,8 +78,8 @@ test.describe("Map page", () => {
 
     const tooltip = page.locator(".leaflet-tooltip");
     await expect(tooltip).toBeVisible({ timeout: 5_000 });
-    // Tooltip shows zone number, district, and (optionally) spot count —
-    // no street names (see design.md D9 / osm-zone-map spec).
+    // Tooltip shows the zone number and neighbourhood name — no street
+    // names (see design.md D9 / osm-zone-map spec).
     await expect(tooltip).toContainText(/\d+/);
   });
 });

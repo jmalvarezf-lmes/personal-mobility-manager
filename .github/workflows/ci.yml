@@ -74,7 +74,11 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
+<<<<<<< HEAD
           version: 11.11.0
+=======
+          version: 11.12.0
+>>>>>>> fbb0c87573416271bde6d35a6b77e413d665140f
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -148,7 +152,11 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
+<<<<<<< HEAD
           version: 11.11.0
+=======
+          version: 11.12.0
+>>>>>>> fbb0c87573416271bde6d35a6b77e413d665140f
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

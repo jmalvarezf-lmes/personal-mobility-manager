@@ -29,6 +29,9 @@ from mobility_manager.application.use_cases.connect_ser_ticket_provider import (
 )
 from mobility_manager.application.use_cases.create_ser_ticket import CreateSerTicket
 from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
+from mobility_manager.application.use_cases.determine_ser_ticket_requirement import (
+    DetermineSerTicketRequirement,
+)
 from mobility_manager.application.use_cases.disconnect_ser_ticket_provider import (
     DisconnectSerTicketProvider,
 )
@@ -226,7 +229,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # needs event_publisher, so event_publisher's construction stays here
     # rather than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
-    ser_ticket_trigger_handler = SerTicketTriggerHandler()
+    determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement()
+    ser_ticket_trigger_handler = SerTicketTriggerHandler(
+        vehicle_repo=vehicle_repo,
+        vehicle_location_repo=vehicle_location_repo,
+        user_preferences_repo=user_preferences_repo,
+        find_containing_ser_zone=find_containing_uc,
+        determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
+        send_notification=send_notification_uc,
+    )
     event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_trigger_handler.handle)
     notification_dispatch_handler = NotificationDispatchHandler(
         vehicle_repo=vehicle_repo,

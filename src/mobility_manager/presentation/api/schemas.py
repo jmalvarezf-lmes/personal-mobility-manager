@@ -275,3 +275,38 @@ class NotificationChannelsResponse(BaseModel):
     """Notification channels the current user has configured."""
 
     channels: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Notification type preference schemas (GET /notifications/types,
+# GET/PUT /notifications/preferences)
+# ---------------------------------------------------------------------------
+
+
+class NotificationTypeResponse(BaseModel):
+    """One row of the notification_types catalog."""
+
+    key: str
+    label: str
+    config_schema: dict[str, Any]
+
+
+class NotificationPreferenceResponse(BaseModel):
+    """
+    The current user's preference for one notification type.
+
+    `config` is the effective config: any field the type's config_schema
+    declares that the user hasn't explicitly set (e.g. threshold_m) is
+    resolved via its fallback default before being returned here.
+    """
+
+    type_key: str
+    enabled: bool
+    config: dict[str, Any]
+
+
+class UpdateNotificationPreferenceRequest(BaseModel):
+    """Request body for PUT /notifications/preferences/{type_key}."""
+
+    enabled: bool
+    config: dict[str, Any] = {}

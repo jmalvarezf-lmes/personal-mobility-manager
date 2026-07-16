@@ -52,6 +52,20 @@
       "languages": {
         "en": "English",
         "es": "Spanish"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "typeLabels": {
+          "location_moved": "Vehicle moved",
+          "ser_zone_ticket_required": "SER ticket required"
+        },
+        "fields": {
+          "threshold_m": {
+            "label": "Movement threshold (meters)",
+            "help": "Minimum distance the vehicle must move before this notification is sent."
+          }
+        },
+        "invalidThreshold": "Threshold must be at least {{min}} meters."
       }
     },
     "serProviders": {

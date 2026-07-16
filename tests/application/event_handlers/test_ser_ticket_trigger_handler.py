@@ -2,17 +2,21 @@
 Unit tests for SerTicketTriggerHandler.
 
 Covers every scenario in the ser-zone-ticket-notification and
-vehicle-location-events specs: movement below threshold skips the zone
-lookup entirely, a vehicle's first-ever recorded location still triggers a
-zone check, genuine movement triggers a zone check, no notification when
-DetermineSerTicketRequirement returns False, a notification with the
-correct plate/zone_number when it returns True, a missing vehicle is
-skipped without error, and the message is localized to the owner's
-notification_language (or falls back to the default when unset). Also
-confirms no ticket-provider or ticket-creation code path is ever exercised.
+vehicle-location-events specs: a disabled (or missing) `ser_zone_ticket_required`
+preference skips before any previous-location or zone lookup, movement below
+the effective threshold skips the zone lookup entirely, a vehicle's
+first-ever recorded location still triggers a zone check, genuine movement
+triggers a zone check, no notification when DetermineSerTicketRequirement
+returns False, a notification with the correct plate/zone_number when it
+returns True, a missing vehicle is skipped without error, its threshold is
+independent from `location_moved`'s, and the message is localized to the
+owner's notification_language (or falls back to the default when unset).
+Also confirms no ticket-provider or ticket-creation code path is ever
+exercised.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,8 +25,11 @@ from shapely.geometry import Polygon
 from mobility_manager.application.event_handlers.ser_ticket_trigger_handler import (
     SerTicketTriggerHandler,
 )
-from mobility_manager.config import get_notification_movement_threshold_meters
+from mobility_manager.config import get_default_notification_movement_threshold_meters
 from mobility_manager.domain.entities.ser_zone import SerZone
+from mobility_manager.domain.entities.user_notification_preference import (
+    UserNotificationPreference,
+)
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
@@ -43,10 +50,12 @@ _MOVED_LAT, _MOVED_LNG = 40.4258, -3.7038  # ~1km north of _FAR_*
 
 _SQUARE = Polygon([(440584, 4474459), (440604, 4474459), (440604, 4474479), (440584, 4474479)])
 
+_TYPE_KEY = "ser_zone_ticket_required"
+
 
 @pytest.fixture(autouse=True)
 def _threshold(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
+    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
 
 
 class FakeVehicleRepo:
@@ -63,8 +72,10 @@ class FakeVehicleRepo:
 class FakeVehicleLocationRepo:
     def __init__(self) -> None:
         self.previous: VehicleLocation | None = None
+        self.get_previous_calls: list[UUID] = []
 
     def get_previous(self, vehicle_id: UUID, before: datetime) -> VehicleLocation | None:
+        self.get_previous_calls.append(vehicle_id)
         return self.previous
 
 
@@ -84,6 +95,35 @@ class FakeUserPreferencesRepo:
 
     def find_by_user_id(self, user_id: UUID) -> UserPreferences | None:
         return self.preferences.get(user_id)
+
+
+class FakeNotificationPreferencesRepo:
+    def __init__(self) -> None:
+        self._rows: dict[tuple[UUID, str], UserNotificationPreference] = {}
+
+    def set(self, user_id: UUID, type_key: str, enabled: bool, config: dict[str, Any] | None = None) -> None:
+        self._rows[(user_id, type_key)] = UserNotificationPreference(
+            user_id=user_id,
+            type_key=type_key,
+            enabled=enabled,
+            config=config or {},
+            updated_at=datetime.now(UTC),
+        )
+
+    def list_types(self):  # pragma: no cover - not exercised by this handler
+        raise NotImplementedError
+
+    def ensure_defaults(self, user_id: UUID) -> None:  # pragma: no cover - not exercised by this handler
+        raise NotImplementedError
+
+    def find_by_user_id(self, user_id: UUID) -> list[UserNotificationPreference]:
+        return [row for (uid, _), row in self._rows.items() if uid == user_id]
+
+    def find_by_user_id_and_type(self, user_id: UUID, type_key: str) -> UserNotificationPreference | None:
+        return self._rows.get((user_id, type_key))
+
+    def update(self, user_id, type_key, enabled, config):  # pragma: no cover - not exercised by this handler
+        raise NotImplementedError
 
 
 class FakeFindContainingSerZone:
@@ -153,6 +193,7 @@ def _make_handler(
     vehicle_repo: FakeVehicleRepo,
     location_repo: FakeVehicleLocationRepo,
     preferences_repo: FakeUserPreferencesRepo,
+    notification_preferences_repo: FakeNotificationPreferencesRepo,
     find_containing_ser_zone: FakeFindContainingSerZone,
     determine_ser_ticket_requirement: FakeDetermineSerTicketRequirement,
     send_notification: FakeSendNotification,
@@ -161,6 +202,7 @@ def _make_handler(
         vehicle_repo=vehicle_repo,  # type: ignore[arg-type]
         vehicle_location_repo=location_repo,  # type: ignore[arg-type]
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
+        notification_preferences_repo=notification_preferences_repo,  # type: ignore[arg-type]
         find_containing_ser_zone=find_containing_ser_zone,  # type: ignore[arg-type]
         determine_ser_ticket_requirement=determine_ser_ticket_requirement,  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
@@ -178,6 +220,75 @@ def _make_event(vehicle_id: UUID, lat: float, lng: float, now: datetime) -> Vehi
     )
 
 
+def test_disabled_preference_skips_before_location_or_zone_lookup() -> None:
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=False)
+    find_containing = FakeFindContainingSerZone()
+    find_containing.zone = _make_ser_zone()
+    determine_requirement = FakeDetermineSerTicketRequirement(required=True)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.handle(event)
+
+    assert location_repo.get_previous_calls == []
+    assert find_containing.calls == []
+    assert determine_requirement.calls == []
+    assert send_notification.calls == []
+
+
+def test_missing_preference_row_skips_before_location_or_zone_lookup() -> None:
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()  # no row at all
+    find_containing = FakeFindContainingSerZone()
+    determine_requirement = FakeDetermineSerTicketRequirement(required=True)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.handle(event)
+
+    assert location_repo.get_previous_calls == []
+    assert find_containing.calls == []
+    assert send_notification.calls == []
+
+
 def test_skips_when_movement_below_threshold() -> None:
     vehicle_id = uuid4()
     user_id = uuid4()
@@ -188,12 +299,20 @@ def test_skips_when_movement_below_threshold() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = _make_ser_zone()
     determine_requirement = FakeDetermineSerTicketRequirement(required=True)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _NEAR_LAT, _NEAR_LNG, now)
@@ -215,7 +334,7 @@ def test_checks_zone_when_movement_exactly_equals_threshold() -> None:
     user_id = uuid4()
     now = datetime.now(UTC)
 
-    threshold_meters = get_notification_movement_threshold_meters()
+    threshold_meters = get_default_notification_movement_threshold_meters()
     # Binary-search a latitude offset so the *measured* distance (via the
     # same UTM projection distance_m uses) lands as close to
     # threshold_meters as floating point allows, rather than assuming a
@@ -241,12 +360,20 @@ def test_checks_zone_when_movement_exactly_equals_threshold() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = None
     determine_requirement = FakeDetermineSerTicketRequirement(required=False)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, exact_lat, exact_lng, now)
@@ -266,12 +393,20 @@ def test_checks_zone_on_first_ever_location() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = None  # first-ever location
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = None
     determine_requirement = FakeDetermineSerTicketRequirement(required=False)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -293,12 +428,20 @@ def test_checks_zone_on_genuine_movement() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = None
     determine_requirement = FakeDetermineSerTicketRequirement(required=False)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -318,12 +461,20 @@ def test_skips_notification_when_ticket_not_required() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = None
     determine_requirement = FakeDetermineSerTicketRequirement(required=False)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -344,12 +495,20 @@ def test_sends_notification_with_correct_plate_and_zone_number() -> None:
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
     preferences_repo.set(user_id, None)
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = _make_ser_zone(zone_number="163")
     determine_requirement = FakeDetermineSerTicketRequirement(required=True)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -366,6 +525,44 @@ def test_sends_notification_with_correct_plate_and_zone_number() -> None:
     assert message.location.lng == _MOVED_LNG
 
 
+def test_no_notification_when_ticket_required_but_zone_is_none() -> None:
+    """
+    Defensive branch: if DetermineSerTicketRequirement ever returned True for
+    a None zone, the handler must not proceed to build a notification that
+    needs zone.zone_number (would raise AttributeError) — it returns instead.
+    """
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    find_containing = FakeFindContainingSerZone()
+    find_containing.zone = None
+    determine_requirement = FakeDetermineSerTicketRequirement(required=True)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.handle(event)
+
+    assert send_notification.calls == []
+
+
 def test_missing_vehicle_is_skipped_without_error() -> None:
     vehicle_id = uuid4()
     now = datetime.now(UTC)
@@ -374,12 +571,19 @@ def test_missing_vehicle_is_skipped_without_error() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = _make_ser_zone()
     determine_requirement = FakeDetermineSerTicketRequirement(required=True)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -390,6 +594,50 @@ def test_missing_vehicle_is_skipped_without_error() -> None:
     assert find_containing.calls == []
     assert determine_requirement.calls == []
     assert send_notification.calls == []
+
+
+def test_threshold_is_independent_from_location_moved() -> None:
+    """
+    Configuring a different threshold_m for ser_zone_ticket_required than
+    location_moved must not cross-talk: this handler only ever reads its
+    own (user_id, "ser_zone_ticket_required") row's config, never
+    "location_moved"'s.
+    """
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    # location_moved has a huge threshold (would suppress); ser_zone_ticket_required has a tiny one (should proceed).
+    notification_preferences_repo.set(user_id, "location_moved", enabled=True, config={"threshold_m": 100_000})
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True, config={"threshold_m": 5})
+    find_containing = FakeFindContainingSerZone()
+    find_containing.zone = None
+    determine_requirement = FakeDetermineSerTicketRequirement(required=False)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    # _NEAR_* is ~15m from _FAR_* — over the 5m ser_zone_ticket_required
+    # override, so the zone check must run despite location_moved's huge
+    # (would-suppress) threshold.
+    event = _make_event(vehicle_id, _NEAR_LAT, _NEAR_LNG, now)
+
+    handler.handle(event)
+
+    assert len(find_containing.calls) == 1
 
 
 def test_message_localized_to_owner_notification_language() -> None:
@@ -403,12 +651,20 @@ def test_message_localized_to_owner_notification_language() -> None:
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()
     preferences_repo.set(user_id, "es")
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = _make_ser_zone(zone_number="163")
     determine_requirement = FakeDetermineSerTicketRequirement(required=True)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
@@ -432,12 +688,20 @@ def test_message_falls_back_to_default_language_when_unset() -> None:
     location_repo = FakeVehicleLocationRepo()
     location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
     preferences_repo = FakeUserPreferencesRepo()  # no preferences row at all
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = _make_ser_zone(zone_number="163")
     determine_requirement = FakeDetermineSerTicketRequirement(required=True)
     send_notification = FakeSendNotification()
     handler = _make_handler(
-        vehicle_repo, location_repo, preferences_repo, find_containing, determine_requirement, send_notification
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
     )
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)

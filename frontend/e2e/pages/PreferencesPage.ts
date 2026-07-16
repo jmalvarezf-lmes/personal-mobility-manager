@@ -6,6 +6,10 @@ import type { Locator, Page } from "@playwright/test";
  * Locator strategy:
  *  - ARIA roles / labels for interactive elements (number input, checkbox, save button)
  *  - role="alert" for the error message
+ *  - Notification-type rows (toggle + inline config field) are looked up by
+ *    the type's `key` via id, since multiple types can share the same field
+ *    label (e.g. both catalog types expose "threshold_m"), which would make
+ *    `getByLabel` ambiguous across rows.
  */
 export class PreferencesPage {
   readonly heading: Locator;
@@ -28,6 +32,26 @@ export class PreferencesPage {
     this.preferredChannelSelect = page.getByLabel(/preferred notification channel/i);
     this.noChannelsConnectedMessage = page.getByText(/connect a notification channel/i);
     this.notificationLanguageSelect = page.getByLabel(/notification language/i);
+  }
+
+  notificationToggle(typeKey: string): Locator {
+    return this.page.locator(`#notification-${typeKey}-enabled`);
+  }
+
+  notificationThresholdInput(typeKey: string): Locator {
+    return this.page.locator(`#notification-${typeKey}-threshold_m`);
+  }
+
+  async setNotificationEnabled(typeKey: string, value: boolean) {
+    const toggle = this.notificationToggle(typeKey);
+    const checked = await toggle.isChecked();
+    if (checked !== value) {
+      await toggle.click();
+    }
+  }
+
+  async setNotificationThreshold(typeKey: string, meters: number) {
+    await this.notificationThresholdInput(typeKey).fill(String(meters));
   }
 
   async goto() {

@@ -3,6 +3,7 @@ Application configuration loaded from environment variables.
 """
 
 import contextlib
+import logging
 import os
 import re
 from typing import Any
@@ -10,6 +11,11 @@ from typing import Any
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+_LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR = "NOTIFICATION_MOVEMENT_THRESHOLD_METERS"
+_NOTIFICATION_THRESHOLD_ENV_VAR = "DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS"
 
 
 def get_postgres_dsn() -> str:
@@ -105,13 +111,57 @@ def get_vehicle_poll_interval_minutes() -> int:
         return 5
 
 
-def get_notification_movement_threshold_meters() -> float:
-    """Return the minimum movement distance (metres) that triggers a location notification."""
-    raw = os.environ.get("NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
+def get_default_notification_movement_threshold_meters() -> float:
+    """
+    Return the fallback movement-distance threshold (metres) used to resolve
+    a user's effective `threshold_m` for a notification type when their
+    per-type `config` doesn't specify one.
+
+    No longer read directly by the notification event handlers — see
+    notification-type-preferences design.md decision 3. This is a live,
+    restart-only-tunable default: changing it takes effect immediately for
+    every user who hasn't explicitly overridden `threshold_m`, without a
+    data migration, since stored preference rows never snapshot this value.
+
+    Warns if the old NOTIFICATION_MOVEMENT_THRESHOLD_METERS env var is still
+    set while the new DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS is not
+    — otherwise a deployment that hasn't renamed it silently reverts to the
+    `50` default with no signal that its previously-configured value is
+    being ignored.
+    """
+    if os.environ.get(_LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR) and not os.environ.get(
+        _NOTIFICATION_THRESHOLD_ENV_VAR
+    ):
+        logger.warning(
+            "%s is set but %s is not — the old variable is no longer read and this deployment is silently "
+            "using the default of 50 metres. Rename %s to %s.",
+            _LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR,
+            _NOTIFICATION_THRESHOLD_ENV_VAR,
+            _LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR,
+            _NOTIFICATION_THRESHOLD_ENV_VAR,
+        )
+
+    raw = os.environ.get(_NOTIFICATION_THRESHOLD_ENV_VAR, "50")
     try:
         return float(raw)
     except ValueError:
         return 50.0
+
+
+def resolve_effective_threshold(config: dict[str, Any]) -> float:
+    """
+    Resolve a notification type's effective `threshold_m` from a stored
+    `config` dict, falling back to get_default_notification_movement_threshold_meters()
+    when the field is absent.
+
+    Shared by NotificationDispatchHandler and SerTicketTriggerHandler, which
+    previously each implemented an identical private `_effective_threshold`
+    — see notification-type-preferences review findings R2-001.
+    """
+    threshold_m = config.get("threshold_m")
+    if threshold_m is not None:
+        return float(threshold_m)
+    return get_default_notification_movement_threshold_meters()
 
 
 def get_enabled_ser_providers() -> list[str]:

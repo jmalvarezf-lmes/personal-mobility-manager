@@ -35,6 +35,13 @@ interface MockPreferences {
  *    backend's RemoveNotificationChannel side effect
  *  - POST /api/notifications/telegram/link-code -> fixed deep link
  *  - GET/PUT /api/preferences -> `preferences`, mutated in place by PUT
+ *  - GET /api/notifications/types and GET /api/notifications/preferences ->
+ *    fixed catalog/preferences fixtures. PreferencesPage's `load()` calls
+ *    these via `Promise.all` alongside the routes above, so they must be
+ *    mocked too or the page falls into its generic error branch (see
+ *    preferences.spec.ts's `mockPreferencesApis` for the fuller version of
+ *    this fixture used by tests that actually exercise the Notifications
+ *    section; this file only needs GETs since no test here toggles them).
  */
 async function mockApis(
   page: Page,
@@ -128,6 +135,42 @@ async function mockApis(
         body: JSON.stringify(preferences),
       });
     }
+  });
+
+  await page.route("**/api/notifications/types", async (route, request) => {
+    if (request.method() !== "GET") {
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          key: "location_moved",
+          label: "Vehicle moved",
+          config_schema: { threshold_m: { type: "integer", min: 1 } },
+        },
+        {
+          key: "ser_zone_ticket_required",
+          label: "SER ticket required",
+          config_schema: { threshold_m: { type: "integer", min: 1 } },
+        },
+      ]),
+    });
+  });
+
+  await page.route("**/api/notifications/preferences", async (route, request) => {
+    if (request.method() !== "GET") {
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { type_key: "location_moved", enabled: true, config: { threshold_m: 50 } },
+        { type_key: "ser_zone_ticket_required", enabled: true, config: { threshold_m: 50 } },
+      ]),
+    });
   });
 
   return { connectedChannels, preferences };

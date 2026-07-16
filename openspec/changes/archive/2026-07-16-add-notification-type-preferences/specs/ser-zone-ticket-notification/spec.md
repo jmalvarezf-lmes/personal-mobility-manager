@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: SerTicketTriggerHandler notifies the owner when a ticket is required
 When `DetermineSerTicketRequirement` reports a ticket is required for the zone containing a `VehicleLocationUpdated` event's coordinates, `SerTicketTriggerHandler` SHALL:
 1. Look up the `Vehicle` for `event.vehicle_id`. If no such vehicle exists, it SHALL skip silently (no notification, no error).

@@ -13,6 +13,42 @@ const DEFAULT_PREFERENCES = {
   notification_language: null as string | null,
 };
 
+type NotificationConfigFieldSchema = { type: string; min?: number };
+type NotificationType = {
+  key: string;
+  label: string;
+  config_schema: Record<string, NotificationConfigFieldSchema>;
+};
+type NotificationPreference = {
+  type_key: string;
+  enabled: boolean;
+  config: Record<string, number>;
+};
+
+// Two catalog types, both declaring a `threshold_m` config field — mirrors
+// the seeded `notification_types` rows from the backend migration.
+const DEFAULT_NOTIFICATION_TYPES: NotificationType[] = [
+  {
+    key: "location_moved",
+    label: "Vehicle moved",
+    config_schema: { threshold_m: { type: "integer", min: 1 } },
+  },
+  {
+    key: "ser_zone_ticket_required",
+    label: "SER ticket required",
+    config_schema: { threshold_m: { type: "integer", min: 1 } },
+  },
+];
+
+// Both types enabled by default so the page genuinely renders their toggles
+// and inline config controls rather than falling into the error branch.
+function defaultNotificationPreferences(): NotificationPreference[] {
+  return [
+    { type_key: "location_moved", enabled: true, config: { threshold_m: 50 } },
+    { type_key: "ser_zone_ticket_required", enabled: true, config: { threshold_m: 50 } },
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Route mock helper
 // ---------------------------------------------------------------------------
@@ -20,14 +56,20 @@ const DEFAULT_PREFERENCES = {
 /**
  * Wires up GET/PUT /api/preferences route handlers for a given test page,
  * plus GET /api/notifications/channels (PreferencesPage's preferred-channel
- * select is populated from the user's connected channels). `preferences` is
- * mutated in-place by PUT so a subsequent GET (if any) reflects the latest
+ * select is populated from the user's connected channels), GET
+ * /api/notifications/types, and GET/PUT /api/notifications/preferences
+ * (PreferencesPage's `load()` calls all four of these via `Promise.all`, so
+ * all four must be mocked or the page falls into its generic error branch).
+ * `preferences` and `notificationPreferences` are mutated in-place by their
+ * respective PUT handlers so a subsequent GET (if any) reflects the latest
  * saved values within the same test.
  */
 async function mockPreferencesApis(
   page: Page,
   preferences = { ...DEFAULT_PREFERENCES },
   connectedChannels: string[] = [],
+  notificationTypes: NotificationType[] = DEFAULT_NOTIFICATION_TYPES,
+  notificationPreferences: NotificationPreference[] = defaultNotificationPreferences(),
 ) {
   await page.route("**/api/notifications/channels", async (route, request) => {
     if (request.method() === "GET") {
@@ -74,6 +116,52 @@ async function mockPreferencesApis(
         body: JSON.stringify(preferences),
       });
     }
+  });
+
+  await page.route("**/api/notifications/types", async (route, request) => {
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationTypes),
+      });
+    }
+  });
+
+  await page.route("**/api/notifications/preferences", async (route, request) => {
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationPreferences),
+      });
+    }
+  });
+
+  await page.route("**/api/notifications/preferences/*", async (route, request) => {
+    if (request.method() !== "PUT") return;
+    const typeKey = new URL(request.url()).pathname.split("/").pop() ?? "";
+    const body = (await request.postDataJSON()) as {
+      enabled: boolean;
+      config: Record<string, number>;
+    };
+    const updated: NotificationPreference = {
+      type_key: typeKey,
+      enabled: body.enabled,
+      config: body.config,
+    };
+    const existing = notificationPreferences.find((p) => p.type_key === typeKey);
+    if (existing) {
+      existing.enabled = updated.enabled;
+      existing.config = updated.config;
+    } else {
+      notificationPreferences.push(updated);
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(updated),
+    });
   });
 }
 
@@ -216,5 +304,67 @@ test.describe("Preferences page", () => {
     };
     expect(body.notification_language).toBe("es");
     await expect(preferences.savedMessage).toBeVisible();
+  });
+
+  test("toggling a notification type off and saving sends PUT with enabled: false", async ({
+    page,
+  }) => {
+    await mockPreferencesApis(page);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await expect(preferences.notificationToggle("ser_zone_ticket_required")).toBeChecked();
+
+    await preferences.setNotificationEnabled("ser_zone_ticket_required", false);
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/notifications/preferences/ser_zone_ticket_required") &&
+          req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as { enabled: boolean; config: Record<string, number> };
+    expect(body.enabled).toBe(false);
+    await expect(preferences.savedMessage).toBeVisible();
+  });
+
+  test("editing a type's threshold and saving sends PUT with the new config", async ({
+    page,
+  }) => {
+    await mockPreferencesApis(page);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await expect(preferences.notificationThresholdInput("location_moved")).toHaveValue("50");
+
+    await preferences.setNotificationThreshold("location_moved", 75);
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/notifications/preferences/location_moved") &&
+          req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as { enabled: boolean; config: Record<string, number> };
+    expect(body.config).toEqual({ threshold_m: 75 });
+    await expect(preferences.savedMessage).toBeVisible();
+  });
+
+  test("disabling a notification type hides its inline config control", async ({ page }) => {
+    await mockPreferencesApis(page);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await expect(preferences.notificationThresholdInput("location_moved")).toBeVisible();
+
+    await preferences.setNotificationEnabled("location_moved", false);
+
+    await expect(preferences.notificationThresholdInput("location_moved")).toHaveCount(0);
   });
 });

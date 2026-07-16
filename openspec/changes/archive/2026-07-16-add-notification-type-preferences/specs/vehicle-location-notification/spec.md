@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: NotificationDispatchHandler notifies a vehicle's owner on meaningful movement
 The system SHALL define `NotificationDispatchHandler` as the real subscriber to `VehicleLocationUpdated`. On each event, it SHALL:
 1. Look up the `Vehicle` for `event.vehicle_id`. If no such vehicle exists, it SHALL skip silently (no notification, no error).
@@ -34,3 +36,9 @@ The system SHALL define `NotificationDispatchHandler` as the real subscriber to 
 #### Scenario: Message falls back to the default language when unset
 - **WHEN** movement past the effective threshold triggers a notification for an owner with no `notification_language` set
 - **THEN** the message text is rendered in the default language
+
+## REMOVED Requirements
+
+### Requirement: Movement threshold is configurable via NOTIFICATION_MOVEMENT_THRESHOLD_METERS
+**Reason**: Replaced by per-user, per-type preference configuration. The movement threshold is no longer a single global on/off value read directly by the handler — it is now a per-user `location_moved.config.threshold_m` value, falling back to `DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS` when unset. See the `notification-type-preferences` capability.
+**Migration**: Deployments SHALL rename the `NOTIFICATION_MOVEMENT_THRESHOLD_METERS` environment variable to `DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS`. Until renamed, the fallback default is `50`, matching the prior behavior for any user who has not customized their threshold.

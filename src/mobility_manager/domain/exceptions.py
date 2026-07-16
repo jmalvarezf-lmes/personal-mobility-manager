@@ -67,3 +67,9 @@ class NotificationChannelApiError(Exception):
     """Raised when a notification channel's API call fails (network error, unexpected status)."""
 
     pass
+
+
+class InvalidNotificationConfigError(Exception):
+    """Raised when a notification type's `config` dict fails validation against its `config_schema`."""
+
+    pass

@@ -88,6 +88,9 @@ from mobility_manager.infrastructure.notification_channels.telegram.channel impo
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
 )
+from mobility_manager.infrastructure.repositories.postgres.notification_preferences_repo import (
+    PostgresNotificationPreferencesRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
     PostgresParkingTicketRepository,
 )
@@ -128,6 +131,9 @@ from mobility_manager.infrastructure.vehicle_providers.brand_registry import (
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.auth import router as auth_router
 from mobility_manager.presentation.api.routers.config import router as config_router
+from mobility_manager.presentation.api.routers.notification_preferences import (
+    router as notification_preferences_router,
+)
 from mobility_manager.presentation.api.routers.notifications import (
     router as notifications_router,
 )
@@ -172,12 +178,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # --- Auth (Users) ---
     user_repo = PostgresUserRepository(engine)
     user_preferences_repo = PostgresUserPreferencesRepository(engine)
+    notification_preferences_repo = PostgresNotificationPreferencesRepository(engine)
     authenticate_google_user_uc = AuthenticateGoogleUser(
         user_repo=user_repo,
         user_preferences_repo=user_preferences_repo,
+        notification_preferences_repo=notification_preferences_repo,
     )
     app.state.user_repo = user_repo
     app.state.user_preferences_repo = user_preferences_repo
+    app.state.notification_preferences_repo = notification_preferences_repo
     app.state.authenticate_google_user = authenticate_google_user_uc
 
     # --- Notification channels ---
@@ -223,17 +232,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # --- Events (vehicle-location-events) ---
     # NotificationDispatchHandler now needs vehicle_repo, vehicle_location_repo
-    # (both constructed just above), user_preferences_repo (Auth block), and
-    # send_notification_uc (Notification channels block, now moved ahead of
-    # Vehicles) — all four already exist by this point. record_uc below still
-    # needs event_publisher, so event_publisher's construction stays here
-    # rather than moving down with the rest of this block.
+    # (both constructed just above), user_preferences_repo and
+    # notification_preferences_repo (Auth block), and send_notification_uc
+    # (Notification channels block, now moved ahead of Vehicles) — all
+    # already exist by this point. record_uc below still needs
+    # event_publisher, so event_publisher's construction stays here rather
+    # than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
     determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement()
     ser_ticket_trigger_handler = SerTicketTriggerHandler(
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
+        notification_preferences_repo=notification_preferences_repo,
         find_containing_ser_zone=find_containing_uc,
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
         send_notification=send_notification_uc,
@@ -243,6 +254,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
+        notification_preferences_repo=notification_preferences_repo,
         send_notification=send_notification_uc,
     )
     event_publisher.subscribe(VehicleLocationUpdated, notification_dispatch_handler.handle)
@@ -353,6 +365,7 @@ app.include_router(vehicles_router)
 app.include_router(preferences_router)
 app.include_router(ser_ticket_providers_router)
 app.include_router(notifications_router)
+app.include_router(notification_preferences_router)
 
 
 @app.middleware("http")

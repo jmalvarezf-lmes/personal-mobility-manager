@@ -22,6 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
 
@@ -125,6 +126,24 @@ user_notification_channel_configs_table = Table(
     Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
     Column("channel", Text, primary_key=True),
     Column("config", Text, nullable=False),  # JSON, cleartext — not a credential, see design.md decision 3
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+notification_types_table = Table(
+    "notification_types",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("label", Text, nullable=False),
+    Column("config_schema", JSONB, nullable=False),
+)
+
+user_notification_preferences_table = Table(
+    "user_notification_preferences",
+    metadata,
+    Column("user_id", Uuid, ForeignKey("users.id"), primary_key=True),
+    Column("type_key", Text, ForeignKey("notification_types.key"), primary_key=True),
+    Column("enabled", Boolean, nullable=False),
+    Column("config", JSONB, nullable=False, server_default="{}"),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 

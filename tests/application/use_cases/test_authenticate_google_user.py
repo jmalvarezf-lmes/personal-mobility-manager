@@ -22,10 +22,15 @@ def _make_user(google_sub: str = "sub123", email: str = "user@example.com") -> U
     )
 
 
-def _make_use_case(user_repo=None, user_preferences_repo=None) -> AuthenticateGoogleUser:
+def _make_use_case(
+    user_repo=None,
+    user_preferences_repo=None,
+    notification_preferences_repo=None,
+) -> AuthenticateGoogleUser:
     return AuthenticateGoogleUser(
         user_repo=user_repo or MagicMock(),
         user_preferences_repo=user_preferences_repo or MagicMock(),
+        notification_preferences_repo=notification_preferences_repo or MagicMock(),
     )
 
 
@@ -101,3 +106,14 @@ class TestAuthenticateGoogleUser:
         uc.execute(google_sub="sub", email="e@e.com", display_name="Name")
 
         assert call_order == ["upsert", "ensure_default"]
+
+    def test_ensure_defaults_called_with_upserted_user_id(self) -> None:
+        mock_repo = MagicMock()
+        expected_user = _make_user()
+        mock_repo.upsert.return_value = expected_user
+        mock_notification_preferences_repo = MagicMock()
+
+        uc = _make_use_case(user_repo=mock_repo, notification_preferences_repo=mock_notification_preferences_repo)
+        uc.execute(google_sub="sub123", email="user@example.com", display_name="Test User")
+
+        mock_notification_preferences_repo.ensure_defaults.assert_called_once_with(expected_user.id)

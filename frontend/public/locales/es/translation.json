@@ -52,6 +52,20 @@
       "languages": {
         "en": "Inglés",
         "es": "Español"
+      },
+      "notifications": {
+        "title": "Notificaciones",
+        "typeLabels": {
+          "location_moved": "Vehículo movido",
+          "ser_zone_ticket_required": "Ticket SER requerido"
+        },
+        "fields": {
+          "threshold_m": {
+            "label": "Umbral de movimiento (metros)",
+            "help": "Distancia mínima que debe recorrer el vehículo antes de enviar esta notificación."
+          }
+        },
+        "invalidThreshold": "El umbral debe ser de al menos {{min}} metros."
       }
     },
     "serProviders": {

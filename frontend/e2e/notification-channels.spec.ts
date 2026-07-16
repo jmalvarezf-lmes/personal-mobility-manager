@@ -24,6 +24,10 @@ interface MockPreferences {
  * Wires up all notification-channel-related routes plus /api/preferences for
  * a given test page:
  *  - GET /api/notifications/available-channels -> fixed catalog
+ *  - GET /api/notifications/languages -> fixed ["en", "es"] catalog;
+ *    PreferencesPage's `load()` calls this via `Promise.all` alongside the
+ *    other routes below, so it must be mocked too or the page falls into
+ *    its generic error branch
  *  - GET /api/notifications/channels -> `connectedChannels`, mutated in
  *    place; simulates the Telegram webhook completing linking after
  *    `autoConnectAfterPolls` polls of this endpoint (there is no real
@@ -69,6 +73,17 @@ async function mockApis(
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ channels: AVAILABLE_CHANNELS }),
+    });
+  });
+
+  await page.route("**/api/notifications/languages", async (route, request) => {
+    if (request.method() !== "GET") {
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ languages: ["en", "es"] }),
     });
   });
 

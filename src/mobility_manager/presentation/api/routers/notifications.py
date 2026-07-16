@@ -14,6 +14,8 @@ Endpoints:
   GET /notifications/available-channels — list every channel registered in
     the running system, independent of what any user has configured
     (authenticated).
+  GET /notifications/languages — list the system's supported notification
+    languages (authenticated).
 """
 
 import logging
@@ -23,7 +25,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
 
-from mobility_manager.application.notification_templates import render
+from mobility_manager.application.notification_templates import SUPPORTED_LANGUAGES, render
 from mobility_manager.config import get_telegram_bot_username, get_telegram_webhook_secret
 from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.exceptions import NotificationChannelApiError
@@ -37,6 +39,7 @@ from mobility_manager.infrastructure.telegram_link import verify_link_token
 from mobility_manager.presentation.api.deps import get_current_user
 from mobility_manager.presentation.api.schemas import (
     NotificationChannelsResponse,
+    NotificationLanguagesResponse,
     TelegramLinkCodeResponse,
 )
 
@@ -134,6 +137,20 @@ def list_available_channels(
     what the current user has configured; that's GET /notifications/channels.
     """
     return NotificationChannelsResponse(channels=list(request.app.state.notification_channels.keys()))
+
+
+@router.get("/languages", response_model=NotificationLanguagesResponse)
+def list_languages(
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> NotificationLanguagesResponse:
+    """
+    List the system's supported notification languages.
+
+    Sourced directly from notification_templates.SUPPORTED_LANGUAGES — the
+    same single source of truth PUT /preferences' notification_language
+    validation already uses (see design.md decision 6).
+    """
+    return NotificationLanguagesResponse(languages=sorted(SUPPORTED_LANGUAGES))
 
 
 @router.get("/channels", response_model=NotificationChannelsResponse)

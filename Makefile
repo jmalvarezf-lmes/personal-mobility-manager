@@ -9,7 +9,7 @@ install:
 	$(PIP) install -e .
 
 install-dev:
-	$(PIP) install -r requirements-dev.txt && $(PIP) install -e .
+	$(PIP) install -e ".[dev]"
 
 run:
 	$(VENV)/bin/mobility-manager

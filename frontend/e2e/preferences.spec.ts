@@ -57,9 +57,10 @@ function defaultNotificationPreferences(): NotificationPreference[] {
  * Wires up GET/PUT /api/preferences route handlers for a given test page,
  * plus GET /api/notifications/channels (PreferencesPage's preferred-channel
  * select is populated from the user's connected channels), GET
- * /api/notifications/types, and GET/PUT /api/notifications/preferences
- * (PreferencesPage's `load()` calls all four of these via `Promise.all`, so
- * all four must be mocked or the page falls into its generic error branch).
+ * /api/notifications/languages (populates the notification-language select),
+ * GET /api/notifications/types, and GET/PUT /api/notifications/preferences
+ * (PreferencesPage's `load()` calls all five of these via `Promise.all`, so
+ * all five must be mocked or the page falls into its generic error branch).
  * `preferences` and `notificationPreferences` are mutated in-place by their
  * respective PUT handlers so a subsequent GET (if any) reflects the latest
  * saved values within the same test.
@@ -77,6 +78,16 @@ async function mockPreferencesApis(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ channels: connectedChannels }),
+      });
+    }
+  });
+
+  await page.route("**/api/notifications/languages", async (route, request) => {
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ languages: ["en", "es"] }),
       });
     }
   });

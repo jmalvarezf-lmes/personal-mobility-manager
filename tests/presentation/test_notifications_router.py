@@ -6,6 +6,7 @@ POST /notifications/telegram/webhook
 GET /notifications/channels
 DELETE /notifications/channels/{channel}
 GET /notifications/available-channels
+GET /notifications/languages
 """
 
 from datetime import UTC, datetime, timedelta
@@ -398,3 +399,28 @@ def test_available_channels_returns_registered_channels() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"channels": ["telegram"]}
+
+
+# ---------------------------------------------------------------------------
+# GET /notifications/languages
+# ---------------------------------------------------------------------------
+
+
+def test_languages_unauthenticated_returns_401() -> None:
+    mock_repo = MagicMock()
+    mock_repo.find_by_id.return_value = None
+    client = TestClient(_build_app(user_repo=mock_repo), raise_server_exceptions=False)
+
+    response = client.get("/notifications/languages")
+
+    assert response.status_code == 401
+
+
+def test_languages_returns_supported_languages() -> None:
+    app, cookie = _build_authed_app()
+    client = TestClient(app)
+
+    response = client.get("/notifications/languages", cookies={"session": cookie})
+
+    assert response.status_code == 200
+    assert response.json() == {"languages": ["en", "es"]}

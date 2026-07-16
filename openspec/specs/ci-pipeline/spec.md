@@ -14,7 +14,7 @@ A GitHub Actions workflow file SHALL exist at `.github/workflows/ci.yml` and SHA
 ---
 
 ### Requirement: lint-backend job runs ruff and mypy
-The CI workflow SHALL include a `lint-backend` job that runs `ruff check src/ tests/` and `mypy src/`. Both tools SHALL be installed from `requirements-dev.txt`. The job SHALL fail if either tool reports errors.
+The CI workflow SHALL include a `lint-backend` job that runs `ruff check src/ tests/` and `mypy src/`. Both tools SHALL be installed via the package's `dev` optional-dependency group (`pip install -e ".[dev]"`). The job SHALL fail if either tool reports errors.
 
 #### Scenario: Clean code passes lint
 - **WHEN** all source files conform to ruff and mypy rules

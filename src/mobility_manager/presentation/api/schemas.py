@@ -277,6 +277,12 @@ class NotificationChannelsResponse(BaseModel):
     channels: list[str]
 
 
+class NotificationLanguagesResponse(BaseModel):
+    """The system's supported notification languages (SUPPORTED_LANGUAGES)."""
+
+    languages: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Notification type preference schemas (GET /notifications/types,
 # GET/PUT /notifications/preferences)

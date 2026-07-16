@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getConfiguredChannels } from "../api/notifications";
+import { getAvailableLanguages, getConfiguredChannels } from "../api/notifications";
 import {
   getNotificationPreferences,
   getNotificationTypes,
@@ -10,8 +10,6 @@ import {
 } from "../api/notificationPreferences";
 import { getPreferences, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
-
-const SUPPORTED_LANGUAGES = ["en", "es"];
 
 type NotificationPrefValue = {
   enabled: boolean;
@@ -42,6 +40,7 @@ export default function PreferencesPage() {
   const [preferredChannel, setPreferredChannel] = useState<string | null>(null);
   const [notificationLanguage, setNotificationLanguage] = useState<string | null>(null);
   const [connectedChannels, setConnectedChannels] = useState<string[]>([]);
+  const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
   const [notificationTypes, setNotificationTypes] = useState<NotificationType[]>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefState>({});
   const [notificationPrefsBaseline, setNotificationPrefsBaseline] = useState<NotificationPrefState>({});
@@ -53,9 +52,10 @@ export default function PreferencesPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [prefs, channels, types, notifPrefs] = await Promise.all([
+        const [prefs, channels, languages, types, notifPrefs] = await Promise.all([
           getPreferences(),
           getConfiguredChannels(),
+          getAvailableLanguages(),
           getNotificationTypes(),
           getNotificationPreferences(),
         ]);
@@ -64,6 +64,7 @@ export default function PreferencesPage() {
         setPreferredChannel(prefs.preferred_notification_channel);
         setNotificationLanguage(prefs.notification_language);
         setConnectedChannels(channels.channels);
+        setAvailableLanguages(languages.languages);
         setNotificationTypes(types);
         const initialPrefs = toPrefState(notifPrefs);
         setNotificationPrefs(initialPrefs);
@@ -274,7 +275,7 @@ export default function PreferencesPage() {
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             >
               <option value="">{t("page.preferences.noNotificationLanguage")}</option>
-              {SUPPORTED_LANGUAGES.map((language) => (
+              {availableLanguages.map((language) => (
                 <option key={language} value={language}>
                   {t(`page.preferences.languages.${language}`)}
                 </option>

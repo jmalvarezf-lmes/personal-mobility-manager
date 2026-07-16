@@ -115,7 +115,7 @@ The system SHALL expose `PUT /preferences`, requiring an authenticated session, 
 ---
 
 ### Requirement: Preferences page is visible only when logged in
-The system SHALL provide a frontend "Preferences" page, reachable only via a protected route, that lets the user view and edit `default_ticket_duration_minutes`, `auto_create_ticket`, `preferred_notification_channel`, and `notification_language`. The `preferred_notification_channel` control SHALL only offer choices among the channels the user currently has connected (per `GET /notifications/channels`), plus an option to clear the preference. The `notification_language` control SHALL offer the system's supported languages.
+The system SHALL provide a frontend "Preferences" page, reachable only via a protected route, that lets the user view and edit `default_ticket_duration_minutes`, `auto_create_ticket`, `preferred_notification_channel`, and `notification_language`. The `preferred_notification_channel` control SHALL only offer choices among the channels the user currently has connected (per `GET /notifications/channels`), plus an option to clear the preference. The `notification_language` control SHALL offer the system's supported languages, sourced from `GET /notifications/languages` rather than a hardcoded frontend list, so the offered options and the backend's `PUT /preferences` validation cannot drift apart.
 
 #### Scenario: Logged-out user cannot reach the preferences page
 - **WHEN** an unauthenticated visitor navigates to the preferences route
@@ -138,6 +138,10 @@ The system SHALL provide a frontend "Preferences" page, reachable only via a pro
 - **WHEN** an authenticated user selects a notification language and saves
 - **THEN** the page calls `PUT /preferences` with that value as `notification_language`
 - **THEN** the page reflects the saved value on success
+
+#### Scenario: Notification-language options are fetched from the backend catalog
+- **WHEN** the preferences page loads
+- **THEN** it calls `GET /notifications/languages` and renders the returned languages as the `notification_language` control's options, rather than using a hardcoded list
 
 ---
 

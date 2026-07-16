@@ -2,6 +2,10 @@ export interface NotificationChannelsResponse {
   channels: string[];
 }
 
+export interface NotificationLanguagesResponse {
+  languages: string[];
+}
+
 export interface TelegramLinkCodeResponse {
   deep_link: string;
 }
@@ -14,6 +18,16 @@ export async function getAvailableChannels(): Promise<NotificationChannelsRespon
     throw new Error(`Failed to get available channels: ${response.status}`);
   }
   return (await response.json()) as NotificationChannelsResponse;
+}
+
+export async function getAvailableLanguages(): Promise<NotificationLanguagesResponse> {
+  const response = await fetch("/api/notifications/languages", {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to get available languages: ${response.status}`);
+  }
+  return (await response.json()) as NotificationLanguagesResponse;
 }
 
 export async function getConfiguredChannels(): Promise<NotificationChannelsResponse> {

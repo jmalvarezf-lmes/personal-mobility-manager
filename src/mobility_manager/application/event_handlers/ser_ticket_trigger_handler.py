@@ -161,7 +161,7 @@ class SerTicketTriggerHandler:
             preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
             language = preferences.notification_language if preferences is not None else None
             text = render(
-                "ser_ticket_required",
+                _TYPE_KEY,
                 language,
                 plate=vehicle.license_plate or "",
                 zone_number=zone.zone_number,

@@ -17,7 +17,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt && pip install -e .
+        run: pip install -e ".[dev]"
 
       - name: Run ruff
         run: ruff check src/ tests/
@@ -55,7 +55,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt && pip install -e .
+        run: pip install -e ".[dev]"
 
       - name: Apply database migrations
         run: alembic upgrade head
@@ -126,7 +126,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install backend dependencies
-        run: pip install -r requirements-dev.txt && pip install -e .
+        run: pip install -e ".[dev]"
 
       - name: Apply database migrations
         run: alembic upgrade head

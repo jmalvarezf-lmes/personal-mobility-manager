@@ -45,5 +45,5 @@
 
 ## 8. Manual verification (deferred if no live stack available)
 
-- [ ] 8.1 With `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_HEADERS` pointed at a real Grafana Cloud account, run the app locally, exercise an API route, an outbound call, a DB query, a scheduler tick, and an event dispatch, and confirm corresponding traces and metrics appear in Grafana Cloud (Tempo/Mimir).
-- [ ] 8.2 Confirm the 25% sampling rate is visibly in effect (not every request produces a trace) and that overriding `OTEL_TRACES_SAMPLER_ARG` changes the observed rate.
+- [x] 8.1 With `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_HEADERS` pointed at a real Grafana Cloud account, run the app locally, exercise an API route, an outbound call, a DB query, a scheduler tick, and an event dispatch, and confirm corresponding traces and metrics appear in Grafana Cloud (Tempo/Mimir).
+- [x] 8.2 Confirm the 25% sampling rate is visibly in effect (not every request produces a trace) and that overriding `OTEL_TRACES_SAMPLER_ARG` changes the observed rate.

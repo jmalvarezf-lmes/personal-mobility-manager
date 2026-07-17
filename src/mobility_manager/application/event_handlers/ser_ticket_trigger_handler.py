@@ -42,6 +42,9 @@ handler must never break the caller.
 
 import logging
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
 from mobility_manager.application.notification_templates import render
 from mobility_manager.application.use_cases.determine_ser_ticket_requirement import (
     DetermineSerTicketRequirement,
@@ -70,6 +73,7 @@ from mobility_manager.domain.value_objects.notification_message import (
 )
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 _TYPE_KEY = "ser_zone_ticket_required"
 
@@ -119,61 +123,71 @@ class SerTicketTriggerHandler:
         failure in any collaborator (vehicle lookup, preference lookup,
         previous-location lookup, zone lookup, requirement check,
         preferences lookup, notification send) is contained here and never
-        propagates to the caller — see module docstring.
+        propagates to the caller — see module docstring. The whole call is
+        also wrapped in a root trace span (this handler runs synchronously
+        outside any HTTP request context — see design.md decision 4): the
+        span records the exception and is marked as an error on failure,
+        without changing the swallow-and-continue behavior itself. No
+        dedicated custom metric is recorded for this handler in v1.
         """
-        try:
-            vehicle = self._vehicle_repo.get_by_id(event.vehicle_id)
-            if vehicle is None:
-                logger.warning("Vehicle not found: %s", event.vehicle_id)
-                return
-
-            notification_preference = self._notification_preferences_repo.find_by_user_id_and_type(
-                vehicle.user_id, _TYPE_KEY
-            )
-            if notification_preference is None or not notification_preference.enabled:
-                logger.info("ser_zone_ticket_required notifications disabled for user: %s", vehicle.user_id)
-                return
-
-            previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
-            # Unlike NotificationDispatchHandler (which skips entirely when
-            # there is no previous location to compare against), a
-            # first-ever location here still proceeds to the zone check
-            # below — intentional divergence, see module docstring.
-            if previous is not None:
-                distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
-                threshold = resolve_effective_threshold(notification_preference.config)
-                if distance < threshold:
-                    logger.info("Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id)
+        with tracer.start_as_current_span("event_handler.ser_ticket_trigger") as span:
+            try:
+                vehicle = self._vehicle_repo.get_by_id(event.vehicle_id)
+                if vehicle is None:
+                    logger.warning("Vehicle not found: %s", event.vehicle_id)
                     return
 
-            zone = self._find_containing_ser_zone.execute(GeoLocation(lat=event.latitude, lng=event.longitude))
-            if not self._determine_ser_ticket_requirement.execute(zone):
-                logger.info("No SER ticket required for vehicle: %s", event.vehicle_id)
-                return
+                notification_preference = self._notification_preferences_repo.find_by_user_id_and_type(
+                    vehicle.user_id, _TYPE_KEY
+                )
+                if notification_preference is None or not notification_preference.enabled:
+                    logger.info("ser_zone_ticket_required notifications disabled for user: %s", vehicle.user_id)
+                    return
 
-            if zone is None:
-                # determine_ser_ticket_requirement only returned True for a
-                # real zone today, but this guard doesn't rely on that
-                # holding — see DetermineSerTicketRequirement's docstring
-                # for the factors it will grow next.
-                return
+                previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
+                # Unlike NotificationDispatchHandler (which skips entirely when
+                # there is no previous location to compare against), a
+                # first-ever location here still proceeds to the zone check
+                # below — intentional divergence, see module docstring.
+                if previous is not None:
+                    distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
+                    threshold = resolve_effective_threshold(notification_preference.config)
+                    if distance < threshold:
+                        logger.info(
+                            "Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id
+                        )
+                        return
 
-            preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
-            language = preferences.notification_language if preferences is not None else None
-            text = render(
-                _TYPE_KEY,
-                language,
-                plate=vehicle.license_plate or "",
-                zone_number=zone.zone_number,
-            )
+                zone = self._find_containing_ser_zone.execute(GeoLocation(lat=event.latitude, lng=event.longitude))
+                if not self._determine_ser_ticket_requirement.execute(zone):
+                    logger.info("No SER ticket required for vehicle: %s", event.vehicle_id)
+                    return
 
-            self._send_notification.execute(
-                vehicle.user_id,
-                NotificationMessage(
-                    text=text,
-                    location=GeoLocation(lat=event.latitude, lng=event.longitude),
-                ),
-            )
-            logger.info("SER ticket required notification sent for vehicle: %s", event.vehicle_id)
-        except Exception:
-            logger.exception("Failed to handle VehicleLocationUpdated for vehicle: %s", event.vehicle_id)
+                if zone is None:
+                    # determine_ser_ticket_requirement only returned True for a
+                    # real zone today, but this guard doesn't rely on that
+                    # holding — see DetermineSerTicketRequirement's docstring
+                    # for the factors it will grow next.
+                    return
+
+                preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
+                language = preferences.notification_language if preferences is not None else None
+                text = render(
+                    _TYPE_KEY,
+                    language,
+                    plate=vehicle.license_plate or "",
+                    zone_number=zone.zone_number,
+                )
+
+                self._send_notification.execute(
+                    vehicle.user_id,
+                    NotificationMessage(
+                        text=text,
+                        location=GeoLocation(lat=event.latitude, lng=event.longitude),
+                    ),
+                )
+                logger.info("SER ticket required notification sent for vehicle: %s", event.vehicle_id)
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR))
+                logger.exception("Failed to handle VehicleLocationUpdated for vehicle: %s", event.vehicle_id)

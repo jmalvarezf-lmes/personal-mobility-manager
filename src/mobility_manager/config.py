@@ -298,3 +298,18 @@ def get_google_redirect_uri() -> str:
     if not value:
         raise RuntimeError("GOOGLE_REDIRECT_URI environment variable is not set")
     return value
+
+
+def get_otel_endpoint() -> str | None:
+    """
+    Return the OTLP exporter endpoint from OTEL_EXPORTER_OTLP_ENDPOINT, or
+    None if unset.
+
+    This is the single activation check for OpenTelemetry observability
+    (see add-opentelemetry-observability design.md decision 3): real
+    TracerProvider/MeterProvider and auto-instrumentation are only wired up
+    in app.py's lifespan when this returns a value. Manual span/metric
+    calls elsewhere in the app are always safe to call unconditionally —
+    OTel's API is a no-op by default until a real provider is registered.
+    """
+    return os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT") or None

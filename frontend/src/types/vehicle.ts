@@ -11,6 +11,7 @@ export interface VehicleListItem {
   vin: string | null;
   license_plate: string | null;
   location: VehicleLocation | null;
+  ambient_label: string | null;
 }
 
 export interface ToyotaConfig {
@@ -30,4 +31,5 @@ export interface VehicleDetail {
   vin: string | null;
   license_plate: string | null;
   config: ToyotaConfig | GenericConfig;
+  ambient_label: string | null;
 }

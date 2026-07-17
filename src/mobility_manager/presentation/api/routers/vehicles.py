@@ -18,6 +18,12 @@ from mobility_manager.domain.exceptions import (
     VehicleLocationNotFoundError,
     VehicleNotFoundError,
 )
+from mobility_manager.domain.ports.vehicle_ambient_label_repository import (
+    VehicleAmbientLabelRepository,
+)
+from mobility_manager.domain.value_objects.ambient_label_status import (
+    AmbientLabelStatus,
+)
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.presentation.api.deps import get_current_user
 from mobility_manager.presentation.api.factories import (
@@ -41,6 +47,20 @@ from mobility_manager.presentation.api.schemas import (
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 
 
+def _resolve_ambient_label(vehicle_id: UUID, ambient_label_repo: VehicleAmbientLabelRepository | None) -> str | None:
+    """
+    Return the resolved ambient label value for `vehicle_id`, or None when
+    no confident result exists (no row yet, or status != found) — see
+    ambient-label spec.md "Ambient label is exposed on vehicle read endpoints".
+    """
+    if ambient_label_repo is None:
+        return None
+    row = ambient_label_repo.get_by_vehicle_id(vehicle_id)
+    if row is None or row.status != AmbientLabelStatus.FOUND or row.label is None:
+        return None
+    return row.label.value
+
+
 @router.get("", response_model=list[VehicleListItem])
 def list_vehicles(
     request: Request,
@@ -48,6 +68,7 @@ def list_vehicles(
 ) -> list[VehicleListItem]:
     """Return all vehicles owned by the authenticated user."""
     result = request.app.state.list_user_vehicles.execute(current_user.id)
+    ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
     items: list[VehicleListItem] = []
     for item in result:
         location_summary = None
@@ -65,12 +86,13 @@ def list_vehicles(
                 vin=item.vehicle.vin,
                 license_plate=item.vehicle.license_plate,
                 location=location_summary,
+                ambient_label=_resolve_ambient_label(item.vehicle.id, ambient_label_repo),
             )
         )
     return items
 
 
-def _build_vehicle_detail(vehicle, config_repo) -> VehicleDetailResponse:  # type: ignore[no-untyped-def]
+def _build_vehicle_detail(vehicle, config_repo, ambient_label_repo=None) -> VehicleDetailResponse:  # type: ignore[no-untyped-def]
     """Build a VehicleDetailResponse from a vehicle entity and its config repo."""
     if vehicle.brand == Brand.TOYOTA:
         toyota = config_repo.get_toyota_config(vehicle.id)
@@ -89,6 +111,7 @@ def _build_vehicle_detail(vehicle, config_repo) -> VehicleDetailResponse:  # typ
         vin=vehicle.vin,
         license_plate=vehicle.license_plate,
         config=config,
+        ambient_label=_resolve_ambient_label(vehicle.id, ambient_label_repo),
     )
 
 
@@ -105,7 +128,8 @@ def get_vehicle(
         raise HTTPException(status_code=404, detail="Vehicle not found")
     if vehicle.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You do not own this vehicle")
-    return _build_vehicle_detail(vehicle, request.app.state.vehicle_config_repo)
+    ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
+    return _build_vehicle_detail(vehicle, request.app.state.vehicle_config_repo, ambient_label_repo)
 
 
 @router.delete("/{vehicle_id}", status_code=204)
@@ -161,7 +185,8 @@ def update_vehicle(
     updated_vehicle = vehicle_repo.get_by_id(vehicle_id)
     if updated_vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found after update")
-    return _build_vehicle_detail(updated_vehicle, request.app.state.vehicle_config_repo)
+    ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
+    return _build_vehicle_detail(updated_vehicle, request.app.state.vehicle_config_repo, ambient_label_repo)
 
 
 @router.post("", response_model=VehicleResponse, status_code=201)
@@ -187,6 +212,7 @@ def register_vehicle(
     except BrandNotEnabledError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
     return VehicleResponse(
         vehicle_id=result.vehicle_id,
         brand=result.brand,
@@ -194,6 +220,11 @@ def register_vehicle(
         vin=result.vin,
         location_token=result.location_token,
         license_plate=result.license_plate,
+        # The best-effort lookup in RegisterVehicle.execute() runs and
+        # persists synchronously before returning, so a fresh read here
+        # (not a value threaded through RegisterVehicleResult) already
+        # reflects it — same helper used by GET /vehicles and /vehicles/{id}.
+        ambient_label=_resolve_ambient_label(result.vehicle_id, ambient_label_repo),
     )
 
 

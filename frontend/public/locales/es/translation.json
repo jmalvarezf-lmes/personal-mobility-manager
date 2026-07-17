@@ -139,6 +139,9 @@
     "noLocation": "Sin datos de ubicación",
     "licensePlate": "Matrícula",
     "noLicensePlate": "Sin matrícula",
+    "ambientLabel": "Etiqueta ambiental",
+    "noAmbientLabel": "Sin distintivo",
+    "ambientLabelIconAlt": "Etiqueta ambiental {{label}}",
     "edit": "Editar",
     "delete": "Eliminar",
     "confirmDelete": "¿Eliminar \"{{name}}\"?"

@@ -9,6 +9,9 @@ import logging
 import pytest
 
 from mobility_manager.config import (
+    get_ambient_label_poll_interval_minutes,
+    get_ambient_label_request_delay_seconds,
+    get_ambient_label_retry_cooldown_hours,
     get_default_notification_movement_threshold_meters,
     resolve_effective_threshold,
 )
@@ -79,3 +82,41 @@ def test_resolve_effective_threshold_falls_back_to_env_default_when_absent(
 ) -> None:
     monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     assert resolve_effective_threshold({}) == 50.0
+
+
+class TestAmbientLabelConfig:
+    def test_poll_interval_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AMBIENT_LABEL_POLL_INTERVAL_MINUTES", raising=False)
+        assert get_ambient_label_poll_interval_minutes() == 60
+
+    def test_poll_interval_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_POLL_INTERVAL_MINUTES", "15")
+        assert get_ambient_label_poll_interval_minutes() == 15
+
+    def test_poll_interval_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_POLL_INTERVAL_MINUTES", "not-a-number")
+        assert get_ambient_label_poll_interval_minutes() == 60
+
+    def test_retry_cooldown_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AMBIENT_LABEL_RETRY_COOLDOWN_HOURS", raising=False)
+        assert get_ambient_label_retry_cooldown_hours() == 24
+
+    def test_retry_cooldown_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_RETRY_COOLDOWN_HOURS", "6")
+        assert get_ambient_label_retry_cooldown_hours() == 6
+
+    def test_retry_cooldown_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_RETRY_COOLDOWN_HOURS", "not-a-number")
+        assert get_ambient_label_retry_cooldown_hours() == 24
+
+    def test_request_delay_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", raising=False)
+        assert get_ambient_label_request_delay_seconds() == 5
+
+    def test_request_delay_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", "1")
+        assert get_ambient_label_request_delay_seconds() == 1
+
+    def test_request_delay_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", "not-a-number")
+        assert get_ambient_label_request_delay_seconds() == 5

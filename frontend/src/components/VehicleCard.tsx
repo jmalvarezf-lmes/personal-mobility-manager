@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { deleteVehicle, getVehicle } from "../api/vehicles";
 import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem } from "../types/vehicle";
+import AmbientLabelIcon from "./AmbientLabelIcon";
 
 interface VehicleCardProps {
   vehicle: VehicleListItem;
@@ -48,9 +49,12 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
     <div data-testid="vehicle-card" className="rounded border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-800">{vehicle.display_name}</h3>
-        <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 capitalize">
-          {vehicle.brand}
-        </span>
+        <div className="flex items-center gap-2">
+          <AmbientLabelIcon label={vehicle.ambient_label} />
+          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 capitalize">
+            {vehicle.brand}
+          </span>
+        </div>
       </div>
 
       {vehicle.brand === "toyota" && vehicle.vin && (

@@ -111,6 +111,39 @@ def get_vehicle_poll_interval_minutes() -> int:
         return 5
 
 
+def get_ambient_label_poll_interval_minutes() -> int:
+    """Return the ambient label scheduler's tick interval in minutes from environment."""
+    raw = os.environ.get("AMBIENT_LABEL_POLL_INTERVAL_MINUTES", "60")
+    try:
+        return int(raw)
+    except ValueError:
+        return 60
+
+
+def get_ambient_label_retry_cooldown_hours() -> int:
+    """
+    Return the cooldown (in hours) before an inconclusive (`not_found`/`error`)
+    ambient label lookup is retried, from environment.
+    """
+    raw = os.environ.get("AMBIENT_LABEL_RETRY_COOLDOWN_HOURS", "24")
+    try:
+        return int(raw)
+    except ValueError:
+        return 24
+
+
+def get_ambient_label_request_delay_seconds() -> int:
+    """
+    Return the delay (in seconds) the ambient label scheduler waits between
+    consecutive DGT requests within a single tick, from environment.
+    """
+    raw = os.environ.get("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", "5")
+    try:
+        return int(raw)
+    except ValueError:
+        return 5
+
+
 def get_default_notification_movement_threshold_meters() -> float:
     """
     Return the fallback movement-distance threshold (metres) used to resolve

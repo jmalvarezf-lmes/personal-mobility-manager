@@ -90,6 +90,10 @@ class VehicleResponse(BaseModel):
     vin: str | None
     location_token: str | None  # populated only for Generic brand
     license_plate: str | None
+    # Populated when RegisterVehicle's best-effort DGT lookup resolved
+    # synchronously before this response was built; null otherwise (the
+    # scheduler backfills it later). See VehicleListItem.ambient_label.
+    ambient_label: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +142,10 @@ class VehicleListItem(BaseModel):
     vin: str | None
     license_plate: str | None
     location: VehicleLocationSummary | None
+    # The resolved DGT ambient label ("A"/"B"/"C"/"ECO"/"0"), or null when
+    # no confident result exists yet (no lookup attempted, or the last
+    # attempt was not_found/error — see ambient-label spec.md).
+    ambient_label: str | None = None
 
 
 class ToyotaConfigResponse(BaseModel):
@@ -163,6 +171,8 @@ class VehicleDetailResponse(BaseModel):
     vin: str | None
     license_plate: str | None
     config: ToyotaConfigResponse | GenericConfigResponse
+    # See VehicleListItem.ambient_label.
+    ambient_label: str | None = None
 
 
 # ---------------------------------------------------------------------------

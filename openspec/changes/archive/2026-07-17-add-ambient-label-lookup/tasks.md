@@ -1,0 +1,61 @@
+## 1. Domain layer
+
+- [x] 1.1 Add `AmbientLabel` enum (`A`, `B`, `C`, `ECO`, `ZERO` serialized as `"0"`) in `src/mobility_manager/domain/value_objects/ambient_label.py`
+- [x] 1.2 Add `AmbientLabelStatus` enum (`FOUND`, `NOT_FOUND`, `ERROR`) alongside it or in its own value object module
+- [x] 1.3 Add `VehicleAmbientLabel` entity/dataclass (`vehicle_id`, `label: AmbientLabel | None`, `status: AmbientLabelStatus`, `last_checked_at: datetime | None`) in `src/mobility_manager/domain/entities/vehicle_ambient_label.py`
+- [x] 1.4 Add `VehicleAmbientLabelRepository` port in `src/mobility_manager/domain/ports/vehicle_ambient_label_repository.py`: `get_by_vehicle_id`, `upsert(...)`, `get_vehicles_needing_lookup(cooldown: timedelta) -> list[UUID]` (plate present AND (no row OR status != found AND last_checked_at older than cooldown))
+- [x] 1.5 Add `AmbientLabelLookupPort` port in `src/mobility_manager/domain/ports/ambient_label_lookup_port.py`: `lookup(license_plate: str) -> VehicleAmbientLabelResult` (label/status pair, plus an optional icon relative URL for B/C/ECO/0 — no vehicle_id, pure plate-in, result-out)
+- [x] 1.6 Add `AmbientLabelIconRepository` port in `src/mobility_manager/domain/ports/ambient_label_icon_repository.py`: `get_by_label(label) -> bytes | None`, `save(label, image_bytes, content_type) -> None` (deviation: returns an `AmbientLabelIcon(image_bytes, content_type)` dataclass instead of bare `bytes`, since the icon endpoint needs the content type to set a correct `Content-Type` header — see Deviations in final report)
+
+## 2. Infrastructure: DGT provider
+
+- [x] 2.1 Add `DgtAmbientLabelProvider` in `src/mobility_manager/infrastructure/vehicle_providers/dgt/ambient_label_provider.py`: httpx GET with plate as a `params` value (never string-concatenated), hostname-allowlist check on construction (`sede.dgt.gob.es`), timeout, a standard browser `User-Agent` header, following the `MadridCallejeroCsvFetcher` pattern for hostname validation
+- [x] 2.2 Add HTML parser (e.g. `ambient_label_parser.py` in the same package): branch on `border-success` / `alert-warning` / `alert-danger` container class; success branch extracts the letter from the `distintivo_(A|B|C|ECO|0)_` image filename pattern and cross-checks against the `Distintivo Ambiental X` prose text (mismatch → `error`), and also returns that image's relative URL (no icon URL for the confirmed-A/warning branch)
+- [x] 2.3 Unit tests for the parser using the three captured real HTML fixtures (found/B, confirmed-A/warning, not-found/danger) — save fixtures under `tests/infrastructure/vehicle_providers/dgt/fixtures/`
+- [x] 2.4 Add icon-byte download to `DgtAmbientLabelProvider` (or a sibling helper): resolves a parsed relative icon URL against the same allowlisted `sede.dgt.gob.es` host and downloads it
+- [x] 2.5 Unit tests for `DgtAmbientLabelProvider`: hostname validation (rejects non-`sede.dgt.gob.es` URLs), HTTP error handling (timeout/non-2xx → raises, caller's responsibility to catch), icon download
+
+## 3. Infrastructure: persistence
+
+- [x] 3.1 Add `vehicle_ambient_labels` ORM table in `src/mobility_manager/infrastructure/orm/tables.py`: `vehicle_id` (PK, FK→vehicles.id), `label` (nullable varchar), `status` (varchar), `last_checked_at` (nullable timestamptz)
+- [x] 3.2 Add `ambient_label_icons` ORM table: PK `label`, `image_bytes` (bytea), `content_type`, `fetched_at`
+- [x] 3.3 Alembic migration adding both tables (additive only)
+- [x] 3.4 Implement `PostgresVehicleAmbientLabelRepository` in `src/mobility_manager/infrastructure/repositories/postgres/vehicle_ambient_label_repo.py` implementing the port from 1.4, including the backlog query
+- [x] 3.5 Implement `PostgresAmbientLabelIconRepository` implementing the port from 1.6
+- [x] 3.6 Repository integration tests: vehicle label upsert (found/not_found/error), backlog query respects cooldown and excludes `found` rows, icon cache-miss/cache-hit round trip
+
+## 4. Application layer
+
+- [x] 4.1 Add `LookupVehicleAmbientLabel` use case in `src/mobility_manager/application/use_cases/lookup_vehicle_ambient_label.py`: given a vehicle_id + license_plate, calls the lookup port, upserts the result via the vehicle-label repository; on a B/C/ECO/0 result, checks the icon repository and downloads+caches the icon only on a cache miss (never for A); catches and logs exceptions from the lookup/download itself (never raises)
+- [x] 4.2 Wire `RegisterVehicle.execute()` (`src/mobility_manager/application/use_cases/register_vehicle.py`) to call the use case from 4.1 synchronously when `license_plate` is provided, after the vehicle is saved — wrapped so any failure is logged and swallowed, never fails registration
+- [x] 4.3 Unit tests: registration with a plate triggers the lookup; registration succeeds even when the lookup use case raises; registration without a plate does not trigger a lookup; icon cache-hit skips a redundant download; label A never triggers an icon download
+
+## 5. Scheduler
+
+- [x] 5.1 Add config knobs in `src/mobility_manager/config.py`, following the existing `get_vehicle_poll_interval_minutes()` pattern (`os.environ.get(NAME, "default")` + `int()` with fallback): `get_ambient_label_poll_interval_minutes()` ← `AMBIENT_LABEL_POLL_INTERVAL_MINUTES` (default `60`), `get_ambient_label_retry_cooldown_hours()` ← `AMBIENT_LABEL_RETRY_COOLDOWN_HOURS` (default `24`), `get_ambient_label_request_delay_seconds()` ← `AMBIENT_LABEL_REQUEST_DELAY_SECONDS` (default `5`)
+- [x] 5.2 Add `AmbientLabelScheduler` in `src/mobility_manager/infrastructure/ambient_label_scheduler.py`: `BackgroundScheduler`-based, mirrors `VehicleLocationScheduler`'s per-item try/except + span pattern; each tick fetches the backlog via `get_vehicles_needing_lookup`, calls the use case from 4.1 per vehicle, sleeps the configured delay between consecutive lookups (not after the last one in the tick)
+- [x] 5.3 Add `record_ambient_label_lookup(status: str)` metric in `src/mobility_manager/infrastructure/observability/metrics.py`, following the `record_vehicle_poll` pattern
+- [x] 5.4 Unit tests for the scheduler: backlog query is used (not full vehicle list), one vehicle's exception doesn't stop the rest, delay is invoked between consecutive lookups but not trailing, `found` vehicles are never included
+- [x] 5.5 Wire the scheduler into app startup/shutdown in `src/mobility_manager/presentation/api/app.py`, following the `VehicleLocationScheduler` wiring (construct with real repos/provider, `.start()` in lifespan startup, `.stop()` in shutdown)
+
+## 6. API surface
+
+- [x] 6.1 Extend `VehicleListItem`, `VehicleDetailResponse`, and `VehicleResponse` schemas in `src/mobility_manager/presentation/api/schemas.py` with an ambient label field (null when status != found) — `VehicleResponse` (the `POST /vehicles` registration response) included too: the best-effort lookup runs synchronously before this response is built, so a client shouldn't need a follow-up read to see it (fixed as a post-implementation bug: it was initially missed from `VehicleResponse`, leaving new vehicles' cards without their icon until the next full page reload)
+- [x] 6.2 Update `list_vehicles`, `_build_vehicle_detail`, and `register_vehicle` in `src/mobility_manager/presentation/api/routers/vehicles.py` to fetch and include the ambient label, all via the shared `_resolve_ambient_label` helper
+- [x] 6.3 Add `GET /ambient-labels/{label}/icon` route returning cached bytes with correct content type and a long-lived `Cache-Control` header; 404 for `A` or an uncached label; no auth required (content is non-sensitive and identical for every caller)
+- [x] 6.4 API tests: list/detail/registration responses include resolved label when present and null when absent/not_found/error; icon endpoint returns 200 with correct content-type for a cached label, 404 for `A`, 404 for an uncached label
+
+## 7. Frontend
+
+- [x] 7.1 Add ambient label field to the vehicle type in `frontend/src/types/vehicle.ts`
+- [x] 7.2 Add `vehicle.ambientLabel` (e.g. "Ambient label" / "Etiqueta ambiental"), `vehicle.noAmbientLabel` (e.g. "No label" / "Sin distintivo"), and `vehicle.ambientLabelIconAlt` (e.g. "Ambient label {{label}}" / "Etiqueta ambiental {{label}}", interpolated) keys to both `frontend/public/locales/en/translation.json` and `frontend/public/locales/es/translation.json`, alongside the existing `noLocation`/`noLicensePlate` siblings under the `vehicle` namespace
+- [x] 7.3 Add an `AmbientLabelIcon` component that renders `<img src="/api/ambient-labels/{label}/icon" alt={t("vehicle.ambientLabelIconAlt", { label })}>` for B/C/ECO/0, `t("vehicle.noAmbientLabel")` text for A, and nothing when unresolved (tolerating a 404 from the icon endpoint gracefully, e.g. via `onError` hiding the element) — all strings via `t()`, no hardcoded text, per the `ui-i18n` delta
+- [x] 7.4 Render `AmbientLabelIcon` in `VehicleCard.tsx` (list view) and wherever vehicle detail is shown (deviation: this codebase has no separate vehicle-detail page/route — `VehicleCard` is the only surface that renders a vehicle's info, including brand-specific config fetched via `getVehicle()`, so it doubles as both list and detail view; see Deviations in final report)
+- [ ] 7.5 Frontend unit/story coverage for the three render states (icon, no-label indicator, nothing) — BLOCKED: this repo has no frontend unit-test runner or Storybook configured (`frontend/package.json` has no `test` script, no vitest/jest/testing-library/storybook dependency — only `@playwright/test` for e2e). Left unchecked rather than fabricating a new test framework as an undisclosed scope addition; see Deviations/Issues in final report. Covered instead by the e2e cases in 7.6.
+- [x] 7.6 Add e2e coverage in `frontend/e2e/my-vehicles.spec.ts`: extend `mockVehicleApis`'s vehicle fixtures with an `ambient_label` field and add a route mock for `GET /api/ambient-labels/*/icon` (200 with a small fake image body); add a "Vehicle card ambient label" describe block with cases for (a) a vehicle with `ambient_label: "B"` shows the icon (assert via `getByRole("img", { name: /ambient label b/i })` or the `alt` text), (b) a vehicle with `ambient_label: "A"` shows the "no label" text and triggers no icon request, (c) a vehicle with no `ambient_label` shows neither
+
+## 8. Verification
+
+- [x] 8.1 Run full test suite (`./venv/bin/pytest tests/`) — confirm no new failures beyond the known baseline integration-test errors. Result: 562 passed, 87 errors. Baseline on this exact checkout (re-verified via `git stash`) is 75 errors (not the 62 quoted in the task prompt — likely stale from an earlier session before more integration-test files existed), all `POSTGRES_DSN`/live-Postgres connection errors from `*_repo_integration.py` files. The +12 new errors are this change's own `test_vehicle_ambient_label_repo_integration.py`, which is the exact same error category (skips cleanly in isolation; only errors in the full run because a real `.env` `POSTGRES_DSN` is picked up and connection fails) — not a new kind of failure. Frontend: `tsc --noEmit` and `eslint src/` clean; full Playwright e2e suite run: 55 passed, 4 pre-existing failures in `map.spec.ts` (confirmed via `git stash` to fail identically with zero ambient-label changes applied — needs a live backend, unrelated to this feature).
+- [ ] 8.2 Manual verification against the real DGT endpoint using an owned plate (found case) and a syntactically-valid-but-unregistered plate (not-found case), confirming both persist correctly end-to-end, and that the icon renders in the running frontend — NOT DONE: requires a live DB/stack and a real DGT network call, not available in this sandboxed agent context. Left unchecked rather than faking it.
+- [ ] 8.3 Confirm OpenTelemetry span + metric appear for scheduler ticks (consistent with `scheduler.vehicle_location.poll`), matching the observability conventions from the recent OTel change — NOT DONE: requires a running OTel collector/Grafana Cloud target, not available in this sandboxed agent context. Unit tests (`tests/infrastructure/test_ambient_label_scheduler.py`) do verify the span name/attributes/error-status behavior via the in-memory exporter, but that is not the same as confirming real collector delivery. Left unchecked rather than faking it.

@@ -26,6 +26,9 @@ reasoning.
 
 import logging
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
 from mobility_manager.application.notification_templates import render
 from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.config import resolve_effective_threshold
@@ -46,8 +49,12 @@ from mobility_manager.domain.value_objects.location import GeoLocation, distance
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
+from mobility_manager.infrastructure.observability.metrics import (
+    record_notification_dispatch,
+)
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 _TYPE_KEY = "location_moved"
 
@@ -83,43 +90,60 @@ class NotificationDispatchHandler:
 
         The entire body is wrapped in a broad try/except so that a failure
         in any collaborator is contained here and never propagates to the
-        caller — see module docstring.
+        caller — see module docstring. The whole call is also wrapped in a
+        root trace span (this handler runs synchronously outside any HTTP
+        request context — see design.md decision 4): the span records the
+        exception and is marked as an error on failure, without changing
+        the swallow-and-continue behavior itself. A
+        record_notification_dispatch() metric is recorded once per
+        send_notification attempt, labeled by channel and outcome.
         """
-        try:
-            vehicle = self._vehicle_repo.get_by_id(event.vehicle_id)
-            if vehicle is None:
-                logger.warning("Vehicle not found: %s", event.vehicle_id)
-                return
+        with tracer.start_as_current_span("event_handler.notification_dispatch") as span:
+            try:
+                vehicle = self._vehicle_repo.get_by_id(event.vehicle_id)
+                if vehicle is None:
+                    logger.warning("Vehicle not found: %s", event.vehicle_id)
+                    return
 
-            notification_preference = self._notification_preferences_repo.find_by_user_id_and_type(
-                vehicle.user_id, _TYPE_KEY
-            )
-            if notification_preference is None or not notification_preference.enabled:
-                logger.info("location_moved notifications disabled for user: %s", vehicle.user_id)
-                return
+                notification_preference = self._notification_preferences_repo.find_by_user_id_and_type(
+                    vehicle.user_id, _TYPE_KEY
+                )
+                if notification_preference is None or not notification_preference.enabled:
+                    logger.info("location_moved notifications disabled for user: %s", vehicle.user_id)
+                    return
 
-            previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
-            if previous is None:
-                logger.info("No previous location for vehicle: %s", event.vehicle_id)
-                return
+                previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
+                if previous is None:
+                    logger.info("No previous location for vehicle: %s", event.vehicle_id)
+                    return
 
-            distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
-            threshold = resolve_effective_threshold(notification_preference.config)
-            if distance < threshold:
-                logger.info("Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id)
-                return
+                distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
+                threshold = resolve_effective_threshold(notification_preference.config)
+                if distance < threshold:
+                    logger.info("Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id)
+                    return
 
-            preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
-            language = preferences.notification_language if preferences is not None else None
-            text = render(_TYPE_KEY, language, plate=vehicle.license_plate or "")
+                preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
+                language = preferences.notification_language if preferences is not None else None
+                channel = preferences.preferred_notification_channel if preferences is not None else None
+                text = render(_TYPE_KEY, language, plate=vehicle.license_plate or "")
 
-            self._send_notification.execute(
-                vehicle.user_id,
-                NotificationMessage(
-                    text=text,
-                    location=GeoLocation(lat=event.latitude, lng=event.longitude),
-                ),
-            )
-            logger.info("Notification sent for vehicle: %s", event.vehicle_id)
-        except Exception:
-            logger.exception("Failed to handle VehicleLocationUpdated for vehicle: %s", event.vehicle_id)
+                success = False
+                try:
+                    success = self._send_notification.execute(
+                        vehicle.user_id,
+                        NotificationMessage(
+                            text=text,
+                            location=GeoLocation(lat=event.latitude, lng=event.longitude),
+                        ),
+                    )
+                finally:
+                    # channel/success only — no user id, plate, or free-text
+                    # value (see design.md decision 7).
+                    record_notification_dispatch(channel=channel or "none", success=success)
+
+                logger.info("Notification sent for vehicle: %s", event.vehicle_id)
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR))
+                logger.exception("Failed to handle VehicleLocationUpdated for vehicle: %s", event.vehicle_id)

@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -71,6 +73,7 @@ from mobility_manager.config import (
     get_encryption_key,
     get_ingestion_interval_hours,
     get_log_level,
+    get_otel_endpoint,
     get_vehicle_poll_interval_minutes,
 )
 from mobility_manager.domain.events.vehicle_location_updated import (
@@ -84,6 +87,10 @@ from mobility_manager.infrastructure.events.in_memory_event_publisher import (
 )
 from mobility_manager.infrastructure.notification_channels.telegram.channel import (
     TelegramNotificationChannel,
+)
+from mobility_manager.infrastructure.observability.setup import (
+    init_observability,
+    shutdown_observability,
 )
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
@@ -157,6 +164,18 @@ logging.basicConfig(
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Set up and tear down application-level resources."""
     engine = get_engine()
+
+    # --- Observability (OpenTelemetry) ---
+    # Activation is implicit: only wired up when OTEL_EXPORTER_OTLP_ENDPOINT
+    # is configured (see config.get_otel_endpoint() and
+    # infrastructure/observability/setup.py's module docstring). When unset,
+    # tracer_provider/meter_provider stay None and every manual span/metric
+    # call elsewhere in the app is an inert OTel API no-op — no behavior
+    # change, no crash, no new required env var.
+    tracer_provider: TracerProvider | None = None
+    meter_provider: MeterProvider | None = None
+    if get_otel_endpoint():
+        tracer_provider, meter_provider = init_observability(app, engine)
 
     # --- Parking (existing) ---
     repo = PostgresSerZoneRepository(engine)
@@ -340,6 +359,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     parking_scheduler.stop()
     vehicle_location_scheduler.stop()
+    shutdown_observability(tracer_provider, meter_provider)
 
 
 app = FastAPI(

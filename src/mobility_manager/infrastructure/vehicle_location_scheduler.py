@@ -13,6 +13,8 @@ import logging
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
@@ -25,8 +27,10 @@ from mobility_manager.domain.ports.vehicle_pull_location_port import (
 )
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 from mobility_manager.domain.value_objects.brand import Brand
+from mobility_manager.infrastructure.observability.metrics import record_vehicle_poll
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class VehicleLocationScheduler:
@@ -74,27 +78,38 @@ class VehicleLocationScheduler:
         logger.debug("Polling location for %d Toyota vehicle(s)", len(vehicles))
 
         for vehicle in vehicles:
-            try:
-                config = self._config_repo.get_toyota_config(vehicle.id)
-                location = self._location_provider.fetch_location(vehicle.id, config)
-                if location is None:
-                    logger.debug("No location available for vehicle %s this cycle — skipping", vehicle.id)
-                    continue
-                self._record_use_case.execute(
-                    vehicle_id=vehicle.id,
-                    lat=location.latitude,
-                    lon=location.longitude,
-                    recorded_at=location.recorded_at,
-                    source="pull",
-                )
-                logger.info(
-                    "Recorded pull location for vehicle %s: lat=%s lon=%s",
-                    vehicle.id,
-                    location.latitude,
-                    location.longitude,
-                )
-            except Exception:
-                logger.exception("Failed to record location for vehicle %s — continuing", vehicle.id)
+            # Root span per vehicle poll: this runs in APScheduler's own
+            # thread pool, outside any HTTP request context, so there is no
+            # ambient trace to attach to (see design.md decision 4).
+            with tracer.start_as_current_span("scheduler.vehicle_location.poll") as span:
+                success = False
+                try:
+                    config = self._config_repo.get_toyota_config(vehicle.id)
+                    location = self._location_provider.fetch_location(vehicle.id, config)
+                    if location is None:
+                        logger.debug("No location available for vehicle %s this cycle — skipping", vehicle.id)
+                        success = True
+                        continue
+                    self._record_use_case.execute(
+                        vehicle_id=vehicle.id,
+                        lat=location.latitude,
+                        lon=location.longitude,
+                        recorded_at=location.recorded_at,
+                        source="pull",
+                    )
+                    logger.info(
+                        "Recorded pull location for vehicle %s: lat=%s lon=%s",
+                        vehicle.id,
+                        location.latitude,
+                        location.longitude,
+                    )
+                    success = True
+                except Exception as exc:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR))
+                    logger.exception("Failed to record location for vehicle %s — continuing", vehicle.id)
+                finally:
+                    record_vehicle_poll(success=success)
 
     def start(self) -> None:
         """Start the scheduler.

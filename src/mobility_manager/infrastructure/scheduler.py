@@ -11,8 +11,13 @@ from collections.abc import Callable
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+from mobility_manager.infrastructure.observability.metrics import record_ingestion_run
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class ParkingIngestionScheduler:
@@ -34,11 +39,22 @@ class ParkingIngestionScheduler:
 
     def _make_runner(self, city_code: str, use_case: Any) -> Callable[[], None]:
         def _run() -> None:
-            try:
-                summary = use_case.execute()
-                logger.info("Ingestion complete [%s]: %s", city_code, summary)
-            except Exception:
-                logger.exception("Ingestion failed [%s]", city_code)
+            # Root span: this runs in APScheduler's own thread pool, outside
+            # any HTTP request context, so there is no ambient trace to
+            # attach to (see design.md decision 4).
+            with tracer.start_as_current_span("scheduler.parking_ingestion.run") as span:
+                span.set_attribute("mobility_manager.city", city_code)
+                success = False
+                try:
+                    summary = use_case.execute()
+                    logger.info("Ingestion complete [%s]: %s", city_code, summary)
+                    success = True
+                except Exception as exc:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR))
+                    logger.exception("Ingestion failed [%s]", city_code)
+                finally:
+                    record_ingestion_run(city=city_code, success=success)
 
         return _run
 

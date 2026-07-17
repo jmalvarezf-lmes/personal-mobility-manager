@@ -18,6 +18,9 @@ from mobility_manager.domain.exceptions import (
     VehicleLocationNotFoundError,
     VehicleNotFoundError,
 )
+from mobility_manager.domain.ports.vehicle_ambient_label_repository import (
+    VehicleAmbientLabelRepository,
+)
 from mobility_manager.domain.value_objects.ambient_label_status import (
     AmbientLabelStatus,
 )
@@ -44,7 +47,7 @@ from mobility_manager.presentation.api.schemas import (
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 
 
-def _resolve_ambient_label(vehicle_id: UUID, ambient_label_repo) -> str | None:  # type: ignore[no-untyped-def]
+def _resolve_ambient_label(vehicle_id: UUID, ambient_label_repo: VehicleAmbientLabelRepository | None) -> str | None:
     """
     Return the resolved ambient label value for `vehicle_id`, or None when
     no confident result exists (no row yet, or status != found) — see

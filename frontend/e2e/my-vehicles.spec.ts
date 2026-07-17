@@ -21,6 +21,7 @@ const MOCK_VEHICLES = [
       longitude: -3.7038,
       recorded_at: "2026-07-01T10:00:00Z",
     },
+    ambient_label: null,
   },
   {
     vehicle_id: GENERIC_ID,
@@ -28,6 +29,7 @@ const MOCK_VEHICLES = [
     display_name: "My Scooter",
     vin: null,
     location: null,
+    ambient_label: null,
   },
 ];
 
@@ -73,6 +75,15 @@ async function mockVehicleApis(
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ city: "madrid", zones: [] }),
+    }),
+  );
+
+  // GET /api/ambient-labels/*/icon — cached DGT sticker icon (fake bytes)
+  await page.route("**/api/ambient-labels/*/icon", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: "<svg xmlns='http://www.w3.org/2000/svg'></svg>",
     }),
   );
 
@@ -255,6 +266,59 @@ test.describe("Vehicle card content", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Vehicle card ambient label
+// ---------------------------------------------------------------------------
+
+test.describe("Vehicle card ambient label", () => {
+  test("vehicle with ambient_label 'B' shows the icon", async ({ page }) => {
+    const vehicles = [
+      { ...MOCK_VEHICLES[0]!, ambient_label: "B" },
+      MOCK_VEHICLES[1]!,
+    ] as typeof MOCK_VEHICLES;
+    await mockVehicleApis(page, vehicles);
+    const myVehicles = new MyVehiclesPage(page);
+    await myVehicles.goto();
+
+    const card = myVehicles.vehicleCard("My Toyota");
+    await expect(card.getByRole("img", { name: /ambient label b/i })).toBeVisible();
+  });
+
+  test("vehicle with ambient_label 'A' shows the no-label text and requests no icon", async ({
+    page,
+  }) => {
+    const vehicles = [
+      { ...MOCK_VEHICLES[0]!, ambient_label: "A" },
+      MOCK_VEHICLES[1]!,
+    ] as typeof MOCK_VEHICLES;
+    await mockVehicleApis(page, vehicles);
+
+    let iconRequested = false;
+    page.on("request", (req) => {
+      if (req.url().includes("/api/ambient-labels/")) iconRequested = true;
+    });
+
+    const myVehicles = new MyVehiclesPage(page);
+    await myVehicles.goto();
+
+    const card = myVehicles.vehicleCard("My Toyota");
+    await expect(card.getByText(/no label/i)).toBeVisible();
+    expect(iconRequested).toBe(false);
+  });
+
+  test("vehicle with no ambient_label shows neither icon nor no-label text", async ({
+    page,
+  }) => {
+    await mockVehicleApis(page); // MOCK_VEHICLES default to ambient_label: null
+    const myVehicles = new MyVehiclesPage(page);
+    await myVehicles.goto();
+
+    const card = myVehicles.vehicleCard("My Toyota");
+    await expect(card.getByRole("img", { name: /ambient label/i })).toHaveCount(0);
+    await expect(card.getByText(/no label/i)).toHaveCount(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Map
 // ---------------------------------------------------------------------------
 
@@ -335,6 +399,35 @@ test.describe("Add Vehicle", () => {
 
     await expect(myVehicles.modal).not.toBeVisible();
     await expect(myVehicles.vehicleCard("New Van")).toBeVisible();
+  });
+
+  test("new vehicle's ambient label is treated as unresolved, not 'undefined'", async ({
+    page,
+  }) => {
+    // POST /vehicles (VehicleResponse) omits ambient_label entirely, unlike
+    // the list/detail schemas — regression test for the bug where the
+    // frontend rendered <img src=".../ambient-labels/undefined/icon">
+    // immediately after creating a vehicle (see MyVehiclesPage.handleCreated).
+    await mockVehicleApis(page, []);
+    let iconRequestedForUndefined = false;
+    page.on("request", (req) => {
+      if (req.url().includes("/api/ambient-labels/undefined/icon")) {
+        iconRequestedForUndefined = true;
+      }
+    });
+
+    const myVehicles = new MyVehiclesPage(page);
+    await myVehicles.goto();
+    await myVehicles.openAddModal();
+    await myVehicles.selectBrand("generic");
+    await myVehicles.fillGenericFields({ displayName: "New Van" });
+    await myVehicles.submitModal();
+
+    const card = myVehicles.vehicleCard("New Van");
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("img", { name: /ambient label/i })).toHaveCount(0);
+    await expect(card.getByText(/no label/i)).toHaveCount(0);
+    expect(iconRequestedForUndefined).toBe(false);
   });
 
   test("creating a Toyota vehicle sends correct POST payload", async ({

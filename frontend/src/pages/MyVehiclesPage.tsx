@@ -31,7 +31,10 @@ export default function MyVehiclesPage() {
   }, [t]);
 
   function handleCreated(vehicle: VehicleListItem) {
-    setVehicles((prev) => [...prev, { ...vehicle, location: vehicle.location ?? null }]);
+    setVehicles((prev) => [
+      ...prev,
+      { ...vehicle, location: vehicle.location ?? null, ambient_label: vehicle.ambient_label ?? null },
+    ]);
   }
 
   function handleDeleted(vehicleId: string) {

@@ -38,7 +38,7 @@ The system SHALL render a language selector `<select>` element in the navigation
 ---
 
 ### Requirement: All UI strings are externalised into translation files
-The system SHALL provide translation files for each supported locale at `frontend/public/locales/{lng}/translation.json`. All hardcoded UI strings in Nav, LandingPage, MapPage, MyVehiclesPage, AddVehicleModal, EditVehicleModal, and VehicleCard SHALL be replaced by calls to the i18next `t()` function. Backend API error messages are exempt and may remain in English.
+The system SHALL provide translation files for each supported locale at `frontend/public/locales/{lng}/translation.json`. All hardcoded UI strings in Nav, LandingPage, MapPage, MyVehiclesPage, AddVehicleModal, EditVehicleModal, VehicleCard, and AmbientLabelIcon SHALL be replaced by calls to the i18next `t()` function. Backend API error messages are exempt and may remain in English.
 
 #### Scenario: English translation file covers all keys
 - **WHEN** the active language is `en`

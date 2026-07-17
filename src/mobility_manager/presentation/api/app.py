@@ -6,6 +6,7 @@ via the FastAPI lifespan context manager.
 """
 
 import logging
+import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -57,6 +58,9 @@ from mobility_manager.application.use_cases.list_ser_ticket_provider_connections
     ListSerTicketProviderConnections,
 )
 from mobility_manager.application.use_cases.list_user_vehicles import ListUserVehicles
+from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import (
+    LookupVehicleAmbientLabel,
+)
 from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
 )
@@ -67,6 +71,9 @@ from mobility_manager.application.use_cases.remove_notification_channel import (
 from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.config import (
+    get_ambient_label_poll_interval_minutes,
+    get_ambient_label_request_delay_seconds,
+    get_ambient_label_retry_cooldown_hours,
     get_cors_origins,
     get_enabled_brands,
     get_enabled_ser_providers,
@@ -81,6 +88,9 @@ from mobility_manager.domain.events.vehicle_location_updated import (
 )
 from mobility_manager.domain.ports.notification_channel import NotificationChannelPort
 from mobility_manager.domain.value_objects.brand import Brand
+from mobility_manager.infrastructure.ambient_label_scheduler import (
+    AmbientLabelScheduler,
+)
 from mobility_manager.infrastructure.db import get_engine
 from mobility_manager.infrastructure.events.in_memory_event_publisher import (
     InMemoryEventPublisher,
@@ -94,6 +104,9 @@ from mobility_manager.infrastructure.observability.setup import (
 )
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
+)
+from mobility_manager.infrastructure.repositories.postgres.ambient_label_icon_repo import (
+    PostgresAmbientLabelIconRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.notification_preferences_repo import (
     PostgresNotificationPreferencesRepository,
@@ -116,6 +129,9 @@ from mobility_manager.infrastructure.repositories.postgres.user_repo import (
 from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
     PostgresUserSerProviderConfigRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.vehicle_ambient_label_repo import (
+    PostgresVehicleAmbientLabelRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.vehicle_config_repo import (
     PostgresVehicleConfigRepository,
 )
@@ -135,7 +151,14 @@ from mobility_manager.infrastructure.vehicle_location_scheduler import (
 from mobility_manager.infrastructure.vehicle_providers.brand_registry import (
     BrandRegistry,
 )
+from mobility_manager.infrastructure.vehicle_providers.dgt.ambient_label_provider import (
+    DEFAULT_DGT_AMBIENT_LABEL_URL,
+    DgtAmbientLabelProvider,
+)
 from mobility_manager.presentation.api.limiter import limiter
+from mobility_manager.presentation.api.routers.ambient_labels import (
+    router as ambient_labels_router,
+)
 from mobility_manager.presentation.api.routers.auth import router as auth_router
 from mobility_manager.presentation.api.routers.config import router as config_router
 from mobility_manager.presentation.api.routers.notification_preferences import (
@@ -249,6 +272,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_config_repo = PostgresVehicleConfigRepository(engine, encryption_key)
     vehicle_location_repo = PostgresVehicleLocationRepository(engine)
 
+    # --- Ambient label (DGT distintivo ambiental) ---
+    # Additive and off the request path except for the best-effort call
+    # inside RegisterVehicle.execute() below, which is itself try/except
+    # wrapped so DGT's availability never affects registration (see
+    # add-ambient-label-lookup design.md decision 4).
+    vehicle_ambient_label_repo = PostgresVehicleAmbientLabelRepository(engine)
+    ambient_label_icon_repo = PostgresAmbientLabelIconRepository(engine)
+    dgt_ambient_label_url = os.environ.get("DGT_AMBIENT_LABEL_URL", DEFAULT_DGT_AMBIENT_LABEL_URL)
+    dgt_ambient_label_provider = DgtAmbientLabelProvider(url=dgt_ambient_label_url)
+    lookup_vehicle_ambient_label_uc = LookupVehicleAmbientLabel(
+        lookup_port=dgt_ambient_label_provider,
+        label_repo=vehicle_ambient_label_repo,
+        icon_repo=ambient_label_icon_repo,
+    )
+    app.state.vehicle_ambient_label_repo = vehicle_ambient_label_repo
+    app.state.ambient_label_icon_repo = ambient_label_icon_repo
+
     # --- Events (vehicle-location-events) ---
     # NotificationDispatchHandler now needs vehicle_repo, vehicle_location_repo
     # (both constructed just above), user_preferences_repo and
@@ -283,6 +323,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         vehicle_repo=vehicle_repo,
         config_repo=vehicle_config_repo,
         enabled_brands=enabled_brands,
+        lookup_ambient_label=lookup_vehicle_ambient_label_uc,
     )
     record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo, event_publisher=event_publisher)
     get_latest_uc = GetLatestVehicleLocation(location_repo=vehicle_location_repo)
@@ -314,6 +355,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     vehicle_location_scheduler.start()
     app.state.vehicle_location_scheduler = vehicle_location_scheduler
+
+    ambient_label_scheduler = AmbientLabelScheduler(
+        vehicle_repo=vehicle_repo,
+        label_repo=vehicle_ambient_label_repo,
+        lookup_use_case=lookup_vehicle_ambient_label_uc,
+        interval_minutes=get_ambient_label_poll_interval_minutes(),
+        retry_cooldown_hours=get_ambient_label_retry_cooldown_hours(),
+        request_delay_seconds=get_ambient_label_request_delay_seconds(),
+    )
+    ambient_label_scheduler.start()
+    app.state.ambient_label_scheduler = ambient_label_scheduler
 
     # --- SER ticket provider ---
     # Reuse the Toyota encryption key if already resolved above. ElParking is
@@ -359,6 +411,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     parking_scheduler.stop()
     vehicle_location_scheduler.stop()
+    ambient_label_scheduler.stop()
     shutdown_observability(tracer_provider, meter_provider)
 
 
@@ -386,6 +439,7 @@ app.include_router(preferences_router)
 app.include_router(ser_ticket_providers_router)
 app.include_router(notifications_router)
 app.include_router(notification_preferences_router)
+app.include_router(ambient_labels_router)
 
 
 @app.middleware("http")

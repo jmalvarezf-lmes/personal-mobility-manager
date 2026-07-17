@@ -153,3 +153,71 @@ class TestBrandGating:
         uc, _, _ = _make_use_case(enabled=[Brand.GENERIC])
         result = uc.execute(Brand.GENERIC, "Car", user_id=_OWNER_ID)
         assert result.brand == Brand.GENERIC
+
+
+class _FakeLookupAmbientLabel:
+    def __init__(self, raises: bool = False) -> None:
+        self._raises = raises
+        self.calls: list[tuple] = []
+
+    def execute(self, vehicle_id, license_plate) -> None:
+        self.calls.append((vehicle_id, license_plate))
+        if self._raises:
+            raise RuntimeError("dgt boom")
+
+
+class TestAmbientLabelLookupTrigger:
+    def test_registration_with_plate_triggers_lookup(self) -> None:
+        v_repo = InMemoryVehicleRepo()
+        c_repo = InMemoryConfigRepo()
+        lookup = _FakeLookupAmbientLabel()
+        uc = RegisterVehicle(
+            vehicle_repo=v_repo,
+            config_repo=c_repo,
+            enabled_brands=[Brand.GENERIC],
+            lookup_ambient_label=lookup,
+        )
+
+        result = uc.execute(Brand.GENERIC, "My Car", user_id=_OWNER_ID, license_plate="1234ABC")
+
+        assert len(lookup.calls) == 1
+        assert lookup.calls[0] == (result.vehicle_id, "1234ABC")
+
+    def test_registration_without_plate_skips_lookup(self) -> None:
+        v_repo = InMemoryVehicleRepo()
+        c_repo = InMemoryConfigRepo()
+        lookup = _FakeLookupAmbientLabel()
+        uc = RegisterVehicle(
+            vehicle_repo=v_repo,
+            config_repo=c_repo,
+            enabled_brands=[Brand.GENERIC],
+            lookup_ambient_label=lookup,
+        )
+
+        uc.execute(Brand.GENERIC, "My Car", user_id=_OWNER_ID)
+
+        assert lookup.calls == []
+
+    def test_registration_succeeds_even_when_lookup_raises(self) -> None:
+        v_repo = InMemoryVehicleRepo()
+        c_repo = InMemoryConfigRepo()
+        lookup = _FakeLookupAmbientLabel(raises=True)
+        uc = RegisterVehicle(
+            vehicle_repo=v_repo,
+            config_repo=c_repo,
+            enabled_brands=[Brand.GENERIC],
+            lookup_ambient_label=lookup,
+        )
+
+        result = uc.execute(Brand.GENERIC, "My Car", user_id=_OWNER_ID, license_plate="1234ABC")
+
+        assert result.vehicle_id is not None
+        assert len(v_repo.saved) == 1
+
+    def test_registration_without_ambient_label_wiring_still_succeeds(self) -> None:
+        uc, v_repo, _ = _make_use_case(enabled=[Brand.GENERIC])  # lookup_ambient_label defaults to None
+
+        result = uc.execute(Brand.GENERIC, "My Car", user_id=_OWNER_ID, license_plate="1234ABC")
+
+        assert result.vehicle_id is not None
+        assert len(v_repo.saved) == 1

@@ -43,6 +43,12 @@ _vehicle_poll_counter = _meter.create_counter(
     description="Count of vehicle location poll attempts, labeled by outcome.",
 )
 
+_ambient_label_lookup_counter = _meter.create_counter(
+    name="mobility_manager.ambient_label_lookup",
+    unit="1",
+    description="Count of DGT ambient label lookup attempts, labeled by status (found/not_found/error).",
+)
+
 
 def record_notification_dispatch(channel: str, success: bool) -> None:
     """Record one notification dispatch attempt through `channel`."""
@@ -57,3 +63,14 @@ def record_ingestion_run(city: str, success: bool) -> None:
 def record_vehicle_poll(success: bool) -> None:
     """Record one vehicle location poll attempt."""
     _vehicle_poll_counter.add(1, {"success": success})
+
+
+def record_ambient_label_lookup(status: str) -> None:
+    """
+    Record one DGT ambient label lookup attempt, labeled by its resulting
+    status (`found` / `not_found` / `error`) — see design.md decision 2:
+    `not_found` and `error` are distinguished purely for observability, so
+    markup drift (`error`) is visible in dashboards separately from DGT
+    genuinely having no record for a plate (`not_found`).
+    """
+    _ambient_label_lookup_counter.add(1, {"status": status})

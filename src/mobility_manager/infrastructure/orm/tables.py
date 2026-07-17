@@ -158,3 +158,21 @@ parking_tickets_table = Table(
     Column("provider_reference", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
+
+vehicle_ambient_labels_table = Table(
+    "vehicle_ambient_labels",
+    metadata,
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id"), primary_key=True),
+    Column("label", String(10), nullable=True),
+    Column("status", String(20), nullable=False),
+    Column("last_checked_at", DateTime(timezone=True), nullable=True),
+)
+
+ambient_label_icons_table = Table(
+    "ambient_label_icons",
+    metadata,
+    Column("label", String(10), primary_key=True),
+    Column("image_bytes", LargeBinary, nullable=False),
+    Column("content_type", String(100), nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+)

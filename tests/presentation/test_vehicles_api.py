@@ -74,6 +74,7 @@ def _build_app(
     config_repo=None,
     user_repo=None,
     vehicle_repo=None,
+    ambient_label_repo=None,
 ) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
@@ -98,6 +99,8 @@ def _build_app(
         app.state.user_repo = user_repo
     if vehicle_repo is not None:
         app.state.vehicle_repo = vehicle_repo
+    if ambient_label_repo is not None:
+        app.state.vehicle_ambient_label_repo = ambient_label_repo
     return app
 
 
@@ -231,6 +234,64 @@ class TestRegisterVehicle:
         )
 
         assert response.json()["location_token"] is None
+
+    def test_register_response_includes_label_resolved_synchronously(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        RegisterVehicle's best-effort DGT lookup runs and persists synchronously
+        before returning (design.md decision 4) — the registration response
+        should reflect an already-resolved label immediately, not require a
+        follow-up GET /vehicles to see it. Regression test for the bug where
+        POST /vehicles never carried ambient_label at all, so a newly created
+        vehicle showed no icon until the page was reloaded.
+        """
+        from mobility_manager.domain.entities.vehicle_ambient_label import (
+            VehicleAmbientLabel,
+        )
+        from mobility_manager.domain.value_objects.ambient_label import AmbientLabel
+        from mobility_manager.domain.value_objects.ambient_label_status import (
+            AmbientLabelStatus,
+        )
+
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_result = _make_vehicle_result(Brand.GENERIC)
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = vehicle_result
+        mock_ambient_label_repo = MagicMock()
+        mock_ambient_label_repo.get_by_vehicle_id.return_value = VehicleAmbientLabel(
+            vehicle_id=vehicle_result.vehicle_id,
+            label=AmbientLabel.ECO,
+            status=AmbientLabelStatus.FOUND,
+            last_checked_at=datetime.now(UTC),
+        )
+        app, cookie = _build_authed_app(register_uc=mock_uc, ambient_label_repo=mock_ambient_label_repo)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={"brand": "generic", "display_name": "My Car", "license_plate": "1234ABC"},
+            cookies={"session": cookie},
+        )
+
+        assert response.json()["ambient_label"] == "ECO"
+
+    def test_register_response_ambient_label_null_when_unresolved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = _make_vehicle_result(Brand.GENERIC)
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={"brand": "generic", "display_name": "My Car"},
+            cookies={"session": cookie},
+        )
+
+        assert response.json()["ambient_label"] is None
 
     def test_disabled_brand_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
@@ -559,6 +620,76 @@ class TestListVehicles:
         data = response.json()
         assert data[0]["location"]["latitude"] == pytest.approx(40.4168)
 
+    def test_vehicle_with_resolved_label_includes_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from mobility_manager.domain.entities.vehicle_ambient_label import (
+            VehicleAmbientLabel,
+        )
+        from mobility_manager.domain.value_objects.ambient_label import AmbientLabel
+        from mobility_manager.domain.value_objects.ambient_label_status import (
+            AmbientLabelStatus,
+        )
+
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [VehicleWithLocation(vehicle=vehicle, location=None)]
+        mock_ambient_label_repo = MagicMock()
+        mock_ambient_label_repo.get_by_vehicle_id.return_value = VehicleAmbientLabel(
+            vehicle_id=vehicle_id,
+            label=AmbientLabel.B,
+            status=AmbientLabelStatus.FOUND,
+            last_checked_at=datetime.now(UTC),
+        )
+        app, cookie = _build_authed_app(list_uc=mock_list_uc, ambient_label_repo=mock_ambient_label_repo)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.json()[0]["ambient_label"] == "B"
+
+    def test_vehicle_with_unresolved_label_reports_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from mobility_manager.domain.entities.vehicle_ambient_label import (
+            VehicleAmbientLabel,
+        )
+        from mobility_manager.domain.value_objects.ambient_label_status import (
+            AmbientLabelStatus,
+        )
+
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [VehicleWithLocation(vehicle=vehicle, location=None)]
+        mock_ambient_label_repo = MagicMock()
+        mock_ambient_label_repo.get_by_vehicle_id.return_value = VehicleAmbientLabel(
+            vehicle_id=vehicle_id,
+            label=None,
+            status=AmbientLabelStatus.NOT_FOUND,
+            last_checked_at=datetime.now(UTC),
+        )
+        app, cookie = _build_authed_app(list_uc=mock_list_uc, ambient_label_repo=mock_ambient_label_repo)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.json()[0]["ambient_label"] is None
+
+    def test_vehicle_with_no_label_row_reports_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [VehicleWithLocation(vehicle=vehicle, location=None)]
+        mock_ambient_label_repo = MagicMock()
+        mock_ambient_label_repo.get_by_vehicle_id.return_value = None
+        app, cookie = _build_authed_app(list_uc=mock_list_uc, ambient_label_repo=mock_ambient_label_repo)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.json()[0]["ambient_label"] is None
+
 
 # ---------------------------------------------------------------------------
 # GET /vehicles/{vehicle_id} — Task 7.6
@@ -634,6 +765,53 @@ class TestGetVehicleDetail:
         response = client.get(f"/vehicles/{uuid4()}", cookies={"session": cookie})
 
         assert response.status_code == 404
+
+    def test_owner_gets_resolved_ambient_label(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from mobility_manager.domain.entities.vehicle_ambient_label import (
+            VehicleAmbientLabel,
+        )
+        from mobility_manager.domain.value_objects.ambient_label import AmbientLabel
+        from mobility_manager.domain.value_objects.ambient_label_status import (
+            AmbientLabelStatus,
+        )
+
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+        mock_ambient_label_repo = MagicMock()
+        mock_ambient_label_repo.get_by_vehicle_id.return_value = VehicleAmbientLabel(
+            vehicle_id=vehicle_id,
+            label=AmbientLabel.ECO,
+            status=AmbientLabelStatus.FOUND,
+            last_checked_at=datetime.now(UTC),
+        )
+
+        app, cookie = _build_authed_app(
+            vehicle_repo=mock_vehicle_repo, config_repo=config_repo, ambient_label_repo=mock_ambient_label_repo
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.json()["ambient_label"] == "ECO"
+
+    def test_owner_gets_null_ambient_label_when_no_repo_wired(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, config_repo=config_repo)
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}", cookies={"session": cookie})
+
+        assert response.json()["ambient_label"] is None
 
 
 # ---------------------------------------------------------------------------

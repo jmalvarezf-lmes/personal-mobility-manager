@@ -4,10 +4,18 @@ Application use case: RegisterVehicle.
 Creates a new vehicle and its brand-specific configuration:
 - Toyota: encrypts credentials via VehicleConfigRepository
 - Generic: generates a random location_token
+
+When a license plate is supplied and an ambient-label use case was wired in,
+also best-effort triggers a DGT ambient label lookup — see
+add-ambient-label-lookup design.md decision 4: this call is wrapped in a
+try/except that only logs, so registration always succeeds or fails
+independently of DGT's availability.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from mobility_manager.domain.entities.vehicle import Vehicle
@@ -19,6 +27,13 @@ from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.generic_config import GenericConfig
 from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
+
+if TYPE_CHECKING:
+    from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import (
+        LookupVehicleAmbientLabel,
+    )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,10 +60,12 @@ class RegisterVehicle:
         vehicle_repo: VehicleRepository,
         config_repo: VehicleConfigRepository,
         enabled_brands: list[Brand],
+        lookup_ambient_label: "LookupVehicleAmbientLabel | None" = None,
     ) -> None:
         self._vehicle_repo = vehicle_repo
         self._config_repo = config_repo
         self._enabled_brands = enabled_brands
+        self._lookup_ambient_label = lookup_ambient_label
 
     def execute(
         self,
@@ -102,6 +119,18 @@ class RegisterVehicle:
         elif brand == Brand.GENERIC:
             location_token = str(uuid4())
             self._config_repo.save_generic_config(vehicle.id, GenericConfig(location_token=location_token))
+
+        if license_plate is not None and self._lookup_ambient_label is not None:
+            # Best-effort only: DGT's availability, latency, or markup must
+            # never affect registration (design.md decision 4). The
+            # scheduler is the sole durable retry path — this call never
+            # retries and its failure is only logged.
+            try:
+                self._lookup_ambient_label.execute(vehicle_id=vehicle.id, license_plate=license_plate)
+            except Exception:
+                logger.exception(
+                    "Best-effort ambient label lookup failed during registration of vehicle %s", vehicle.id
+                )
 
         return RegisterVehicleResult(
             vehicle_id=vehicle.id,

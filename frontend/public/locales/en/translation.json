@@ -139,6 +139,9 @@
     "noLocation": "No location data",
     "licensePlate": "License Plate",
     "noLicensePlate": "No license plate",
+    "ambientLabel": "Ambient label",
+    "noAmbientLabel": "No label",
+    "ambientLabelIconAlt": "Ambient label {{label}}",
     "edit": "Edit",
     "delete": "Delete",
     "confirmDelete": "Delete \"{{name}}\"?"

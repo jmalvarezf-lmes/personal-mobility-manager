@@ -2,7 +2,6 @@
 Unit tests for LookupVehicleAmbientLabel use case.
 """
 
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import (

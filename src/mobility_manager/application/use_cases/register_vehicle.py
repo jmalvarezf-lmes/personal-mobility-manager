@@ -60,7 +60,7 @@ class RegisterVehicle:
         vehicle_repo: VehicleRepository,
         config_repo: VehicleConfigRepository,
         enabled_brands: list[Brand],
-        lookup_ambient_label: "LookupVehicleAmbientLabel | None" = None,
+        lookup_ambient_label: LookupVehicleAmbientLabel | None = None,
     ) -> None:
         self._vehicle_repo = vehicle_repo
         self._config_repo = config_repo

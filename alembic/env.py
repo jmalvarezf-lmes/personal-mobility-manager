@@ -9,7 +9,16 @@ from mobility_manager.infrastructure.orm.tables import metadata
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: fileConfig() defaults to True, which
+    # silently sets `.disabled = True` on every already-instantiated Logger
+    # not listed in alembic.ini's [loggers] section — harmless for the real
+    # `alembic upgrade` CLI (nothing else has configured logging yet at that
+    # point), but catastrophic for any in-process caller (e.g. a pytest run
+    # invoking `alembic.command.upgrade()` directly) that already imported
+    # application modules: it silently breaks `logger.warning(...)` for the
+    # rest of the process, which surfaces as `caplog` seeing nothing in
+    # unrelated tests that happen to run afterward in the same session.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Inject DSN from the application config so nothing is hardcoded in alembic.ini.
 config.set_main_option("sqlalchemy.url", get_postgres_dsn())

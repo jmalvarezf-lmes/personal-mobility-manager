@@ -162,9 +162,7 @@ def get_default_notification_movement_threshold_meters() -> float:
     `50` default with no signal that its previously-configured value is
     being ignored.
     """
-    if os.environ.get(_LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR) and not os.environ.get(
-        _NOTIFICATION_THRESHOLD_ENV_VAR
-    ):
+    if os.environ.get(_LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR) and not os.environ.get(_NOTIFICATION_THRESHOLD_ENV_VAR):
         logger.warning(
             "%s is set but %s is not — the old variable is no longer read and this deployment is silently "
             "using the default of 50 metres. Rename %s to %s.",
@@ -331,6 +329,47 @@ def get_google_redirect_uri() -> str:
     if not value:
         raise RuntimeError("GOOGLE_REDIRECT_URI environment variable is not set")
     return value
+
+
+_DEFAULT_HOLIDAY_ICAL_URL = (
+    "https://calendar.google.com/calendar/ical/es.spain%23holiday%40group.v.calendar.google.com/public/basic.ics"
+)
+
+
+def get_holiday_calendar_url() -> str:
+    """
+    Return the public holiday calendar iCal feed URL from HOLIDAY_CALENDAR_URL,
+    or the Google Calendar default if unset.
+
+    Unlike get_elparking_base_url()/get_telegram_bot_token(), this has a
+    real, working default (Google's public Spain national holiday
+    calendar) — see add-ser-enforcement-calendar design.md D7 — so there is
+    no RuntimeError-if-missing gate here; every deployment gets a working
+    holiday feed out of the box, overridable via env var.
+
+    The default literal is duplicated (not imported) from
+    google_calendar_provider.DEFAULT_HOLIDAY_ICAL_URL: config.py is a
+    low-level module and must not depend on infrastructure, mirroring how
+    provider_registry.py's SER_ZONE_SHP_URL/MADRID_CALLEJERO_URL/
+    MADRID_BARRIOS_SHP_URL overrides read their provider's own DEFAULT_*
+    constant directly rather than config.py importing it — the provider
+    owns its own default.
+    """
+    return os.environ.get("HOLIDAY_CALENDAR_URL", _DEFAULT_HOLIDAY_ICAL_URL)
+
+
+def get_holiday_refresh_interval_hours() -> int:
+    """
+    Return the holiday refresh scheduler's interval in hours from
+    HOLIDAY_REFRESH_INTERVAL_HOURS, or 4380 (6 months) if unset/invalid.
+
+    Mirrors get_ingestion_interval_hours()'s int-with-fallback style.
+    """
+    raw = os.environ.get("HOLIDAY_REFRESH_INTERVAL_HOURS", "4380")
+    try:
+        return int(raw)
+    except ValueError:
+        return 4380
 
 
 def get_otel_endpoint() -> str | None:

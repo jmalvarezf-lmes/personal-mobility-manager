@@ -29,6 +29,7 @@ def _make_record(**kwargs) -> SerZoneBoundaryRecord:
 
 def _make_zone_area(**kwargs) -> ZoneArea:
     defaults = {
+        "city_code": "madrid",
         "zone_number": "163",
         "neighbourhood": "Sol",
         "geometry": _SQUARE,

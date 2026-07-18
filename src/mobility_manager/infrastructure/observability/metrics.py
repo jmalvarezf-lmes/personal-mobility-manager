@@ -49,6 +49,12 @@ _ambient_label_lookup_counter = _meter.create_counter(
     description="Count of DGT ambient label lookup attempts, labeled by status (found/not_found/error).",
 )
 
+_holiday_refresh_run_counter = _meter.create_counter(
+    name="mobility_manager.holiday_refresh_run",
+    unit="1",
+    description="Count of public holiday refresh runs, labeled by outcome.",
+)
+
 
 def record_notification_dispatch(channel: str, success: bool) -> None:
     """Record one notification dispatch attempt through `channel`."""
@@ -74,3 +80,8 @@ def record_ambient_label_lookup(status: str) -> None:
     genuinely having no record for a plate (`not_found`).
     """
     _ambient_label_lookup_counter.add(1, {"status": status})
+
+
+def record_holiday_refresh_run(success: bool) -> None:
+    """Record one public holiday refresh run (shared across every enabled city)."""
+    _holiday_refresh_run_counter.add(1, {"success": success})

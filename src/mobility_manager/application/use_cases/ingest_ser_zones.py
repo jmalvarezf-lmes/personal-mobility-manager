@@ -73,6 +73,7 @@ class IngestSerZones:
 
         raw_dicts = [
             {
+                "city_code": city,
                 "zone_number": r.zone_number,
                 "zone_type": r.zone_type,
                 "district": r.district,
@@ -85,6 +86,7 @@ class IngestSerZones:
 
         zone_area_dicts = [
             {
+                "city_code": city,
                 "zone_number": za.zone_number,
                 "neighbourhood": za.neighbourhood,
                 "geometry_wkt": shapely_wkt.dumps(za.geometry),

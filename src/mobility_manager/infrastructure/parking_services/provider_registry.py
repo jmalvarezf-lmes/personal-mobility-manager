@@ -1,13 +1,19 @@
 """
 Infrastructure: CityParkingDataProvider registry.
 
-Reads the ENABLED_CITIES env var (comma-separated, default "madrid") and
-returns one provider instance per configured city. Unknown city codes are
-logged as a warning and ignored.
+Queries the `cities` table for all registered city codes and returns one
+provider instance per code that has a matching implementation registered
+in code. A `cities` row with no matching implementation is logged as a
+warning and skipped — the `cities` table is the sole source of truth for
+which city codes are active (see add-ser-enforcement-calendar design.md
+D10).
 """
 
 import logging
 import os
+
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 from mobility_manager.domain.ports.city_parking_data_provider import (
     CityParkingDataProvider,
@@ -21,17 +27,31 @@ from mobility_manager.infrastructure.parking_services.madrid.ser_streets_provide
 
 logger = logging.getLogger(__name__)
 
-_KNOWN_CITIES: set[str] = {"madrid"}
 
-
-def build_providers() -> list[CityParkingDataProvider]:
+def list_city_codes(engine: Engine) -> list[str]:
     """
-    Return a provider instance for each city listed in ENABLED_CITIES.
+    Return every city code registered in the `cities` table.
 
-    ENABLED_CITIES defaults to "madrid" if unset.
+    Shared by `build_providers()` (below) and app.py's public-holiday-refresh
+    wiring, which needs the full set of registered cities independent of
+    whether each one has an implemented parking-data provider (see
+    add-ser-enforcement-calendar design.md D7).
     """
-    raw = os.environ.get("ENABLED_CITIES", "madrid")
-    city_codes = [c.strip().lower() for c in raw.split(",") if c.strip()]
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT code FROM cities")).fetchall()
+    return [row[0] for row in rows]
+
+
+def build_providers(engine: Engine) -> list[CityParkingDataProvider]:
+    """
+    Return a provider instance for each city code registered in `cities`.
+
+    For each `code` returned by `SELECT code FROM cities`, constructs the
+    matching provider if one is registered in code (only `code == "madrid"`
+    today); any other `code` has no implementation and is logged as a
+    warning and skipped, rather than crashing startup.
+    """
+    city_codes = list_city_codes(engine)
 
     providers: list[CityParkingDataProvider] = []
     for code in city_codes:
@@ -47,9 +67,9 @@ def build_providers() -> list[CityParkingDataProvider]:
                 )
             )
         else:
-            logger.warning("ENABLED_CITIES contains unknown city code %r — skipping", code)
+            logger.warning("cities table contains code %r with no registered provider implementation — skipping", code)
 
     if not providers:
-        logger.warning("No valid city providers configured. ENABLED_CITIES=%r", raw)
+        logger.warning("No valid city providers configured. cities table codes: %r", city_codes)
 
     return providers

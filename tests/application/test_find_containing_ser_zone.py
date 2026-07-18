@@ -15,6 +15,7 @@ _SQUARE = Polygon([(440584, 4474459), (440604, 4474459), (440604, 4474479), (440
 
 def _make_ser_zone() -> SerZone:
     return SerZone(
+        city_code="madrid",
         zone_number="163",
         zone_type="Azul",
         district="CENTRO",

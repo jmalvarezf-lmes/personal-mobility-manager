@@ -67,7 +67,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
         endpoint all depend on this method).
         """
         query = text(
-            "SELECT zone_number, zone_type, district, spot_count, geometry_wkt "
+            "SELECT city_code, zone_number, zone_type, district, spot_count, geometry_wkt "
             "FROM ser_zones ORDER BY zone_number, zone_type"
         )
         with self._engine.connect() as conn:
@@ -76,94 +76,118 @@ class PostgresSerZoneRepository(SerZoneRepository):
         zones: list[SerZone] = []
         for row in rows:
             try:
-                geometry = shapely_wkt.loads(row[4])
+                geometry = shapely_wkt.loads(row[5])
             except Exception:
                 logger.warning(
                     "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
-                    row[0],
                     row[1],
+                    row[2],
                 )
                 continue
             zones.append(
                 SerZone(
-                    zone_number=row[0],
-                    zone_type=row[1],
-                    district=row[2],
-                    spot_count=row[3],
+                    city_code=row[0],
+                    zone_number=row[1],
+                    zone_type=row[2],
+                    district=row[3],
+                    spot_count=row[4],
                     geometry=geometry,
                 )
             )
         return zones
 
-    def get_street_names(self, zone_number: str, zone_type: str) -> list[str]:
-        """Return all street names for the given (zone_number, zone_type)."""
+    def get_street_names(self, city_code: str, zone_number: str, zone_type: str) -> list[str]:
+        """Return all street names for the given (city_code, zone_number, zone_type)."""
         query = text(
             "SELECT street_name FROM ser_zone_streets "
-            "WHERE zone_number = :zone_number AND zone_type = :zone_type "
+            "WHERE city_code = :city_code AND zone_number = :zone_number AND zone_type = :zone_type "
             "ORDER BY street_name"
         )
         with self._engine.connect() as conn:
-            rows = conn.execute(query, {"zone_number": zone_number, "zone_type": zone_type}).fetchall()
+            rows = conn.execute(
+                query, {"city_code": city_code, "zone_number": zone_number, "zone_type": zone_type}
+            ).fetchall()
         return [row[0] for row in rows]
 
-    def get_zone_area(self, zone_number: str) -> ZoneArea | None:
-        """Return the frontier for the given zone_number, or None if absent."""
+    def get_zone_area(self, city_code: str, zone_number: str) -> ZoneArea | None:
+        """Return the frontier for the given (city_code, zone_number), or None if absent."""
         query = text(
-            "SELECT zone_number, neighbourhood, geometry_wkt FROM ser_zone_areas WHERE zone_number = :zone_number"
+            "SELECT city_code, zone_number, neighbourhood, geometry_wkt FROM ser_zone_areas "
+            "WHERE city_code = :city_code AND zone_number = :zone_number"
         )
         with self._engine.connect() as conn:
-            row = conn.execute(query, {"zone_number": zone_number}).fetchone()
+            row = conn.execute(query, {"city_code": city_code, "zone_number": zone_number}).fetchone()
 
         if row is None:
             return None
 
         try:
-            geometry = shapely_wkt.loads(row[2])
+            geometry = shapely_wkt.loads(row[3])
         except Exception:
-            logger.warning("Skipping ser_zone_areas row with unparsable geometry_wkt: zone_number=%r", row[0])
+            logger.warning(
+                "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
+                row[0],
+                row[1],
+            )
             return None
 
-        return ZoneArea(zone_number=row[0], neighbourhood=row[1], geometry=geometry)
+        return ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry)
 
     def list_zone_areas(self) -> list[ZoneArea]:
-        """Return all stored frontiers ordered by zone_number."""
-        query = text("SELECT zone_number, neighbourhood, geometry_wkt FROM ser_zone_areas ORDER BY zone_number")
+        """Return all stored frontiers (across all cities) ordered by city_code, zone_number."""
+        query = text(
+            "SELECT city_code, zone_number, neighbourhood, geometry_wkt "
+            "FROM ser_zone_areas ORDER BY city_code, zone_number"
+        )
         with self._engine.connect() as conn:
             rows = conn.execute(query).fetchall()
 
         zone_areas: list[ZoneArea] = []
         for row in rows:
             try:
-                geometry = shapely_wkt.loads(row[2])
+                geometry = shapely_wkt.loads(row[3])
             except Exception:
-                logger.warning("Skipping ser_zone_areas row with unparsable geometry_wkt: zone_number=%r", row[0])
+                logger.warning(
+                    "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
+                    row[0],
+                    row[1],
+                )
                 continue
-            zone_areas.append(ZoneArea(zone_number=row[0], neighbourhood=row[1], geometry=geometry))
+            zone_areas.append(ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry))
         return zone_areas
 
     def bulk_replace(self, records: list[dict[str, Any]], zone_areas: list[dict[str, Any]] | None = None) -> int:
         """
-        Replace all SER zone records (street names, and frontiers) in a
-        single transaction.
+        Replace one city's SER zone records (street names, and frontiers) in
+        a single transaction.
 
-        Truncates ser_zones, ser_zone_streets, and ser_zone_areas and inserts
-        all records; returns the number of ser_zones rows inserted. Each
-        record dict is expected to carry a "street_names" key (list[str]) in
-        addition to the ser_zones columns. `zone_areas` is a list of dicts
-        with "zone_number", "neighbourhood", "geometry_wkt" keys — one per
-        resolvable zone_number (see add-ser-zone-frontiers design.md D6).
+        Deletes existing ser_zones/ser_zone_streets/ser_zone_areas rows for
+        the ingesting city only (scoped DELETE, not a bare TRUNCATE — see
+        design.md D6) and inserts all records; returns the number of
+        ser_zones rows inserted. Each record dict is expected to carry a
+        "city_code" key and a "street_names" key (list[str]) in addition to
+        the ser_zones columns. `zone_areas` is a list of dicts with
+        "city_code", "zone_number", "neighbourhood", "geometry_wkt" keys —
+        one per resolvable zone_number (see add-ser-zone-frontiers design.md
+        D6).
+
+        If `records` is empty, this is a no-op: there is no city_code to
+        scope a delete to, matching the "zero parsed records aborts the run
+        without mutating stored data" contract in the ser-zone-ingestion
+        spec (IngestSerZones already raises before reaching this method in
+        that case; this repo-level no-op is the safe fallback for any other
+        caller).
         """
         zone_areas = zone_areas or []
 
         if not records:
-            with self._engine.begin() as conn:
-                conn.execute(text("TRUNCATE ser_zones"))
-                conn.execute(text("TRUNCATE ser_zone_streets"))
-                conn.execute(text("TRUNCATE ser_zone_areas"))
             return 0
+
+        city_code = records[0]["city_code"]
 
         zone_rows = [
             {
+                "city_code": r["city_code"],
                 "zone_number": r["zone_number"],
                 "zone_type": r["zone_type"],
                 "district": r["district"],
@@ -175,6 +199,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
 
         street_rows = [
             {
+                "city_code": r["city_code"],
                 "zone_number": r["zone_number"],
                 "zone_type": r["zone_type"],
                 "street_name": street_name,
@@ -185,6 +210,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
 
         zone_area_rows = [
             {
+                "city_code": za["city_code"],
                 "zone_number": za["zone_number"],
                 "neighbourhood": za["neighbourhood"],
                 "geometry_wkt": za["geometry_wkt"],
@@ -193,9 +219,11 @@ class PostgresSerZoneRepository(SerZoneRepository):
         ]
 
         with self._engine.begin() as conn:
-            conn.execute(text("TRUNCATE ser_zones"))
-            conn.execute(text("TRUNCATE ser_zone_streets"))
-            conn.execute(text("TRUNCATE ser_zone_areas"))
+            conn.execute(text("DELETE FROM ser_zones WHERE city_code = :city_code"), {"city_code": city_code})
+            conn.execute(
+                text("DELETE FROM ser_zone_streets WHERE city_code = :city_code"), {"city_code": city_code}
+            )
+            conn.execute(text("DELETE FROM ser_zone_areas WHERE city_code = :city_code"), {"city_code": city_code})
             conn.execute(ser_zones_table.insert(), zone_rows)
             if street_rows:
                 conn.execute(ser_zone_streets_table.insert(), street_rows)

@@ -40,6 +40,7 @@ def _make_ser_zone(
     geometry: Polygon = _SQUARE,
 ) -> SerZone:
     return SerZone(
+        city_code="madrid",
         zone_number=zone_number,
         zone_type=zone_type,
         district=district,
@@ -53,7 +54,9 @@ def test_valid_coords_returns_200_with_correct_json() -> None:
     use_case.execute.return_value = _make_ser_zone()
     repo = MagicMock()
     repo.get_street_names.return_value = ["ABADA", "GRAN VIA"]
-    repo.get_zone_area.return_value = ZoneArea(zone_number="163", neighbourhood="Sol", geometry=_SQUARE)
+    repo.get_zone_area.return_value = ZoneArea(
+        city_code="madrid", zone_number="163", neighbourhood="Sol", geometry=_SQUARE
+    )
     client = TestClient(_build_test_app(use_case, repo))
 
     response = client.get("/parking/ser-zone", params={"lat": 40.4168, "lng": -3.7038})
@@ -67,8 +70,8 @@ def test_valid_coords_returns_200_with_correct_json() -> None:
     assert data["street_names"] == ["ABADA", "GRAN VIA"]
     assert data["spot_count"] == 15
     assert isinstance(data["distance_meters"], int)
-    repo.get_street_names.assert_called_once_with("163", "Azul")
-    repo.get_zone_area.assert_called_once_with("163")
+    repo.get_street_names.assert_called_once_with("madrid", "163", "Azul")
+    repo.get_zone_area.assert_called_once_with("madrid", "163")
 
 
 def test_neighbourhood_is_null_when_no_zone_area_row_exists() -> None:

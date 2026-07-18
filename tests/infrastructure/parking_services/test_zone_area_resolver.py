@@ -45,7 +45,7 @@ def test_majority_compound_code_resolves_to_matching_barrio() -> None:
         BarrioRecord(cod_disb="1-3", nombre="Cortes", geometry=_PALACIO_POLYGON),
     ]
 
-    zone_areas = resolve_zone_areas(bands, barrios)
+    zone_areas = resolve_zone_areas(bands, barrios, "madrid")
 
     assert len(zone_areas) == 1
     assert zone_areas[0].zone_number == "163"
@@ -57,7 +57,7 @@ def test_unresolvable_zone_number_is_skipped() -> None:
     bands = [_band("999", "99", "99")]
     barrios = [BarrioRecord(cod_disb="1-6", nombre="Sol", geometry=_SOL_POLYGON)]
 
-    zone_areas = resolve_zone_areas(bands, barrios)
+    zone_areas = resolve_zone_areas(bands, barrios, "madrid")
 
     assert zone_areas == []
 
@@ -69,7 +69,7 @@ def test_two_zone_numbers_sharing_compound_code_produce_identical_geometry() -> 
     ]
     barrios = [BarrioRecord(cod_disb="1-6", nombre="Sol", geometry=_SOL_POLYGON)]
 
-    zone_areas = resolve_zone_areas(bands, barrios)
+    zone_areas = resolve_zone_areas(bands, barrios, "madrid")
 
     assert len(zone_areas) == 2
     zone_numbers = {za.zone_number for za in zone_areas}
@@ -89,7 +89,7 @@ def test_official_nombre_used_verbatim_not_derived_from_callejero() -> None:
     bands = [_band("163", "01", "06")]
     barrios = [BarrioRecord(cod_disb="1-6", nombre="Sol", geometry=_SOL_POLYGON)]
 
-    zone_areas = resolve_zone_areas(bands, barrios)
+    zone_areas = resolve_zone_areas(bands, barrios, "madrid")
 
     assert len(zone_areas) == 1
     assert zone_areas[0].neighbourhood == "Sol"
@@ -119,5 +119,5 @@ def test_non_numeric_codes_excluded_from_vote() -> None:
 
 
 def test_empty_bands_returns_empty_result() -> None:
-    assert resolve_zone_areas([], []) == []
+    assert resolve_zone_areas([], [], "madrid") == []
     assert compute_majority_compound_codes([]) == {}

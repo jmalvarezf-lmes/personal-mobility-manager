@@ -181,6 +181,7 @@ def _make_previous_location(vehicle_id: UUID, lat: float, lng: float, recorded_a
 
 def _make_ser_zone(zone_number: str = "163") -> SerZone:
     return SerZone(
+        city_code="madrid",
         zone_number=zone_number,
         zone_type="Azul",
         district="CENTRO",

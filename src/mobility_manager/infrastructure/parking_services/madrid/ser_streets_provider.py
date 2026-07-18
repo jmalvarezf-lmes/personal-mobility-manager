@@ -122,7 +122,7 @@ class MadridSerStreetsProvider(CityParkingDataProvider):
         band_count, callejero_point_count, joined = self._fetch_and_join()
 
         barrio_records = download_and_parse_barrios(self._barrios_shp_url)
-        zone_areas = resolve_zone_areas(joined, barrio_records)
+        zone_areas = resolve_zone_areas(joined, barrio_records, self.city_code)
 
         logger.info(
             "MadridSerStreetsProvider.get_zone_areas(): %d bands, %d barrio records, %d zone areas resolved",
@@ -150,7 +150,7 @@ class MadridSerStreetsProvider(CityParkingDataProvider):
         records = buffer_and_dissolve(joined)
 
         barrio_records = download_and_parse_barrios(self._barrios_shp_url)
-        zone_areas = resolve_zone_areas(joined, barrio_records)
+        zone_areas = resolve_zone_areas(joined, barrio_records, self.city_code)
 
         logger.info(
             "MadridSerStreetsProvider.get_records_and_zone_areas(): %d bands, %d callejero points, "

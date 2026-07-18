@@ -9,6 +9,7 @@ can discover every table in one place.
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -16,9 +17,11 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     MetaData,
+    SmallInteger,
     String,
     Table,
     Text,
+    Time,
     UniqueConstraint,
     Uuid,
 )
@@ -26,34 +29,78 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
 
+cities_table = Table(
+    "cities",
+    metadata,
+    Column("code", Text, primary_key=True),
+    Column("name", Text, nullable=False),
+)
+
 ser_zones_table = Table(
     "ser_zones",
     metadata,
     Column("id", Integer, primary_key=True),
+    Column("city_code", Text, ForeignKey("cities.code"), nullable=False),
     Column("zone_number", String(10), nullable=False),
     Column("zone_type", String(50), nullable=False),
     Column("district", Text, nullable=False),
     Column("spot_count", Integer, nullable=False, server_default="-1"),
     Column("geometry_wkt", Text, nullable=False),  # WKT Polygon/MultiPolygon, EPSG:25830
-    UniqueConstraint("zone_number", "zone_type", name="uq_ser_zones_zone_number_zone_type"),
+    UniqueConstraint("city_code", "zone_number", "zone_type", name="uq_ser_zones_city_zone_number_zone_type"),
 )
 
 ser_zone_streets_table = Table(
     "ser_zone_streets",
     metadata,
     Column("id", Integer, primary_key=True),
+    Column("city_code", Text, ForeignKey("cities.code"), nullable=False),
     Column("zone_number", String(10), nullable=False),
     Column("zone_type", String(50), nullable=False),
     Column("street_name", Text, nullable=False),
-    Index("idx_ser_zone_streets_zone", "zone_number", "zone_type"),
+    Index("idx_ser_zone_streets_zone", "city_code", "zone_number", "zone_type"),
 )
 
 ser_zone_areas_table = Table(
     "ser_zone_areas",
     metadata,
+    Column("city_code", Text, ForeignKey("cities.code"), primary_key=True),
     Column("zone_number", String(10), primary_key=True),
     Column("neighbourhood", Text, nullable=False),
     Column("geometry_wkt", Text, nullable=False),  # WKT Polygon/MultiPolygon, EPSG:25830
+)
+
+ser_timetable_weekday_hours_table = Table(
+    "ser_timetable_weekday_hours",
+    metadata,
+    Column("city_code", Text, ForeignKey("cities.code"), primary_key=True),
+    Column("weekday", SmallInteger, primary_key=True),  # 0=Monday..6=Sunday
+    Column("start_time", Time, nullable=False),
+    Column("end_time", Time, nullable=False),
+    Column("active", Boolean, nullable=False),
+)
+
+ser_timetable_exception_table = Table(
+    "ser_timetable_exception",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("city_code", Text, ForeignKey("cities.code"), nullable=False),
+    Column("recurrence", Text, nullable=False),  # 'month' | 'fixed_date'
+    Column("month", SmallInteger, nullable=True),  # populated only for recurrence='month'
+    Column("month_day", Text, nullable=True),  # 'MM-DD', populated only for recurrence='fixed_date'
+    Column("start_time", Time, nullable=False),
+    Column("end_time", Time, nullable=False),
+    Column("description", Text, nullable=False),
+)
+
+holidays_table = Table(
+    "holidays",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("city_code", Text, ForeignKey("cities.code"), nullable=False),
+    Column("date", Date, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("source", Text, nullable=False),  # 'ical_national' | 'manual'
+    UniqueConstraint("city_code", "date", "source", name="uq_holidays_city_date_source"),
 )
 
 users_table = Table(

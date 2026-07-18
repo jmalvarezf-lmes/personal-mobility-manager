@@ -38,6 +38,7 @@ def _make_zone(
     geometry: Polygon = _SQUARE,
 ) -> SerZone:
     return SerZone(
+        city_code="madrid",
         zone_number=zone_number,
         zone_type=zone_type,
         district=district,
@@ -51,7 +52,7 @@ def _make_zone_area(
     neighbourhood: str = "Sol",
     geometry: Polygon = _SQUARE,
 ) -> ZoneArea:
-    return ZoneArea(zone_number=zone_number, neighbourhood=neighbourhood, geometry=geometry)
+    return ZoneArea(city_code="madrid", zone_number=zone_number, neighbourhood=neighbourhood, geometry=geometry)
 
 
 def test_list_zones_empty_returns_200_with_empty_list() -> None:

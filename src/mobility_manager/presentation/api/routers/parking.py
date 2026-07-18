@@ -37,8 +37,8 @@ def get_ser_zone(
     utm_x, utm_y = _wgs84_to_utm.transform(lng, lat)
     distance = int(round(ser_zone.geometry.distance(Point(utm_x, utm_y))))
 
-    street_names = repo.get_street_names(ser_zone.zone_number, ser_zone.zone_type)
-    zone_area = repo.get_zone_area(ser_zone.zone_number)
+    street_names = repo.get_street_names(ser_zone.city_code, ser_zone.zone_number, ser_zone.zone_type)
+    zone_area = repo.get_zone_area(ser_zone.city_code, ser_zone.zone_number)
 
     return SerZoneResponse(
         zone_number=ser_zone.zone_number,

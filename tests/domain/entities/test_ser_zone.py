@@ -23,6 +23,7 @@ _SQUARE = Polygon(
 
 def _make_ser_zone(**kwargs) -> SerZone:
     defaults = {
+        "city_code": "madrid",
         "zone_number": "163",
         "zone_type": "Azul",
         "district": "CENTRO",
@@ -41,6 +42,17 @@ def test_ser_zone_construction_with_new_fields() -> None:
     assert zone.district == "CENTRO"
     assert zone.spot_count == 15
     assert zone.geometry == _SQUARE
+
+
+def test_ser_zone_carries_and_exposes_city_code() -> None:
+    """SerZone must carry city_code so the enforcement check knows which
+    city's calendar applies to a matched zone (see
+    add-ser-enforcement-calendar design.md D5)."""
+    zone = _make_ser_zone(city_code="madrid")
+    assert zone.city_code == "madrid"
+
+    other_city_zone = _make_ser_zone(city_code="barcelona")
+    assert other_city_zone.city_code == "barcelona"
 
 
 def test_ser_zone_spot_count_minus_one_for_unknown() -> None:

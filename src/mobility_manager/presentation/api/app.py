@@ -64,6 +64,9 @@ from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import 
 from mobility_manager.application.use_cases.record_vehicle_location import (
     RecordVehicleLocation,
 )
+from mobility_manager.application.use_cases.refresh_public_holidays import (
+    RefreshPublicHolidays,
+)
 from mobility_manager.application.use_cases.register_vehicle import RegisterVehicle
 from mobility_manager.application.use_cases.remove_notification_channel import (
     RemoveNotificationChannel,
@@ -78,6 +81,8 @@ from mobility_manager.config import (
     get_enabled_brands,
     get_enabled_ser_providers,
     get_encryption_key,
+    get_holiday_calendar_url,
+    get_holiday_refresh_interval_hours,
     get_ingestion_interval_hours,
     get_log_level,
     get_otel_endpoint,
@@ -95,6 +100,12 @@ from mobility_manager.infrastructure.db import get_engine
 from mobility_manager.infrastructure.events.in_memory_event_publisher import (
     InMemoryEventPublisher,
 )
+from mobility_manager.infrastructure.holiday_calendar.google_calendar_provider import (
+    GoogleCalendarHolidayProvider,
+)
+from mobility_manager.infrastructure.holiday_refresh_scheduler import (
+    HolidayRefreshScheduler,
+)
 from mobility_manager.infrastructure.notification_channels.telegram.channel import (
     TelegramNotificationChannel,
 )
@@ -104,15 +115,22 @@ from mobility_manager.infrastructure.observability.setup import (
 )
 from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
+    list_city_codes,
 )
 from mobility_manager.infrastructure.repositories.postgres.ambient_label_icon_repo import (
     PostgresAmbientLabelIconRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.holiday_repo import (
+    PostgresHolidayRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.notification_preferences_repo import (
     PostgresNotificationPreferencesRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
     PostgresParkingTicketRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.ser_enforcement_schedule_repo import (
+    PostgresSerEnforcementSchedule,
 )
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
@@ -202,7 +220,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # --- Parking (existing) ---
     repo = PostgresSerZoneRepository(engine)
-    providers = build_providers()
+    providers = build_providers(engine=engine)
     city_use_cases = [(provider.city_code, IngestSerZones(provider=provider, repo=repo)) for provider in providers]
     find_uc = FindNearestSerZone(repo=repo)
     find_containing_uc = FindContainingSerZone(repo=repo)
@@ -216,6 +234,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     parking_scheduler.start()
     app.state.scheduler = parking_scheduler
+
+    # --- Public holiday calendar ---
+    # Independent of which cities have an implemented parking-data provider
+    # (build_providers() above may skip a `cities` row with no matching
+    # implementation, logging a warning) — the holiday refresh applies to
+    # every city registered in `cities`, since a city's enforcement-hours
+    # check (PostgresSerEnforcementSchedule) depends on holiday data for
+    # its own city_code regardless of whether a parking provider exists yet
+    # (design.md D7).
+    city_codes = list_city_codes(engine)
+
+    holiday_repo = PostgresHolidayRepository(engine)
+    holiday_calendar_provider = GoogleCalendarHolidayProvider(url=get_holiday_calendar_url())
+    refresh_public_holidays_uc = RefreshPublicHolidays(
+        provider=holiday_calendar_provider,
+        holiday_repo=holiday_repo,
+        city_codes=city_codes,
+    )
+    holiday_refresh_scheduler = HolidayRefreshScheduler(
+        refresh_use_case=refresh_public_holidays_uc,
+        holiday_repo=holiday_repo,
+        city_codes=city_codes,
+        interval_hours=get_holiday_refresh_interval_hours(),
+    )
+    holiday_refresh_scheduler.start()
+    app.state.holiday_repo = holiday_repo
+    app.state.holiday_refresh_scheduler = holiday_refresh_scheduler
 
     # --- Auth (Users) ---
     user_repo = PostgresUserRepository(engine)
@@ -298,7 +343,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # event_publisher, so event_publisher's construction stays here rather
     # than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
-    determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement()
+    ser_enforcement_schedule = PostgresSerEnforcementSchedule(engine)
+    determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement(enforcement_schedule=ser_enforcement_schedule)
     ser_ticket_trigger_handler = SerTicketTriggerHandler(
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
@@ -410,6 +456,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     parking_scheduler.stop()
+    holiday_refresh_scheduler.stop()
     vehicle_location_scheduler.stop()
     ambient_label_scheduler.stop()
     shutdown_observability(tracer_provider, meter_provider)

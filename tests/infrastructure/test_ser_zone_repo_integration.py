@@ -89,8 +89,10 @@ def _make_zone_record(
     spot_count: int = 15,
     geometry_wkt: str = _SQUARE_A_WKT,
     street_names: list[str] | None = None,
+    city_code: str = "madrid",
 ) -> dict:
     return {
+        "city_code": city_code,
         "zone_number": zone_number,
         "zone_type": zone_type,
         "district": district,
@@ -104,8 +106,10 @@ def _make_zone_area_record(
     zone_number: str = "163",
     neighbourhood: str = "Sol",
     geometry_wkt: str = _SQUARE_A_WKT,
+    city_code: str = "madrid",
 ) -> dict:
     return {
+        "city_code": city_code,
         "zone_number": zone_number,
         "neighbourhood": neighbourhood,
         "geometry_wkt": geometry_wkt,
@@ -273,7 +277,7 @@ def test_get_street_names_returns_all_streets_for_zone(pg_engine) -> None:
     repo = PostgresSerZoneRepository(pg_engine)
     repo.bulk_replace([_make_zone_record(street_names=["ABADA", "GRAN VIA", "MAYOR"])])
 
-    streets = repo.get_street_names("163", "Azul")
+    streets = repo.get_street_names("madrid", "163", "Azul")
 
     assert set(streets) == {"ABADA", "GRAN VIA", "MAYOR"}
 
@@ -282,7 +286,7 @@ def test_get_street_names_returns_empty_for_unknown_zone(pg_engine) -> None:
     repo = PostgresSerZoneRepository(pg_engine)
     repo.bulk_replace([])
 
-    streets = repo.get_street_names("999", "Azul")
+    streets = repo.get_street_names("madrid", "999", "Azul")
 
     assert streets == []
 
@@ -322,7 +326,7 @@ def test_bulk_replace_persists_zone_areas(pg_engine) -> None:
     )
 
     assert inserted == 1
-    zone_area = repo.get_zone_area("163")
+    zone_area = repo.get_zone_area("madrid", "163")
     assert zone_area is not None
     assert zone_area.neighbourhood == "Sol"
 
@@ -331,7 +335,7 @@ def test_get_zone_area_returns_none_for_unknown_zone_number(pg_engine) -> None:
     repo = PostgresSerZoneRepository(pg_engine)
     repo.bulk_replace([_make_zone_record()], zone_areas=[_make_zone_area_record()])
 
-    assert repo.get_zone_area("999") is None
+    assert repo.get_zone_area("madrid", "999") is None
 
 
 def test_list_zone_areas_returns_all_rows(pg_engine) -> None:
@@ -404,3 +408,68 @@ def test_bulk_replace_with_no_zone_areas_argument_still_works(pg_engine) -> None
 
     assert inserted == 1
     assert repo.list_zone_areas() == []
+
+
+def test_ingesting_one_city_does_not_affect_another_citys_stored_data(pg_engine) -> None:
+    """
+    Ingesting Barcelona's SER zones via bulk_replace() must leave Madrid's
+    previously stored zone, street, and frontier rows fully intact and
+    queryable — proven against real stored rows in a live database.
+
+    tests/infrastructure/repositories/test_ser_zone_repo.py only proves the
+    equivalent claim at the mocked SQL-string level (asserting the DELETE
+    statements are parameterized to the ingested city); this test closes the
+    gap by asserting on data actually round-tripped through Postgres.
+    """
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO cities (code, name) VALUES ('barcelona', 'Barcelona') ON CONFLICT (code) DO NOTHING")
+        )
+
+    repo = PostgresSerZoneRepository(pg_engine)
+
+    repo.bulk_replace(
+        [
+            _make_zone_record(
+                city_code="madrid",
+                zone_number="163",
+                zone_type="Azul",
+                geometry_wkt=_SQUARE_A_WKT,
+                street_names=["ABADA"],
+            )
+        ],
+        zone_areas=[
+            _make_zone_area_record(
+                city_code="madrid", zone_number="163", neighbourhood="Sol", geometry_wkt=_SQUARE_A_WKT
+            )
+        ],
+    )
+
+    # Ingesting Barcelona's own zone must not touch Madrid's rows above.
+    repo.bulk_replace(
+        [
+            _make_zone_record(
+                city_code="barcelona",
+                zone_number="200",
+                zone_type="Verde",
+                geometry_wkt=_SQUARE_B_WKT,
+                street_names=["DIAGONAL"],
+            )
+        ],
+        zone_areas=[
+            _make_zone_area_record(
+                city_code="barcelona", zone_number="200", neighbourhood="Eixample", geometry_wkt=_SQUARE_B_WKT
+            )
+        ],
+    )
+
+    zones_by_city = {z.city_code: z for z in repo.list_all()}
+    assert set(zones_by_city) == {"madrid", "barcelona"}
+    assert zones_by_city["madrid"].zone_number == "163"
+    assert zones_by_city["barcelona"].zone_number == "200"
+
+    assert repo.get_street_names("madrid", "163", "Azul") == ["ABADA"]
+
+    madrid_area = repo.get_zone_area("madrid", "163")
+    assert madrid_area is not None
+    assert madrid_area.neighbourhood == "Sol"

@@ -10,6 +10,10 @@ entity backs both the bulk zone-list query (used for map rendering, every
 zone at once) and the single-coordinate lookup. Street names are fetched
 separately, on demand, via SerZoneRepository.get_street_names() — see
 design.md D9.
+
+city_code identifies which city's enforcement schedule and holiday calendar
+apply to this zone — see the ser-enforcement-schedule and
+public-holiday-calendar capabilities of add-ser-enforcement-calendar.
 """
 
 from dataclasses import dataclass
@@ -28,6 +32,7 @@ _wgs84_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
 class SerZone:
     """Immutable SER zone entity with a real polygon boundary."""
 
+    city_code: str  # identifies which city's enforcement schedule/holiday calendar applies
     zone_number: str
     zone_type: str  # validated display_name from the city's ZoneType
     district: str

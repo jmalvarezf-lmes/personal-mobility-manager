@@ -36,24 +36,30 @@ class SerZoneRepository(ABC):
         ...
 
     @abstractmethod
-    def get_street_names(self, zone_number: str, zone_type: str) -> list[str]:
+    def get_street_names(self, city_code: str, zone_number: str, zone_type: str) -> list[str]:
         """
-        Return all street names associated with the given (zone_number, zone_type).
+        Return all street names associated with the given
+        (city_code, zone_number, zone_type).
 
         This is a targeted query against ser_zone_streets only — never joined
         into list_all()/find_nearest()/find_containing() (see design.md D9).
+        city_code disambiguates zone_number/zone_type pairs that may collide
+        across cities (see add-ser-enforcement-calendar design.md D5).
         """
         ...
 
     @abstractmethod
-    def get_zone_area(self, zone_number: str) -> ZoneArea | None:
+    def get_zone_area(self, city_code: str, zone_number: str) -> ZoneArea | None:
         """
         Return the frontier (neighbourhood name + geometry) for the given
-        zone_number, or None if no ser_zone_areas row exists for it.
+        (city_code, zone_number), or None if no ser_zone_areas row exists for
+        it.
 
         This is a targeted query against ser_zone_areas only — never joined
         into list_all()/find_nearest()/find_containing() (see
-        add-ser-zone-frontiers design.md D6).
+        add-ser-zone-frontiers design.md D6). city_code disambiguates
+        zone_number values that may collide across cities (see
+        add-ser-enforcement-calendar design.md D5).
         """
         ...
 

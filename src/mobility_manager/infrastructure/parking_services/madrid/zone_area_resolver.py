@@ -74,6 +74,7 @@ def compute_majority_compound_codes(bands: list[JoinedBand]) -> dict[str, str]:
 def resolve_zone_areas(
     bands: list[JoinedBand],
     barrio_records: list[BarrioRecord],
+    city_code: str,
 ) -> list[ZoneArea]:
     """
     Resolve one ZoneArea per zone_number whose majority compound code
@@ -82,6 +83,8 @@ def resolve_zone_areas(
     A zone_number whose majority compound code does not match any Barrios
     record is skipped entirely (absent from the result) and a warning is
     logged — no fallback/synthesized geometry is produced (design.md D5).
+    `city_code` is stamped onto every resolved ZoneArea (see
+    add-ser-enforcement-calendar design.md D5).
     """
     majority_codes = compute_majority_compound_codes(bands)
     barrios_by_code = {r.cod_disb: r for r in barrio_records}
@@ -102,6 +105,7 @@ def resolve_zone_areas(
 
         zone_areas.append(
             ZoneArea(
+                city_code=city_code,
                 zone_number=zone_number,
                 neighbourhood=barrio.nombre,
                 geometry=barrio.geometry,

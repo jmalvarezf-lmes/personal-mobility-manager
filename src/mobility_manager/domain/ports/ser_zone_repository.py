@@ -36,6 +36,20 @@ class SerZoneRepository(ABC):
         ...
 
     @abstractmethod
+    def list_zones_for_city(self, city_code: str) -> list[SerZone]:
+        """
+        Return only the SER zones stored for `city_code`.
+
+        Unlike list_all(), this is scoped with a WHERE city_code clause —
+        used by GET /parking/ser-zones, which must never leak another
+        city's zones into a single-city response (see
+        add-vehicle-ser-parking-exemption design.md D7). list_all() stays
+        unscoped for find_containing()/find_nearest(), which don't know the
+        city in advance.
+        """
+        ...
+
+    @abstractmethod
     def get_street_names(self, city_code: str, zone_number: str, zone_type: str) -> list[str]:
         """
         Return all street names associated with the given
@@ -70,5 +84,16 @@ class SerZoneRepository(ABC):
 
         This is a targeted query against ser_zone_areas only — never joined
         into list_all()/find_nearest()/find_containing().
+        """
+        ...
+
+    @abstractmethod
+    def list_zone_areas_for_city(self, city_code: str) -> list[ZoneArea]:
+        """
+        Return only the frontiers stored for `city_code`.
+
+        Unlike list_zone_areas(), this is scoped with a WHERE city_code
+        clause — used by GET /parking/ser-zones (see design.md D7 of
+        add-vehicle-ser-parking-exemption).
         """
         ...

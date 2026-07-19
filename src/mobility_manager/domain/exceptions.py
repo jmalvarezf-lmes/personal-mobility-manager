@@ -73,3 +73,9 @@ class InvalidNotificationConfigError(Exception):
     """Raised when a notification type's `config` dict fails validation against its `config_schema`."""
 
     pass
+
+
+class InvalidSerParkingExemptionZoneError(Exception):
+    """Raised when a (city_code, zone_number) pair has no matching ser_zone_areas row."""
+
+    pass

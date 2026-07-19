@@ -6,6 +6,8 @@ Set POSTGRES_DSN env var or skip tests if not available.
 """
 
 import os
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from shapely.geometry import Polygon
@@ -14,6 +16,9 @@ from sqlalchemy import create_engine, text
 from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_exemption_repo import (
+    PostgresVehicleSerParkingExemptionRepository,
 )
 
 # Simple square polygons (EPSG:25830 metres) near Puerta del Sol, matching
@@ -473,3 +478,200 @@ def test_ingesting_one_city_does_not_affect_another_citys_stored_data(pg_engine)
     madrid_area = repo.get_zone_area("madrid", "163")
     assert madrid_area is not None
     assert madrid_area.neighbourhood == "Sol"
+
+
+# ---------------------------------------------------------------------------
+# list_zones_for_city / list_zone_areas_for_city — city-scoped queries
+# (add-vehicle-ser-parking-exemption design.md D7)
+# ---------------------------------------------------------------------------
+
+
+def test_list_zones_for_city_excludes_other_citys_rows(pg_engine) -> None:
+    """
+    list_zones_for_city must exclude another city's zones — proving the
+    latent gap in list_all() (unfiltered by city_code) is closed for the
+    new scoped method.
+    """
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO cities (code, name) VALUES ('barcelona', 'Barcelona') ON CONFLICT (code) DO NOTHING")
+        )
+
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace(
+        [_make_zone_record(city_code="madrid", zone_number="163", zone_type="Azul", geometry_wkt=_SQUARE_A_WKT)]
+    )
+    repo.bulk_replace(
+        [_make_zone_record(city_code="barcelona", zone_number="200", zone_type="Verde", geometry_wkt=_SQUARE_B_WKT)]
+    )
+
+    madrid_zones = repo.list_zones_for_city("madrid")
+
+    assert len(madrid_zones) == 1
+    assert madrid_zones[0].zone_number == "163"
+    assert all(z.city_code == "madrid" for z in madrid_zones)
+
+
+def test_list_zone_areas_for_city_excludes_other_citys_rows(pg_engine) -> None:
+    """list_zone_areas_for_city must exclude another city's frontiers."""
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO cities (code, name) VALUES ('barcelona', 'Barcelona') ON CONFLICT (code) DO NOTHING")
+        )
+
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace(
+        [_make_zone_record(city_code="madrid", zone_number="163", geometry_wkt=_SQUARE_A_WKT)],
+        zone_areas=[
+            _make_zone_area_record(
+                city_code="madrid", zone_number="163", neighbourhood="Sol", geometry_wkt=_SQUARE_A_WKT
+            )
+        ],
+    )
+    repo.bulk_replace(
+        [_make_zone_record(city_code="barcelona", zone_number="200", geometry_wkt=_SQUARE_B_WKT)],
+        zone_areas=[
+            _make_zone_area_record(
+                city_code="barcelona", zone_number="200", neighbourhood="Eixample", geometry_wkt=_SQUARE_B_WKT
+            )
+        ],
+    )
+
+    madrid_areas = repo.list_zone_areas_for_city("madrid")
+
+    assert len(madrid_areas) == 1
+    assert madrid_areas[0].zone_number == "163"
+    assert madrid_areas[0].neighbourhood == "Sol"
+    assert all(za.city_code == "madrid" for za in madrid_areas)
+
+
+def test_list_zones_for_city_returns_empty_when_no_zones_for_that_city(pg_engine) -> None:
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record(city_code="madrid")])
+
+    assert repo.list_zones_for_city("madrid") != []
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO cities (code, name) VALUES ('barcelona', 'Barcelona') ON CONFLICT (code) DO NOTHING")
+        )
+    assert repo.list_zones_for_city("barcelona") == []
+
+
+# ---------------------------------------------------------------------------
+# bulk_replace(): ser_zone_areas upsert-then-targeted-delete must not break
+# vehicle_ser_parking_exemptions' composite FK (see
+# add-vehicle-ser-parking-exemption tasks.md 11.4 — this is the live
+# ForeignKeyViolation bug found from scheduled-ingestion Docker logs).
+# ---------------------------------------------------------------------------
+
+
+def _insert_vehicle_for_exemption_test(engine, vehicle_id) -> None:
+    user_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, google_sub, email, display_name, created_at)"
+                " VALUES (:id, :sub, 'exemption-test@example.com', 'Exemption Test User', :now)"
+            ),
+            {"id": str(user_id), "sub": str(uuid4()), "now": datetime.now(UTC)},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, user_id)"
+                " VALUES (:id, 'generic', 'Exemption Test Vehicle', :plate, :now, :user_id)"
+            ),
+            {
+                "id": str(vehicle_id),
+                "plate": f"{str(vehicle_id)[:4].upper()}XYZ",
+                "now": datetime.now(UTC),
+                "user_id": str(user_id),
+            },
+        )
+
+
+def _cleanup_vehicle_for_exemption_test(engine, vehicle_id) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM vehicle_ser_parking_exemptions WHERE vehicle_id = :id"), {"id": str(vehicle_id)})
+        row = conn.execute(text("SELECT user_id FROM vehicles WHERE id = :id"), {"id": str(vehicle_id)}).fetchone()
+        conn.execute(text("DELETE FROM vehicles WHERE id = :id"), {"id": str(vehicle_id)})
+        if row is not None:
+            conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": str(row[0])})
+
+
+def test_bulk_replace_reingesting_same_zone_number_preserves_vehicle_exemption(pg_engine) -> None:
+    """
+    Re-ingesting a city whose fresh data still contains a zone_number that a
+    vehicle is exempt for must succeed (not raise ForeignKeyViolation), must
+    refresh that ser_zone_areas row's neighbourhood/geometry via upsert, and
+    must leave the vehicle's exemption row completely untouched.
+    """
+    repo = PostgresSerZoneRepository(pg_engine)
+    exemption_repo = PostgresVehicleSerParkingExemptionRepository(pg_engine)
+    vehicle_id = uuid4()
+
+    repo.bulk_replace(
+        [_make_zone_record(zone_number="163")],
+        zone_areas=[_make_zone_area_record(zone_number="163", neighbourhood="Sol")],
+    )
+
+    _insert_vehicle_for_exemption_test(pg_engine, vehicle_id)
+    try:
+        exemption_repo.upsert(vehicle_id, "madrid", "163")
+        assert exemption_repo.find_by_vehicle_id(vehicle_id) is not None
+
+        # Simulate a refreshed re-ingestion: same zone_number, different
+        # neighbourhood/geometry (e.g. Barrios shapefile update).
+        inserted = repo.bulk_replace(
+            [_make_zone_record(zone_number="163", geometry_wkt=_SQUARE_B_WKT)],
+            zone_areas=[
+                _make_zone_area_record(zone_number="163", neighbourhood="Malasaña", geometry_wkt=_SQUARE_B_WKT)
+            ],
+        )
+        assert inserted == 1
+
+        zone_area = repo.get_zone_area("madrid", "163")
+        assert zone_area is not None
+        assert zone_area.neighbourhood == "Malasaña"
+
+        fetched = exemption_repo.find_by_vehicle_id(vehicle_id)
+        assert fetched is not None
+        assert fetched.city_code == "madrid"
+        assert fetched.zone_number == "163"
+    finally:
+        _cleanup_vehicle_for_exemption_test(pg_engine, vehicle_id)
+
+
+def test_bulk_replace_retiring_zone_number_cascades_vehicle_exemption_deletion(pg_engine) -> None:
+    """
+    Re-ingesting a city whose fresh data no longer includes a zone_number
+    that a vehicle is exempt for (the zone was retired) must succeed, must
+    delete the now-stale ser_zone_areas row, and must cascade-delete the
+    vehicle's now-meaningless exemption row.
+    """
+    repo = PostgresSerZoneRepository(pg_engine)
+    exemption_repo = PostgresVehicleSerParkingExemptionRepository(pg_engine)
+    vehicle_id = uuid4()
+
+    repo.bulk_replace(
+        [_make_zone_record(zone_number="163")],
+        zone_areas=[_make_zone_area_record(zone_number="163", neighbourhood="Sol")],
+    )
+
+    _insert_vehicle_for_exemption_test(pg_engine, vehicle_id)
+    try:
+        exemption_repo.upsert(vehicle_id, "madrid", "163")
+        assert exemption_repo.find_by_vehicle_id(vehicle_id) is not None
+
+        # Fresh data no longer resolves zone_number "163" for madrid — it's retired.
+        inserted = repo.bulk_replace(
+            [_make_zone_record(zone_number="200", geometry_wkt=_SQUARE_B_WKT)],
+            zone_areas=[
+                _make_zone_area_record(zone_number="200", neighbourhood="Chamberí", geometry_wkt=_SQUARE_B_WKT)
+            ],
+        )
+        assert inserted == 1
+
+        assert repo.get_zone_area("madrid", "163") is None
+        assert exemption_repo.find_by_vehicle_id(vehicle_id) is None
+    finally:
+        _cleanup_vehicle_for_exemption_test(pg_engine, vehicle_id)

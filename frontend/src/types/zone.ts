@@ -23,3 +23,16 @@ export interface ZonesResponse {
   zones: Zone[];
   frontiers: Frontier[];
 }
+
+// Lightweight zone_number + neighbourhood pair — used by the SER parking
+// exemption picker's zone <select>, which never needs polygon geometry.
+// Deliberately does NOT reuse `Frontier`, which mandates a `geometry` field.
+export interface ZoneOption {
+  zone_number: string;
+  neighbourhood: string;
+}
+
+export interface ZoneOptionsResponse {
+  city: string;
+  options: ZoneOption[];
+}

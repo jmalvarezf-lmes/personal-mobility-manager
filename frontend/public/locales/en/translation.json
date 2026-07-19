@@ -113,7 +113,19 @@
       "saving": "Saving…",
       "save": "Save",
       "newPassword": "New Password",
-      "keepBlank": "(leave blank to keep current)"
+      "keepBlank": "(leave blank to keep current)",
+      "serExemption": {
+        "title": "SER parking exemption",
+        "cityLabel": "City",
+        "zoneLabel": "SER Zone",
+        "selectCity": "Select a city",
+        "selectZone": "Select a zone",
+        "selectCityFirst": "Select a city first",
+        "clear": "Clear",
+        "saveError": "Failed to save the parking exemption.",
+        "clearError": "Failed to clear the parking exemption.",
+        "loading": "Loading…"
+      }
     },
     "connectSerProvider": {
       "title": "Connect {{provider}}",

@@ -26,6 +26,13 @@ class ConfigResponse(BaseModel):
     toyota_locale: str
 
 
+class CityResponse(BaseModel):
+    """One row of the `cities` catalog."""
+
+    code: str
+    name: str
+
+
 class SerZoneMapItem(BaseModel):
     zone_number: str
     zone_type: str
@@ -45,6 +52,24 @@ class ListSerZonesResponse(BaseModel):
     city: str
     zones: list[SerZoneMapItem]
     frontiers: list[FrontierMapItem]
+
+
+class ZoneOptionItem(BaseModel):
+    """A single zone_number/neighbourhood pair for a `<select>` option.
+
+    Deliberately has no geometry, zone_type, colour, district, or
+    spot_count — GET /parking/ser-zone-options exists specifically to avoid
+    the cost of reprojecting/serializing full zone geometry when a caller
+    (the SER parking exemption picker) only needs a label per zone_number.
+    """
+
+    zone_number: str
+    neighbourhood: str
+
+
+class ListZoneOptionsResponse(BaseModel):
+    city: str
+    options: list[ZoneOptionItem]
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +231,30 @@ UpdateVehicleRequest = Annotated[
     UpdateToyotaRequest | UpdateGenericRequest,
     Field(discriminator="brand"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Vehicle SER parking exemption schemas
+# (GET/POST/DELETE /vehicles/{id}/ser-parking-exemptions)
+# ---------------------------------------------------------------------------
+
+
+class VehicleSerParkingExemptionResponse(BaseModel):
+    """A vehicle's stored SER parking exemption, or nulls if unset."""
+
+    city_code: str | None
+    zone_number: str | None
+
+
+class SetVehicleSerParkingExemptionRequest(BaseModel):
+    """Request body for POST /vehicles/{id}/ser-parking-exemptions."""
+
+    city_code: str
+    # Matches vehicle_ser_parking_exemptions.zone_number's VARCHAR(10) column —
+    # rejected here with a clean 422 instead of reaching Postgres as a
+    # DataError (sibling of IntegrityError, not caught by the repository's
+    # FK-violation handling).
+    zone_number: str = Field(..., max_length=10)
 
 
 # ---------------------------------------------------------------------------

@@ -33,3 +33,8 @@ export interface VehicleDetail {
   config: ToyotaConfig | GenericConfig;
   ambient_label: string | null;
 }
+
+export interface SerParkingExemption {
+  city_code: string | null;
+  zone_number: string | null;
+}

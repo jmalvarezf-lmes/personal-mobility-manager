@@ -22,8 +22,11 @@ SER zone.
 
 When the location is different enough, checks zone containment via
 FindContainingSerZone and whether a ticket is currently required via
-DetermineSerTicketRequirement. If so, it notifies the vehicle owner via
-their preferred channel that a SER ticket must be created.
+DetermineSerTicketRequirement, passing `event.vehicle_id` so a matching
+per-vehicle SER parking exemption (see the vehicle-ser-parking-exemption
+capability) suppresses the requirement the same as an inactive enforcement
+schedule would. If a ticket is still required, it notifies the vehicle
+owner via their preferred channel that a SER ticket must be created.
 
 This change is notification-only: no ticket is created, and no
 SerTicketProvider is invoked. Automatic ticket creation remains out of
@@ -159,7 +162,7 @@ class SerTicketTriggerHandler:
                         return
 
                 zone = self._find_containing_ser_zone.execute(GeoLocation(lat=event.latitude, lng=event.longitude))
-                if not self._determine_ser_ticket_requirement.execute(zone):
+                if not self._determine_ser_ticket_requirement.execute(zone, event.vehicle_id):
                     logger.info("No SER ticket required for vehicle: %s", event.vehicle_id)
                     return
 

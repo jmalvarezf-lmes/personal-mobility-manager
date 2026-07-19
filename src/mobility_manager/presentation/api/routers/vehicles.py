@@ -2,9 +2,12 @@
 Presentation: Vehicles API router.
 
 Endpoints:
-  POST   /vehicles                       — register a new vehicle
-  GET    /vehicles/{vehicle_id}/location — latest known location
-  POST   /vehicles/{token}/location      — push ingest from generic device
+  POST   /vehicles                                — register a new vehicle
+  GET    /vehicles/{vehicle_id}/location           — latest known location
+  POST   /vehicles/{token}/location                — push ingest from generic device
+  GET    /vehicles/{vehicle_id}/ser-parking-exemptions    — view exemption
+  POST   /vehicles/{vehicle_id}/ser-parking-exemptions    — set/replace exemption
+  DELETE /vehicles/{vehicle_id}/ser-parking-exemptions    — clear exemption
 """
 
 from uuid import UUID
@@ -15,6 +18,7 @@ from fastapi.responses import Response
 from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.exceptions import (
     BrandNotEnabledError,
+    InvalidSerParkingExemptionZoneError,
     VehicleLocationNotFoundError,
     VehicleNotFoundError,
 )
@@ -35,6 +39,7 @@ from mobility_manager.presentation.api.schemas import (
     GenericConfigResponse,
     PushLocationRequest,
     RegisterVehicleRequest,
+    SetVehicleSerParkingExemptionRequest,
     ToyotaConfigResponse,
     UpdateVehicleRequest,
     VehicleDetailResponse,
@@ -42,9 +47,26 @@ from mobility_manager.presentation.api.schemas import (
     VehicleLocationResponse,
     VehicleLocationSummary,
     VehicleResponse,
+    VehicleSerParkingExemptionResponse,
 )
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
+
+
+def _get_owned_vehicle_or_raise(request: Request, vehicle_id: UUID, current_user: User):  # type: ignore[no-untyped-def]
+    """
+    Fetch the vehicle by ID, raising 404 if it doesn't exist or 403 if the
+    authenticated user doesn't own it. Shared by the ser-parking-exemptions
+    sub-resource endpoints, mirroring the ownership-check pattern already
+    used by GET/PUT/DELETE /vehicles/{id}.
+    """
+    vehicle_repo = request.app.state.vehicle_repo
+    vehicle = vehicle_repo.get_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own this vehicle")
+    return vehicle
 
 
 def _resolve_ambient_label(vehicle_id: UUID, ambient_label_repo: VehicleAmbientLabelRepository | None) -> str | None:
@@ -294,4 +316,52 @@ def push_vehicle_location(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    return Response(status_code=204)
+
+
+@router.get("/{vehicle_id}/ser-parking-exemptions", response_model=VehicleSerParkingExemptionResponse)
+def get_ser_parking_exemption(
+    request: Request,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleSerParkingExemptionResponse:
+    """Return the authenticated owner's vehicle's stored SER parking exemption, or nulls if unset."""
+    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.get_vehicle_ser_parking_exemption
+    exemption = use_case.execute(vehicle_id)
+    if exemption is None:
+        return VehicleSerParkingExemptionResponse(city_code=None, zone_number=None)
+    return VehicleSerParkingExemptionResponse(city_code=exemption.city_code, zone_number=exemption.zone_number)
+
+
+@router.post("/{vehicle_id}/ser-parking-exemptions", response_model=VehicleSerParkingExemptionResponse)
+def set_ser_parking_exemption(
+    request: Request,
+    vehicle_id: UUID,
+    body: SetVehicleSerParkingExemptionRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleSerParkingExemptionResponse:
+    """Set (or replace) the authenticated owner's vehicle's SER parking exemption."""
+    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.set_vehicle_ser_parking_exemption
+    try:
+        exemption = use_case.execute(vehicle_id, body.city_code, body.zone_number)
+    except InvalidSerParkingExemptionZoneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return VehicleSerParkingExemptionResponse(city_code=exemption.city_code, zone_number=exemption.zone_number)
+
+
+@router.delete("/{vehicle_id}/ser-parking-exemptions", status_code=204)
+def clear_ser_parking_exemption(
+    request: Request,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> Response:
+    """Clear the authenticated owner's vehicle's SER parking exemption (idempotent — 204 either way)."""
+    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.clear_vehicle_ser_parking_exemption
+    use_case.execute(vehicle_id)
     return Response(status_code=204)

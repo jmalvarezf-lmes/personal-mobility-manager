@@ -13,6 +13,7 @@ from typing import Any
 from shapely import wkt as shapely_wkt
 from shapely.geometry import Point
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
 from mobility_manager.domain.entities.ser_zone import SerZone
@@ -72,6 +73,44 @@ class PostgresSerZoneRepository(SerZoneRepository):
         )
         with self._engine.connect() as conn:
             rows = conn.execute(query).fetchall()
+
+        zones: list[SerZone] = []
+        for row in rows:
+            try:
+                geometry = shapely_wkt.loads(row[5])
+            except Exception:
+                logger.warning(
+                    "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
+                    row[1],
+                    row[2],
+                )
+                continue
+            zones.append(
+                SerZone(
+                    city_code=row[0],
+                    zone_number=row[1],
+                    zone_type=row[2],
+                    district=row[3],
+                    spot_count=row[4],
+                    geometry=geometry,
+                )
+            )
+        return zones
+
+    def list_zones_for_city(self, city_code: str) -> list[SerZone]:
+        """
+        Return SER zones scoped to `city_code` only, ordered by zone_number.
+
+        Mirrors list_all()'s corrupt-geometry skip behavior, but adds a
+        WHERE city_code clause — see design.md D7 of
+        add-vehicle-ser-parking-exemption.
+        """
+        query = text(
+            "SELECT city_code, zone_number, zone_type, district, spot_count, geometry_wkt "
+            "FROM ser_zones WHERE city_code = :city_code ORDER BY zone_number, zone_type"
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(query, {"city_code": city_code}).fetchall()
 
         zones: list[SerZone] = []
         for row in rows:
@@ -156,20 +195,69 @@ class PostgresSerZoneRepository(SerZoneRepository):
             zone_areas.append(ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry))
         return zone_areas
 
+    def list_zone_areas_for_city(self, city_code: str) -> list[ZoneArea]:
+        """Return frontiers scoped to `city_code` only, ordered by zone_number."""
+        query = text(
+            "SELECT city_code, zone_number, neighbourhood, geometry_wkt "
+            "FROM ser_zone_areas WHERE city_code = :city_code ORDER BY zone_number"
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(query, {"city_code": city_code}).fetchall()
+
+        zone_areas: list[ZoneArea] = []
+        for row in rows:
+            try:
+                geometry = shapely_wkt.loads(row[3])
+            except Exception:
+                logger.warning(
+                    "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
+                    row[0],
+                    row[1],
+                )
+                continue
+            zone_areas.append(ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry))
+        return zone_areas
+
     def bulk_replace(self, records: list[dict[str, Any]], zone_areas: list[dict[str, Any]] | None = None) -> int:
         """
-        Replace one city's SER zone records (street names, and frontiers) in
-        a single transaction.
+        Replace one city's SER zone records (street names) and refresh its
+        zone frontiers (ser_zone_areas) in a single transaction.
 
-        Deletes existing ser_zones/ser_zone_streets/ser_zone_areas rows for
-        the ingesting city only (scoped DELETE, not a bare TRUNCATE — see
-        design.md D6) and inserts all records; returns the number of
-        ser_zones rows inserted. Each record dict is expected to carry a
-        "city_code" key and a "street_names" key (list[str]) in addition to
-        the ser_zones columns. `zone_areas` is a list of dicts with
-        "city_code", "zone_number", "neighbourhood", "geometry_wkt" keys —
-        one per resolvable zone_number (see add-ser-zone-frontiers design.md
-        D6).
+        ser_zones/ser_zone_streets: deletes existing rows for the ingesting
+        city only (scoped DELETE, not a bare TRUNCATE — see design.md D6)
+        and inserts all fresh records.
+
+        ser_zone_areas: NOT delete-then-insert. `vehicle_ser_parking_exemptions`
+        holds a composite FK to `(city_code, zone_number)` on this table
+        (see add-vehicle-ser-parking-exemption design.md), so a blanket
+        delete-then-reinsert would either abort the whole ingestion run
+        (FK violation, no `ON DELETE` action) or — if the FK were simply
+        made `CASCADE` — silently wipe every vehicle's saved exemption on
+        every scheduled re-ingestion, even when the same zone_number is
+        re-ingested unchanged. Instead:
+        - Every `zone_area_rows` entry is upserted (`INSERT ... ON CONFLICT
+          (city_code, zone_number) DO UPDATE`), so a `zone_number` that is
+          still present in the fresh data is never deleted and any
+          exemption referencing it is left completely undisturbed, even
+          though its `neighbourhood`/`geometry_wkt` get refreshed.
+        - Only rows whose `zone_number` is NOT present in the fresh
+          `zone_area_rows` for this city (i.e. genuinely retired zones) are
+          deleted — via the `ser_zone_areas_table` Core `.delete().where()`
+          construct — and that deletion is allowed to cascade into
+          `vehicle_ser_parking_exemptions` (see the paired Alembic
+          migration adding `ondelete="CASCADE"` to that FK), which is
+          correct: an exemption pointing at a zone that no longer resolves
+          to a barrio is meaningless.
+        - If `zone_area_rows` is empty for this ingestion run, all existing
+          `ser_zone_areas` rows for the city are deleted (matching the
+          prior/edge-case behavior — nothing to upsert or preserve).
+
+        Returns the number of ser_zones rows inserted. Each record dict is
+        expected to carry a "city_code" key and a "street_names" key
+        (list[str]) in addition to the ser_zones columns. `zone_areas` is a
+        list of dicts with "city_code", "zone_number", "neighbourhood",
+        "geometry_wkt" keys — one per resolvable zone_number (see
+        add-ser-zone-frontiers design.md D6).
 
         If `records` is empty, this is a no-op: there is no city_code to
         scope a delete to, matching the "zero parsed records aborts the run
@@ -223,11 +311,29 @@ class PostgresSerZoneRepository(SerZoneRepository):
             conn.execute(
                 text("DELETE FROM ser_zone_streets WHERE city_code = :city_code"), {"city_code": city_code}
             )
-            conn.execute(text("DELETE FROM ser_zone_areas WHERE city_code = :city_code"), {"city_code": city_code})
             conn.execute(ser_zones_table.insert(), zone_rows)
             if street_rows:
                 conn.execute(ser_zone_streets_table.insert(), street_rows)
+
             if zone_area_rows:
-                conn.execute(ser_zone_areas_table.insert(), zone_area_rows)
+                upsert_stmt = insert(ser_zone_areas_table).values(zone_area_rows)
+                upsert_stmt = upsert_stmt.on_conflict_do_update(
+                    index_elements=["city_code", "zone_number"],
+                    set_={
+                        "neighbourhood": upsert_stmt.excluded.neighbourhood,
+                        "geometry_wkt": upsert_stmt.excluded.geometry_wkt,
+                    },
+                )
+                conn.execute(upsert_stmt)
+
+                fresh_zone_numbers = [za["zone_number"] for za in zone_area_rows]
+                conn.execute(
+                    ser_zone_areas_table.delete().where(
+                        ser_zone_areas_table.c.city_code == city_code,
+                        ser_zone_areas_table.c.zone_number.notin_(fresh_zone_numbers),
+                    )
+                )
+            else:
+                conn.execute(ser_zone_areas_table.delete().where(ser_zone_areas_table.c.city_code == city_code))
 
         return len(zone_rows)

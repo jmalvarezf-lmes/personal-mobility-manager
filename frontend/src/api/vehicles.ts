@@ -1,4 +1,8 @@
-import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
+import type {
+  SerParkingExemption,
+  VehicleDetail,
+  VehicleListItem,
+} from "../types/vehicle";
 
 export async function listVehicles(): Promise<VehicleListItem[]> {
   const response = await fetch("/api/vehicles", { credentials: "include" });
@@ -56,5 +60,55 @@ export async function deleteVehicle(id: string): Promise<void> {
   });
   if (!response.ok) {
     throw new Error(`Failed to delete vehicle: ${response.status}`);
+  }
+}
+
+export async function getSerParkingExemption(
+  vehicleId: string,
+): Promise<SerParkingExemption> {
+  const response = await fetch(
+    `/api/vehicles/${vehicleId}/ser-parking-exemptions`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to get SER parking exemption: ${response.status}`);
+  }
+  return (await response.json()) as SerParkingExemption;
+}
+
+export async function setSerParkingExemption(
+  vehicleId: string,
+  cityCode: string,
+  zoneNumber: string,
+): Promise<SerParkingExemption> {
+  const response = await fetch(
+    `/api/vehicles/${vehicleId}/ser-parking-exemptions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ city_code: cityCode, zone_number: zoneNumber }),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      text || `Failed to set SER parking exemption: ${response.status}`,
+    );
+  }
+  return (await response.json()) as SerParkingExemption;
+}
+
+export async function clearSerParkingExemption(
+  vehicleId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/vehicles/${vehicleId}/ser-parking-exemptions`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to clear SER parking exemption: ${response.status}`,
+    );
   }
 }

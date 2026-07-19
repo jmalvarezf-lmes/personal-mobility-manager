@@ -280,3 +280,38 @@ class TestUpdateNotificationPreference:
 
         assert response.status_code == 422
         repo.update.assert_not_called()
+
+    def test_config_with_unrecognized_key_returns_422_and_leaves_row_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Task 7.3: config keys absent from config_schema are now rejected, not ignored."""
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("location_moved", "Vehicle moved")]
+        app, cookie = _build_authed_app(notification_preferences_repo=repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/notifications/preferences/location_moved",
+            json={"enabled": True, "config": {"threshold_m": 20, "unexpected_field": "value"}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        repo.update.assert_not_called()
+
+    def test_unrecognized_extra_top_level_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("location_moved", "Vehicle moved")]
+        app, cookie = _build_authed_app(notification_preferences_repo=repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/notifications/preferences/location_moved",
+            json={"enabled": True, "config": {}, "is_admin": True},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        repo.update.assert_not_called()

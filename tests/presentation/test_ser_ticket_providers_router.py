@@ -156,6 +156,58 @@ def test_unknown_provider_returns_404(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 404
 
 
+def test_unrecognized_extra_field_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+    mock_uc = MagicMock()
+    app, cookie = _build_authed_app(connect_uc=mock_uc)
+    client = TestClient(app)
+
+    response = client.post(
+        "/ser-ticket-providers/connections",
+        json={**_VALID_BODY, "is_admin": True},
+        cookies={"session": cookie},
+    )
+
+    assert response.status_code == 422
+    mock_uc.execute.assert_not_called()
+
+
+def test_rate_limit_returns_429_on_the_61st_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Task 5.5-adjacent coverage: 60/minute is enforced on POST /ser-ticket-providers/connections."""
+    from slowapi import _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    from mobility_manager.presentation.api.limiter import limiter
+
+    monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+    limiter.reset()
+    try:
+        mock_uc = MagicMock()
+        user = _make_test_user()
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_id.return_value = user
+        app = _build_app(connect_uc=mock_uc, user_repo=mock_user_repo)
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_middleware(SlowAPIMiddleware)
+        cookie = _make_session_cookie(user)
+        client = TestClient(app)
+
+        last_status = None
+        for _ in range(61):
+            response = client.post(
+                "/ser-ticket-providers/connections",
+                json=_VALID_BODY,
+                cookies={"session": cookie},
+            )
+            last_status = response.status_code
+
+        assert last_status == 429
+    finally:
+        limiter.reset()
+
+
 def test_list_connections_unauthenticated_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
     mock_uc = MagicMock()
@@ -221,6 +273,18 @@ def test_disconnect_returns_200_with_logout_succeeded_true(monkeypatch: pytest.M
     assert response.status_code == 200
     assert response.json() == {"logout_succeeded": True}
     mock_uc.execute.assert_called_once_with(user_id=_OWNER_ID, provider="elparking")
+
+
+def test_disconnect_unknown_provider_returns_404_without_contacting_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+    mock_uc = MagicMock()
+    app, cookie = _build_authed_app(disconnect_uc=mock_uc)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.delete("/ser-ticket-providers/connections/carrier-pigeon", cookies={"session": cookie})
+
+    assert response.status_code == 404
+    mock_uc.execute.assert_not_called()
 
 
 def test_disconnect_returns_200_with_logout_succeeded_false(monkeypatch: pytest.MonkeyPatch) -> None:

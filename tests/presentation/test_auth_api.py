@@ -1,20 +1,26 @@
 """
 Integration tests for the auth API endpoints.
 
-GET  /auth/me      (task 16.6)
-POST /auth/logout  (task 16.7)
+GET  /auth/me              (task 16.6)
+POST /auth/logout          (task 16.7)
+GET  /auth/google/callback (task 9.8 — rate limit only; full OAuth flow coverage is out of scope here)
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from mobility_manager.domain.entities.user import User
+from mobility_manager.presentation.api.csrf import generate_signed_state
+from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.auth import router
 
 _JWT_SECRET = "test-auth-secret"
@@ -40,14 +46,48 @@ def _make_token(user: User, secret: str = _JWT_SECRET, exp_delta: int = 3600) ->
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)
 
 
-def _build_app(user_repo: MagicMock | None = None, authenticate_uc: MagicMock | None = None) -> FastAPI:
+def _build_app(
+    user_repo: MagicMock | None = None,
+    authenticate_uc: MagicMock | None = None,
+    with_rate_limiting: bool = False,
+) -> FastAPI:
     app = FastAPI()
+    if with_rate_limiting:
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_middleware(SlowAPIMiddleware)
     app.include_router(router)
     if user_repo is not None:
         app.state.user_repo = user_repo
     if authenticate_uc is not None:
         app.state.authenticate_google_user = authenticate_uc
     return app
+
+
+def _mock_google_httpx_client() -> MagicMock:
+    """
+    Mock the `httpx.AsyncClient` used by google_callback for both the token
+    exchange (POST) and the userinfo lookup (GET), returning a successful
+    exchange each time it's used as an async context manager.
+    """
+    token_response = MagicMock()
+    token_response.raise_for_status = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-access-token"}
+
+    userinfo_response = MagicMock()
+    userinfo_response.raise_for_status = MagicMock()
+    userinfo_response.json.return_value = {
+        "sub": "google-sub-123",
+        "email": "user@example.com",
+        "name": "Test User",
+    }
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(return_value=token_response)
+    mock_client.get = AsyncMock(return_value=userinfo_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    return mock_client
 
 
 # ---------------------------------------------------------------------------
@@ -156,3 +196,42 @@ class TestLogout:
         # Subsequent /me without session cookie returns 401
         response = client.get("/auth/me")
         assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/google/callback — Task 9.8 (rate limit only)
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleCallbackRateLimit:
+    def test_rate_limit_returns_429_on_the_61st_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Task 9.8: 60/minute is enforced on GET /auth/google/callback (task 5.4)."""
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client-id")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+        monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://example.com/auth/google/callback")
+        limiter.reset()
+        try:
+            mock_authenticate_uc = MagicMock()
+            mock_authenticate_uc.execute.return_value = _make_user()
+            app = _build_app(authenticate_uc=mock_authenticate_uc, with_rate_limiting=True)
+            client = TestClient(app, follow_redirects=False)
+
+            state = generate_signed_state()
+            mock_client = _mock_google_httpx_client()
+
+            last_status = None
+            with patch(
+                "mobility_manager.presentation.api.routers.auth.httpx.AsyncClient",
+                return_value=mock_client,
+            ):
+                for _ in range(61):
+                    response = client.get(
+                        "/auth/google/callback",
+                        params={"code": "auth-code", "state": state},
+                    )
+                    last_status = response.status_code
+
+            assert last_status == 429
+        finally:
+            limiter.reset()

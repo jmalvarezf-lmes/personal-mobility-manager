@@ -230,6 +230,27 @@ class TestUpdatePreferences:
         assert response.status_code == 422
         preferences_repo.update.assert_not_called()
 
+    def test_unrecognized_extra_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+                "notification_language": None,
+                "is_admin": True,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        preferences_repo.update.assert_not_called()
+
     def test_preferred_channel_not_configured_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()

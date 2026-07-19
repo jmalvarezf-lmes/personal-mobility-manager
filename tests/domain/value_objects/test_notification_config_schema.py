@@ -26,8 +26,18 @@ def test_field_absent_from_config_passes() -> None:
     validate_notification_config(_THRESHOLD_SCHEMA, {})
 
 
-def test_unknown_extra_config_key_is_ignored() -> None:
-    validate_notification_config(_THRESHOLD_SCHEMA, {"threshold_m": 20, "unrelated": "value"})
+def test_unknown_extra_config_key_is_rejected() -> None:
+    """
+    `config` may not carry a key absent from `config_schema` — reversal of
+    the prior "ignore extra keys" behavior (see design.md decision 7).
+    """
+    with pytest.raises(InvalidNotificationConfigError, match="unrelated"):
+        validate_notification_config(_THRESHOLD_SCHEMA, {"threshold_m": 20, "unrelated": "value"})
+
+
+def test_unknown_key_alone_is_rejected_even_when_no_declared_field_is_present() -> None:
+    with pytest.raises(InvalidNotificationConfigError, match="unrelated"):
+        validate_notification_config(_THRESHOLD_SCHEMA, {"unrelated": "value"})
 
 
 def test_unknown_extra_schema_key_is_ignored() -> None:

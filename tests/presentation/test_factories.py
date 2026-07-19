@@ -20,7 +20,7 @@ class TestVehicleRegisterFactory:
         body = RegisterToyotaRequest(
             brand=Brand.TOYOTA,
             display_name="My Toyota",
-            vin="VIN001",
+            vin="1HGCM82633A004352",
             username="alice",
             password="secret",
             locale="en_GB",
@@ -29,12 +29,12 @@ class TestVehicleRegisterFactory:
 
         assert result.brand == Brand.TOYOTA
         assert result.display_name == "My Toyota"
-        assert result.vin == "VIN001"
+        assert result.vin == "1HGCM82633A004352"
         assert result.toyota_config is not None
         assert result.toyota_config.username == "alice"
         assert result.toyota_config.password == "secret"
         assert result.toyota_config.locale == "en_GB"
-        assert result.toyota_config.vin == "VIN001"
+        assert result.toyota_config.vin == "1HGCM82633A004352"
 
     def test_generic_body_yields_no_toyota_config(self) -> None:
         body = RegisterGenericRequest(

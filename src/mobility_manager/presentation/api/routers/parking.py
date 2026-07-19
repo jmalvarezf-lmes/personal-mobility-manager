@@ -4,7 +4,7 @@ Presentation: Parking API router.
 Exposes GET /parking/ser-zone to find the nearest SER zone for a coordinate.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from shapely.geometry import Point
 
 from mobility_manager.domain.exceptions import SerZoneNotFoundError
@@ -19,6 +19,11 @@ router = APIRouter(prefix="/parking", tags=["parking"])
 @limiter.limit("60/minute")
 def get_ser_zone(
     request: Request,
+    # Unused directly, but required: slowapi needs a Response object to write
+    # Retry-After/X-RateLimit-* headers into, and this handler returns a
+    # Pydantic model, not a Response — see limiter.py's headers_enabled note.
+    # Removing this parameter turns every successful call into a 500.
+    response: Response,
     lat: float = Query(..., ge=-90, le=90, description="Latitude (WGS84)"),
     lng: float = Query(..., ge=-180, le=180, description="Longitude (WGS84)"),
 ) -> SerZoneResponse:

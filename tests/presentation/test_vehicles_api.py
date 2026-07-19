@@ -203,7 +203,7 @@ class TestRegisterVehicle:
             json={
                 "brand": "toyota",
                 "display_name": "My Toyota",
-                "vin": "VIN001",
+                "vin": "1HGCM82633A004352",
                 "username": "u",
                 "password": "p",
                 "locale": "en_GB",
@@ -225,7 +225,7 @@ class TestRegisterVehicle:
             json={
                 "brand": "toyota",
                 "display_name": "My Toyota",
-                "vin": "VIN001",
+                "vin": "1HGCM82633A004352",
                 "username": "u",
                 "password": "p",
                 "locale": "en_GB",
@@ -305,7 +305,7 @@ class TestRegisterVehicle:
             json={
                 "brand": "toyota",
                 "display_name": "My Toyota",
-                "vin": "VIN001",
+                "vin": "1HGCM82633A004352",
                 "username": "u",
                 "password": "p",
                 "locale": "en_GB",
@@ -328,6 +328,192 @@ class TestRegisterVehicle:
         )
 
         assert response.status_code == 422
+
+    def test_unrecognized_extra_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """StrictRequestModel rejects unknown fields (task 1.4)."""
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={"brand": "generic", "display_name": "My Car", "is_admin": True},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_malformed_vin_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "TOO-SHORT",
+                "username": "u",
+                "password": "p",
+                "locale": "en_GB",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_well_formed_vin_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = _make_vehicle_result(Brand.TOYOTA, vin="1HGCM82633A004352")
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "1HGCM82633A004352",
+                "username": "u",
+                "password": "p",
+                "locale": "en_GB",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 201
+
+    def test_unrecognized_locale_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "1HGCM82633A004352",
+                "username": "u",
+                "password": "p",
+                "locale": "xx-YY",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_recognized_locale_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = _make_vehicle_result(Brand.TOYOTA, vin="1HGCM82633A004352")
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "1HGCM82633A004352",
+                "username": "u",
+                "password": "p",
+                "locale": "en_GB",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 201
+
+    def test_over_length_display_name_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={"brand": "generic", "display_name": "A" * 101},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_over_length_toyota_username_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "1HGCM82633A004352",
+                "username": "u" * 101,
+                "password": "p",
+                "locale": "en_GB",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_over_length_toyota_password_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        app, cookie = _build_authed_app(register_uc=mock_uc)
+        client = TestClient(app)
+
+        response = client.post(
+            "/vehicles",
+            json={
+                "brand": "toyota",
+                "display_name": "My Toyota",
+                "vin": "1HGCM82633A004352",
+                "username": "u",
+                "password": "p" * 201,
+                "locale": "en_GB",
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_rate_limit_returns_429_on_the_61st_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Task 5.5: 60/minute is enforced on POST /vehicles."""
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        limiter.reset()
+        try:
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = _make_vehicle_result(Brand.GENERIC)
+            app, cookie = _build_authed_app(register_uc=mock_uc)
+            client = TestClient(app)
+
+            last_status = None
+            for _ in range(61):
+                response = client.post(
+                    "/vehicles",
+                    json={"brand": "generic", "display_name": "My Car"},
+                    cookies={"session": cookie},
+                )
+                last_status = response.status_code
+
+            assert last_status == 429
+        finally:
+            limiter.reset()
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +561,18 @@ class TestPushVehicleLocation:
         response = client.post("/vehicles/some-token/location", json=body)
 
         assert response.status_code == 422
+
+    def test_unrecognized_extra_field_returns_422(self) -> None:
+        config_repo = MagicMock()
+        config_repo.find_vehicle_by_token.return_value = uuid4()
+        record_uc = MagicMock()
+
+        client = TestClient(_build_app(record_uc=record_uc, config_repo=config_repo))
+        body = {**self._make_push_body(), "is_admin": True}
+        response = client.post("/vehicles/some-token/location", json=body)
+
+        assert response.status_code == 422
+        record_uc.execute.assert_not_called()
 
     def test_lon_out_of_range_returns_422(self) -> None:
         config_repo = MagicMock()
@@ -442,7 +640,7 @@ class TestGetLatestVehicleLocation:
         mock_uc.execute.return_value = location
 
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app)
@@ -460,7 +658,7 @@ class TestGetLatestVehicleLocation:
 
         mock_uc = MagicMock()
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = _make_owned_vehicle(vehicle_id, other_owner_id)
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, other_owner_id)
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app, raise_server_exceptions=False)
@@ -476,7 +674,7 @@ class TestGetLatestVehicleLocation:
         mock_uc.execute.side_effect = VehicleLocationNotFoundError("No history")
 
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app, raise_server_exceptions=False)
@@ -490,7 +688,7 @@ class TestGetLatestVehicleLocation:
 
         mock_uc = MagicMock()
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = None
+        mock_vehicle_repo.get_by_id.return_value = None
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app, raise_server_exceptions=False)
@@ -507,7 +705,7 @@ class TestGetLatestVehicleLocation:
         mock_uc.execute.return_value = location
 
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app)
@@ -524,7 +722,7 @@ class TestGetLatestVehicleLocation:
         mock_uc.execute.return_value = location
 
         mock_vehicle_repo = MagicMock()
-        mock_vehicle_repo.find_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
 
         app, cookie = _build_authed_app(get_latest_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
         client = TestClient(app)
@@ -975,6 +1173,92 @@ class TestUpdateVehicle:
 
         assert response.status_code == 404
 
+    def test_unrecognized_locale_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.TOYOTA)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, update_uc=mock_update_uc)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "toyota", "display_name": "Updated", "username": "alice", "locale": "xx-YY"},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_update_uc.execute.assert_not_called()
+
+    def test_unrecognized_extra_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, update_uc=mock_update_uc)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "My Car", "is_admin": True},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_update_uc.execute.assert_not_called()
+
+    def test_over_length_display_name_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, update_uc=mock_update_uc)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "A" * 101},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_update_uc.execute.assert_not_called()
+
+    def test_over_length_toyota_password_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.TOYOTA)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        mock_update_uc = MagicMock()
+
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo, update_uc=mock_update_uc)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={
+                "brand": "toyota",
+                "display_name": "Updated",
+                "username": "alice",
+                "locale": "en_GB",
+                "password": "p" * 201,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_update_uc.execute.assert_not_called()
+
     def test_set_license_plate_returns_200_with_plate(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         vehicle_id = uuid4()
@@ -1005,16 +1289,83 @@ class TestUpdateVehicle:
 
     def test_license_plate_too_long_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
-        app, cookie = _build_authed_app()
+        vehicle_id = uuid4()
+        # get_owned_vehicle_or_raise is called manually inside the handler,
+        # after `body` has already resolved — so an invalid body 422s via
+        # normal FastAPI/Pydantic parameter binding before ownership is ever
+        # checked, regardless of what vehicle_repo would return.
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.put(
-            f"/vehicles/{uuid4()}",
+            f"/vehicles/{vehicle_id}",
             json={"brand": "generic", "display_name": "My Car", "license_plate": "A" * 21},
             cookies={"session": cookie},
         )
 
         assert response.status_code == 422
+
+    def test_non_owner_with_invalid_body_returns_422_not_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """
+        Task 9.3 (post-4R-review fix): body validation must still run before
+        the ownership check for body-bearing routes. A non-owner sending a
+        body that also fails Pydantic validation must get 422, not 403 —
+        proving the fix in deps.py/routers/vehicles.py (calling
+        get_owned_vehicle_or_raise manually, after `body` resolves) restores
+        the original body-then-ownership ordering. See design.md decision 5
+        amendment.
+        """
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=uuid4(), brand=Brand.GENERIC)
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = vehicle
+        app, cookie = _build_authed_app(vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            f"/vehicles/{vehicle_id}",
+            json={"brand": "generic", "display_name": "My Car", "license_plate": "A" * 21},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_vehicle_repo.get_by_id.assert_not_called()
+
+    def test_rate_limit_returns_429_on_the_61st_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Task 9.8: 60/minute is enforced on PUT /vehicles/{id} (task 5.2)."""
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        limiter.reset()
+        try:
+            vehicle_id = uuid4()
+            vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID, brand=Brand.GENERIC)
+            mock_vehicle_repo = MagicMock()
+            mock_vehicle_repo.get_by_id.return_value = vehicle
+            config_repo = self._make_config_repo(vehicle_id, Brand.GENERIC)
+            mock_update_uc = MagicMock()
+
+            app, cookie = _build_authed_app(
+                vehicle_repo=mock_vehicle_repo,
+                config_repo=config_repo,
+                update_uc=mock_update_uc,
+            )
+            client = TestClient(app)
+
+            last_status = None
+            for _ in range(61):
+                response = client.put(
+                    f"/vehicles/{vehicle_id}",
+                    json={"brand": "generic", "display_name": "My Car"},
+                    cookies={"session": cookie},
+                )
+                last_status = response.status_code
+
+            assert last_status == 429
+        finally:
+            limiter.reset()
 
     def test_clear_license_plate_returns_200_with_null(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)

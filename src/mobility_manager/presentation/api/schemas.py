@@ -2,13 +2,40 @@
 Presentation: Pydantic schemas for the FastAPI API layer.
 """
 
+import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pytoyoda.utils.locale import is_valid_locale
 
 from mobility_manager.domain.value_objects.brand import Brand
+
+# ISO 3779 shape: exactly 17 uppercase alphanumeric characters, excluding
+# I, O, Q (easily confused with 1, 0 — never used in a real VIN).
+_VIN_PATTERN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+
+
+class StrictRequestModel(BaseModel):
+    """
+    Base class for every request-body schema.
+
+    `extra="forbid"` rejects (422) any JSON field not declared on the model,
+    instead of Pydantic v2's default of silently discarding unknown fields.
+    Only request bodies inherit from this — response models stay on plain
+    BaseModel, since being lenient about what we return is fine, but being
+    lenient about what we accept is not (see design.md decision 1).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _validate_toyota_locale(value: str) -> str:
+    """Shared `locale` check for both RegisterToyotaRequest and UpdateToyotaRequest."""
+    if not is_valid_locale(value):
+        raise ValueError(f"'{value}' is not a recognized locale")
+    return value
 
 
 class SerZoneResponse(BaseModel):
@@ -77,10 +104,10 @@ class ListZoneOptionsResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class BaseRegisterVehicleRequest(BaseModel):
+class BaseRegisterVehicleRequest(StrictRequestModel):
     """Common fields for all vehicle registration requests."""
 
-    display_name: str
+    display_name: str = Field(..., max_length=100)
     license_plate: str | None = Field(None, max_length=20)
 
 
@@ -88,10 +115,26 @@ class RegisterToyotaRequest(BaseRegisterVehicleRequest):
     """Registration payload for a Toyota vehicle."""
 
     brand: Literal[Brand.TOYOTA]
-    vin: str
-    username: str
-    password: str
-    locale: str
+    # min_length/max_length duplicate the exact-length check _VIN_PATTERN's
+    # {17} quantifier already enforces below — kept anyway so an over/under
+    # length VIN is rejected by Pydantic's own bound (consistent with every
+    # sibling field in this class) before the regex validator even runs.
+    vin: str = Field(..., min_length=17, max_length=17)
+    username: str = Field(..., max_length=100)
+    password: str = Field(..., max_length=200)
+    locale: str = Field(..., max_length=100)
+
+    @field_validator("vin")
+    @classmethod
+    def _validate_vin(cls, value: str) -> str:
+        if not _VIN_PATTERN.match(value):
+            raise ValueError("vin must be exactly 17 uppercase alphanumeric characters, excluding I, O, and Q")
+        return value
+
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, value: str) -> str:
+        return _validate_toyota_locale(value)
 
 
 class RegisterGenericRequest(BaseRegisterVehicleRequest):
@@ -126,7 +169,7 @@ class VehicleResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PushLocationRequest(BaseModel):
+class PushLocationRequest(StrictRequestModel):
     """Push-endpoint request body — sent by a generic vehicle device."""
 
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude in WGS84 degrees")
@@ -205,10 +248,10 @@ class VehicleDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class BaseUpdateVehicleRequest(BaseModel):
+class BaseUpdateVehicleRequest(StrictRequestModel):
     """Common fields for all vehicle update requests."""
 
-    display_name: str
+    display_name: str = Field(..., max_length=100)
     license_plate: str | None = Field(None, max_length=20)
 
 
@@ -216,9 +259,14 @@ class UpdateToyotaRequest(BaseUpdateVehicleRequest):
     """Update payload for a Toyota vehicle."""
 
     brand: Literal[Brand.TOYOTA]
-    username: str
-    locale: str
-    password: str | None = None
+    username: str = Field(..., max_length=100)
+    locale: str = Field(..., max_length=100)
+    password: str | None = Field(None, max_length=200)
+
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, value: str) -> str:
+        return _validate_toyota_locale(value)
 
 
 class UpdateGenericRequest(BaseUpdateVehicleRequest):
@@ -246,10 +294,13 @@ class VehicleSerParkingExemptionResponse(BaseModel):
     zone_number: str | None
 
 
-class SetVehicleSerParkingExemptionRequest(BaseModel):
+class SetVehicleSerParkingExemptionRequest(StrictRequestModel):
     """Request body for POST /vehicles/{id}/ser-parking-exemptions."""
 
-    city_code: str
+    # Generously above the one seeded value ("madrid") — cities.code has no
+    # DB-level cap, so this is a request-hygiene bound, not a DB-mirroring
+    # one (see design.md decision 3).
+    city_code: str = Field(..., max_length=50)
     # Matches vehicle_ser_parking_exemptions.zone_number's VARCHAR(10) column —
     # rejected here with a clean 422 instead of reaching Postgres as a
     # DataError (sibling of IntegrityError, not caught by the repository's
@@ -271,7 +322,7 @@ class UserPreferencesResponse(BaseModel):
     notification_language: str | None
 
 
-class UpdateUserPreferencesRequest(BaseModel):
+class UpdateUserPreferencesRequest(StrictRequestModel):
     """Full-resource replace payload for /preferences."""
 
     default_ticket_duration_minutes: int = Field(..., gt=0)
@@ -285,7 +336,7 @@ class UpdateUserPreferencesRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ConnectElParkingRequest(BaseModel):
+class ConnectElParkingRequest(StrictRequestModel):
     """Connect-account payload for the ElParking SER ticket provider."""
 
     provider: Literal["elparking"]
@@ -370,7 +421,7 @@ class NotificationPreferenceResponse(BaseModel):
     config: dict[str, Any]
 
 
-class UpdateNotificationPreferenceRequest(BaseModel):
+class UpdateNotificationPreferenceRequest(StrictRequestModel):
     """Request body for PUT /notifications/preferences/{type_key}."""
 
     enabled: bool

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from mobility_manager.domain.entities.user import User
+from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.exceptions import (
     BrandNotEnabledError,
     InvalidSerParkingExemptionZoneError,
@@ -29,7 +30,11 @@ from mobility_manager.domain.value_objects.ambient_label_status import (
     AmbientLabelStatus,
 )
 from mobility_manager.domain.value_objects.brand import Brand
-from mobility_manager.presentation.api.deps import get_current_user
+from mobility_manager.presentation.api.deps import (
+    get_current_user,
+    get_owned_vehicle_or_raise,
+    require_owned_vehicle,
+)
 from mobility_manager.presentation.api.factories import (
     VehicleRegisterFactory,
     VehicleUpdateFactory,
@@ -51,22 +56,6 @@ from mobility_manager.presentation.api.schemas import (
 )
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
-
-
-def _get_owned_vehicle_or_raise(request: Request, vehicle_id: UUID, current_user: User):  # type: ignore[no-untyped-def]
-    """
-    Fetch the vehicle by ID, raising 404 if it doesn't exist or 403 if the
-    authenticated user doesn't own it. Shared by the ser-parking-exemptions
-    sub-resource endpoints, mirroring the ownership-check pattern already
-    used by GET/PUT/DELETE /vehicles/{id}.
-    """
-    vehicle_repo = request.app.state.vehicle_repo
-    vehicle = vehicle_repo.get_by_id(vehicle_id)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You do not own this vehicle")
-    return vehicle
 
 
 def _resolve_ambient_label(vehicle_id: UUID, ambient_label_repo: VehicleAmbientLabelRepository | None) -> str | None:
@@ -141,15 +130,9 @@ def _build_vehicle_detail(vehicle, config_repo, ambient_label_repo=None) -> Vehi
 def get_vehicle(
     request: Request,
     vehicle_id: UUID,
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
 ) -> VehicleDetailResponse:
     """Return full detail for a specific vehicle owned by the authenticated user."""
-    vehicle_repo = request.app.state.vehicle_repo
-    vehicle = vehicle_repo.get_by_id(vehicle_id)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You do not own this vehicle")
     ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
     return _build_vehicle_detail(vehicle, request.app.state.vehicle_config_repo, ambient_label_repo)
 
@@ -158,15 +141,9 @@ def get_vehicle(
 def delete_vehicle(
     request: Request,
     vehicle_id: UUID,
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
 ) -> Response:
     """Delete a vehicle owned by the authenticated user."""
-    vehicle_repo = request.app.state.vehicle_repo
-    vehicle = vehicle_repo.get_by_id(vehicle_id)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You do not own this vehicle")
     try:
         request.app.state.delete_vehicle.execute(vehicle_id)
     except VehicleNotFoundError:
@@ -175,20 +152,24 @@ def delete_vehicle(
 
 
 @router.put("/{vehicle_id}", response_model=VehicleDetailResponse)
+@limiter.limit("60/minute")
 def update_vehicle(
     request: Request,
+    # Unused directly, but required: slowapi needs a Response object to write
+    # Retry-After/X-RateLimit-* headers into, and this handler returns a
+    # Pydantic model, not a Response — see limiter.py's headers_enabled note.
+    # Removing this parameter turns every successful call into a 500.
+    response: Response,
     vehicle_id: UUID,
     body: UpdateVehicleRequest,
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> VehicleDetailResponse:
     """Update display_name, license_plate (and Toyota credentials when a new password is supplied)."""
+    # Ownership is checked here (after `body` has already been parsed and
+    # validated above), not via Depends(require_owned_vehicle) — see
+    # deps.py module docstring / design.md decision 5 amendment.
+    get_owned_vehicle_or_raise(request, vehicle_id, current_user)
     vehicle_repo = request.app.state.vehicle_repo
-    vehicle = vehicle_repo.get_by_id(vehicle_id)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You do not own this vehicle")
-
     update_input = VehicleUpdateFactory.build(body)
 
     try:
@@ -212,8 +193,12 @@ def update_vehicle(
 
 
 @router.post("", response_model=VehicleResponse, status_code=201)
+@limiter.limit("60/minute")
 def register_vehicle(
     request: Request,
+    # Unused directly, but required — see the identical note on update_vehicle
+    # above / limiter.py's headers_enabled note.
+    response: Response,
     body: RegisterVehicleRequest,
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> VehicleResponse:
@@ -254,16 +239,9 @@ def register_vehicle(
 def get_latest_location(
     request: Request,
     vehicle_id: UUID,
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
 ) -> VehicleLocationResponse:
     """Return the most recent known GPS location for the given vehicle."""
-    vehicle_repo = request.app.state.vehicle_repo
-    vehicle = vehicle_repo.find_by_id(vehicle_id)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You do not own this vehicle")
-
     use_case = request.app.state.get_latest_vehicle_location
 
     try:
@@ -323,11 +301,9 @@ def push_vehicle_location(
 def get_ser_parking_exemption(
     request: Request,
     vehicle_id: UUID,
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
 ) -> VehicleSerParkingExemptionResponse:
     """Return the authenticated owner's vehicle's stored SER parking exemption, or nulls if unset."""
-    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
-
     use_case = request.app.state.get_vehicle_ser_parking_exemption
     exemption = use_case.execute(vehicle_id)
     if exemption is None:
@@ -343,8 +319,10 @@ def set_ser_parking_exemption(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> VehicleSerParkingExemptionResponse:
     """Set (or replace) the authenticated owner's vehicle's SER parking exemption."""
-    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
-
+    # Ownership is checked here (after `body` has already been parsed and
+    # validated above), not via Depends(require_owned_vehicle) — see
+    # deps.py module docstring / design.md decision 5 amendment.
+    get_owned_vehicle_or_raise(request, vehicle_id, current_user)
     use_case = request.app.state.set_vehicle_ser_parking_exemption
     try:
         exemption = use_case.execute(vehicle_id, body.city_code, body.zone_number)
@@ -357,11 +335,9 @@ def set_ser_parking_exemption(
 def clear_ser_parking_exemption(
     request: Request,
     vehicle_id: UUID,
-    current_user: User = Depends(get_current_user),  # noqa: B008
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
 ) -> Response:
     """Clear the authenticated owner's vehicle's SER parking exemption (idempotent — 204 either way)."""
-    _get_owned_vehicle_or_raise(request, vehicle_id, current_user)
-
     use_case = request.app.state.clear_vehicle_ser_parking_exemption
     use_case.execute(vehicle_id)
     return Response(status_code=204)

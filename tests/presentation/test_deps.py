@@ -1,5 +1,6 @@
 """
-Unit tests for get_current_user FastAPI dependency.
+Unit tests for get_current_user, require_owned_vehicle, and
+get_owned_vehicle_or_raise FastAPI dependencies.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -8,11 +9,17 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from mobility_manager.domain.entities.user import User
-from mobility_manager.presentation.api.deps import get_current_user
+from mobility_manager.domain.entities.vehicle import Vehicle
+from mobility_manager.domain.value_objects.brand import Brand
+from mobility_manager.presentation.api.deps import (
+    get_current_user,
+    get_owned_vehicle_or_raise,
+    require_owned_vehicle,
+)
 
 _SECRET = "unit-test-secret"
 _ALGORITHM = "HS256"
@@ -27,6 +34,18 @@ def _make_user(user_id=None) -> User:
         email="user@example.com",
         display_name="Test User",
         created_at=datetime.now(UTC),
+    )
+
+
+def _make_vehicle(vehicle_id, owner_id) -> Vehicle:
+    return Vehicle(
+        id=vehicle_id,
+        brand=Brand.GENERIC,
+        display_name="My Car",
+        vin=None,
+        license_plate=None,
+        created_at=datetime.now(UTC),
+        user_id=owner_id,
     )
 
 
@@ -110,3 +129,97 @@ class TestGetCurrentUser:
         response = client.get("/me", cookies={"session": tampered})
 
         assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# require_owned_vehicle (Depends target) and get_owned_vehicle_or_raise
+# (plain function) — task 9.7.
+#
+# Both delegate to the same private _fetch_owned_vehicle helper, so the same
+# three cases (not found / not owned / owned) apply to each entry point.
+# Parametrized over which one is exercised rather than duplicating three
+# near-identical test bodies per function.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/owned-via-depends", "/owned-via-manual-call"])
+class TestOwnershipDependencies:
+    def _build_app(self, vehicle_repo: MagicMock, user_repo: MagicMock) -> FastAPI:
+        from uuid import UUID
+
+        from fastapi import Request
+
+        app = FastAPI()
+        app.state.vehicle_repo = vehicle_repo
+        app.state.user_repo = user_repo
+
+        @app.get("/owned-via-depends/{vehicle_id}")
+        async def owned_via_depends(
+            vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+        ) -> dict:
+            return {"id": str(vehicle.id)}
+
+        @app.get("/owned-via-manual-call/{vehicle_id}")
+        async def owned_via_manual_call(
+            request: Request,
+            vehicle_id: UUID,
+            current_user: User = Depends(get_current_user),  # noqa: B008
+        ) -> dict:
+            vehicle = get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+            return {"id": str(vehicle.id)}
+
+        return app
+
+    def test_vehicle_not_found_returns_404(self, path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _SECRET)
+        user = _make_user()
+        vehicle_id = uuid4()
+
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_id.return_value = user
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        client = TestClient(
+            self._build_app(mock_vehicle_repo, mock_user_repo), raise_server_exceptions=False
+        )
+        token = _make_token(user)
+        response = client.get(f"{path}/{vehicle_id}", cookies={"session": token})
+
+        assert response.status_code == 404
+
+    def test_non_owner_returns_403(self, path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _SECRET)
+        user = _make_user()
+        vehicle_id = uuid4()
+        other_owner_id = uuid4()
+
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_id.return_value = user
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_vehicle(vehicle_id, other_owner_id)
+
+        client = TestClient(
+            self._build_app(mock_vehicle_repo, mock_user_repo), raise_server_exceptions=False
+        )
+        token = _make_token(user)
+        response = client.get(f"{path}/{vehicle_id}", cookies={"session": token})
+
+        assert response.status_code == 403
+
+    def test_owner_returns_the_vehicle(self, path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _SECRET)
+        user = _make_user()
+        vehicle_id = uuid4()
+
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_id.return_value = user
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_vehicle(vehicle_id, user.id)
+
+        client = TestClient(self._build_app(mock_vehicle_repo, mock_user_repo))
+        token = _make_token(user)
+        response = client.get(f"{path}/{vehicle_id}", cookies={"session": token})
+
+        assert response.status_code == 200
+        assert response.json()["id"] == str(vehicle_id)

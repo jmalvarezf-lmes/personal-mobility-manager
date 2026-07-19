@@ -166,17 +166,30 @@ def list_channels(
     return NotificationChannelsResponse(channels=channels)
 
 
+def require_known_channel(request: Request, channel: str) -> str:
+    """
+    FastAPI dependency: 404 if `channel` isn't registered in the running
+    system (request.app.state.notification_channels — the same live source
+    GET /notifications/available-channels already reads from).
+    """
+    if channel not in request.app.state.notification_channels:
+        raise HTTPException(status_code=404, detail=f"Unknown notification channel '{channel}'")
+    return channel
+
+
 @router.delete("/channels/{channel}", status_code=204)
 def delete_channel(
     request: Request,
-    channel: str,
     current_user: User = Depends(get_current_user),  # noqa: B008
+    channel: str = Depends(require_known_channel),  # noqa: B008
 ) -> Response:
     """
     Remove the authenticated user's configuration for `channel`.
 
-    Returns 204 No Content — there is no server-side revocation step to
-    report on, unlike the SER provider disconnect endpoint.
+    404s before reaching the use case if `channel` isn't a registered
+    notification channel. Otherwise returns 204 No Content — there is no
+    server-side revocation step to report on, unlike the SER provider
+    disconnect endpoint.
     """
     use_case = request.app.state.remove_notification_channel
 

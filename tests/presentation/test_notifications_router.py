@@ -363,7 +363,7 @@ def test_delete_channel_unauthenticated_returns_401_without_contacting_use_case(
 
 def test_delete_channel_returns_204() -> None:
     mock_uc = MagicMock()
-    app, cookie = _build_authed_app(remove_channel_uc=mock_uc)
+    app, cookie = _build_authed_app(remove_channel_uc=mock_uc, notification_channels={"telegram": MagicMock()})
     client = TestClient(app)
 
     response = client.delete("/notifications/channels/telegram", cookies={"session": cookie})
@@ -371,6 +371,17 @@ def test_delete_channel_returns_204() -> None:
     assert response.status_code == 204
     assert response.content == b""
     mock_uc.execute.assert_called_once_with(user_id=_OWNER_ID, channel="telegram")
+
+
+def test_delete_unknown_channel_returns_404_without_contacting_use_case() -> None:
+    mock_uc = MagicMock()
+    app, cookie = _build_authed_app(remove_channel_uc=mock_uc, notification_channels={"telegram": MagicMock()})
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.delete("/notifications/channels/carrier-pigeon", cookies={"session": cookie})
+
+    assert response.status_code == 404
+    mock_uc.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -299,6 +299,42 @@ class TestSetSerParkingExemption:
         assert response.status_code == 422
         set_uc.execute.assert_not_called()
 
+    def test_city_code_over_max_length_returns_422_without_reaching_use_case(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_vehicle(vehicle_id, _OWNER_ID)
+        set_uc = MagicMock()
+        app, cookie = _build_authed_app(vehicle=vehicle, set_uc=set_uc)
+        client = TestClient(app)
+        client.cookies.set("session", cookie)
+
+        response = client.post(
+            f"/vehicles/{vehicle_id}/ser-parking-exemptions",
+            json={"city_code": "m" * 51, "zone_number": "163"},
+        )
+
+        assert response.status_code == 422
+        set_uc.execute.assert_not_called()
+
+    def test_unrecognized_extra_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_vehicle(vehicle_id, _OWNER_ID)
+        set_uc = MagicMock()
+        app, cookie = _build_authed_app(vehicle=vehicle, set_uc=set_uc)
+        client = TestClient(app)
+        client.cookies.set("session", cookie)
+
+        response = client.post(
+            f"/vehicles/{vehicle_id}/ser-parking-exemptions",
+            json={"city_code": "madrid", "zone_number": "163", "extra_field": "nope"},
+        )
+
+        assert response.status_code == 422
+        set_uc.execute.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # DELETE /vehicles/{id}/ser-parking-exemptions

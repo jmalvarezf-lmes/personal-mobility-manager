@@ -25,6 +25,7 @@ from mobility_manager.config import (
 from mobility_manager.domain.entities.user import User
 from mobility_manager.presentation.api.csrf import generate_signed_state, verify_signed_state
 from mobility_manager.presentation.api.deps import get_current_user
+from mobility_manager.presentation.api.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -55,6 +56,7 @@ async def google_login() -> RedirectResponse:
 
 
 @router.get("/google/callback")
+@limiter.limit("60/minute")
 async def google_callback(
     request: Request,
     code: str | None = None,

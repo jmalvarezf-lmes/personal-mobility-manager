@@ -13,9 +13,11 @@ Only the field shape this change actually needs is supported today:
 
 i.e. an integer field with an inclusive minimum. Unknown/extra keys in
 `config_schema` are ignored rather than rejected (forward-compatible with a
-schema key this validator doesn't understand yet); an unknown/extra key in
-`config` itself is also ignored, since config_schema is the source of truth
-for what's validated, not an exhaustive allow-list.
+schema key this validator doesn't understand yet); a key in `config` that is
+absent from `config_schema`, however, IS rejected — `config` must not carry
+any field the type's `config_schema` doesn't declare, mirroring the
+`extra="forbid"` posture applied to typed request bodies elsewhere in the
+API (see design.md decision 7).
 """
 
 from typing import Any
@@ -29,11 +31,18 @@ def validate_notification_config(config_schema: dict[str, Any], config: dict[str
 
     Raises:
         InvalidNotificationConfigError: if any field declared in
-            `config_schema` is present in `config` but fails validation.
+            `config_schema` is present in `config` but fails validation, or
+            if `config` contains a key absent from `config_schema`.
             A field declared in the schema but absent from `config` is
             valid — callers resolve a missing value via their own fallback
             (e.g. DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS).
     """
+    unknown_keys = set(config) - set(config_schema)
+    if unknown_keys:
+        raise InvalidNotificationConfigError(
+            f"config contains unrecognized key(s): {', '.join(sorted(unknown_keys))}"
+        )
+
     for field_name, field_schema in config_schema.items():
         if field_name not in config:
             continue

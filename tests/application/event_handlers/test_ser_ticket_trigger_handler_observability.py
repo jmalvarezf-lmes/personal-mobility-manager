@@ -71,7 +71,7 @@ class _FakeFindContainingSerZone:
 
 
 class _FakeDetermineSerTicketRequirement:
-    def execute(self, zone) -> bool:
+    def execute(self, zone, vehicle_id: UUID) -> bool:
         return False  # no ticket required -> handler returns early, no notification needed
 
 

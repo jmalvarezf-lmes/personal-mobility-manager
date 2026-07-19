@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -222,4 +223,19 @@ ambient_label_icons_table = Table(
     Column("image_bytes", LargeBinary, nullable=False),
     Column("content_type", String(100), nullable=False),
     Column("fetched_at", DateTime(timezone=True), nullable=False),
+)
+
+vehicle_ser_parking_exemptions_table = Table(
+    "vehicle_ser_parking_exemptions",
+    metadata,
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id", ondelete="CASCADE"), primary_key=True),
+    Column("city_code", Text, nullable=False),
+    Column("zone_number", String(10), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    ForeignKeyConstraint(
+        ["city_code", "zone_number"],
+        ["ser_zone_areas.city_code", "ser_zone_areas.zone_number"],
+        name="fk_vehicle_ser_parking_exemptions_zone_area",
+        ondelete="CASCADE",
+    ),
 )

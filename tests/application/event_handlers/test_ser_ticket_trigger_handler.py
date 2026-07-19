@@ -139,10 +139,10 @@ class FakeFindContainingSerZone:
 class FakeDetermineSerTicketRequirement:
     def __init__(self, required: bool = True) -> None:
         self.required = required
-        self.calls: list[SerZone | None] = []
+        self.calls: list[tuple[SerZone | None, UUID]] = []
 
-    def execute(self, zone: SerZone | None) -> bool:
-        self.calls.append(zone)
+    def execute(self, zone: SerZone | None, vehicle_id: UUID) -> bool:
+        self.calls.append((zone, vehicle_id))
         return self.required
 
 
@@ -466,6 +466,85 @@ def test_skips_notification_when_ticket_not_required() -> None:
     notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     find_containing = FakeFindContainingSerZone()
     find_containing.zone = None
+    determine_requirement = FakeDetermineSerTicketRequirement(required=False)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.handle(event)
+
+    assert send_notification.calls == []
+
+
+def test_determine_ser_ticket_requirement_is_called_with_vehicle_id() -> None:
+    """
+    DetermineSerTicketRequirement must be called with event.vehicle_id so a
+    matching per-vehicle exemption can suppress the requirement (see
+    vehicle-ser-parking-exemption spec.md).
+    """
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    find_containing = FakeFindContainingSerZone()
+    zone = _make_ser_zone(zone_number="163")
+    find_containing.zone = zone
+    determine_requirement = FakeDetermineSerTicketRequirement(required=False)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.handle(event)
+
+    assert determine_requirement.calls == [(zone, vehicle_id)]
+
+
+def test_matching_vehicle_exemption_suppresses_notification() -> None:
+    """
+    When DetermineSerTicketRequirement returns False because of a matching
+    exemption, this handler must behave exactly like any other "no ticket
+    required" outcome — no notification.
+    """
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    find_containing = FakeFindContainingSerZone()
+    find_containing.zone = _make_ser_zone(zone_number="163")
+    # A matching exemption means DetermineSerTicketRequirement itself
+    # returns False — this handler doesn't need to know why.
     determine_requirement = FakeDetermineSerTicketRequirement(required=False)
     send_notification = FakeSendNotification()
     handler = _make_handler(

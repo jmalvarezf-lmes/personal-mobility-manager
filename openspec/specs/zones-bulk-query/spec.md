@@ -1,15 +1,21 @@
-## ADDED Requirements
-
 ### Requirement: Bulk zones endpoint returns all zones for a city
-The API SHALL expose `GET /parking/ser-zones` accepting a required `city` query parameter. When `city=madrid` it SHALL return all SER zones currently stored in the database as a JSON object with a `city` string field, a `zones` array, and a `frontiers` array. Each `zones` entry SHALL include `zone_number`, `zone_type`, `colour`, `district`, `spot_count`, and `geometry` (a GeoJSON `Polygon` or `MultiPolygon` in WGS84) — unchanged from before. Each `frontiers` entry SHALL include `zone_number`, `neighbourhood`, and `geometry` (the real Madrid Barrios administrative boundary polygon, reprojected to WGS84 GeoJSON) — one entry per stored `ser_zone_areas` row, independent of how many colours that zone_number has in `zones`. Street names SHALL NOT be included in either array — this endpoint returns every stored zone/frontier at once and street names are only fetched on a per-zone basis (see `ser-zone-query`'s `GET /parking/ser-zone`).
+The API SHALL expose `GET /parking/ser-zones` accepting a required `city` query parameter. The system SHALL validate `city` against the live `cities` table (see `city-registry`) rather than a hardcoded set of supported cities. When `city` matches a row in `cities`, it SHALL return only the SER zones and frontiers whose stored `city_code` equals `city`, as a JSON object with a `city` string field, a `zones` array, and a `frontiers` array — fetched via dedicated city-scoped repository queries (`list_zones_for_city`/`list_zone_areas_for_city`), not by filtering the unscoped `list_all`/`list_zone_areas` results client-side or in-process. Each `zones` entry SHALL include `zone_number`, `zone_type`, `colour`, `district`, `spot_count`, and `geometry` (a GeoJSON `Polygon` or `MultiPolygon` in WGS84) — unchanged from before. Each `frontiers` entry SHALL include `zone_number`, `neighbourhood`, and `geometry` (the real Madrid Barrios administrative boundary polygon, reprojected to WGS84 GeoJSON) — one entry per stored `ser_zone_areas` row for that city, independent of how many colours that zone_number has in `zones`. Street names SHALL NOT be included in either array — this endpoint returns every stored zone/frontier for one city at once and street names are only fetched on a per-zone basis (see `ser-zone-query`'s `GET /parking/ser-zone`).
 
 #### Scenario: Successful bulk query for Madrid
 - **WHEN** a GET request is made to `/parking/ser-zones?city=madrid`
 - **THEN** the response status is 200 and the body contains `{ "city": "madrid", "zones": [...], "frontiers": [...] }` where each `zones` element has `zone_number`, `zone_type`, `colour`, `district`, `spot_count`, `geometry`, and no `street_names` field, and each `frontiers` element has `zone_number`, `neighbourhood`, `geometry`, and no `colour`/`zone_type`/`street_names` field
 
-#### Scenario: Unknown city returns 404
-- **WHEN** a GET request is made to `/parking/ser-zones?city=barcelona` (not yet supported)
+#### Scenario: City absent from the cities table returns 404
+- **WHEN** a GET request is made to `/parking/ser-zones?city=barcelona` and no `cities` row has `code='barcelona'`
 - **THEN** the response status is 404 with a detail message indicating the city is not supported
+
+#### Scenario: A newly added city becomes queryable without a code change
+- **WHEN** a new row is added to the `cities` table (e.g. `code='barcelona'`) and SER zone data exists for it
+- **THEN** `GET /parking/ser-zones?city=barcelona` returns that city's zones and frontiers without any application code change
+
+#### Scenario: Response is scoped to the requested city only, even when other cities have data
+- **WHEN** `ser_zones` and `ser_zone_areas` contain rows for both `city_code='madrid'` and `city_code='barcelona'`, and a GET request is made to `/parking/ser-zones?city=madrid`
+- **THEN** every element of `zones` and `frontiers` in the response has `city_code='madrid'` in storage — no Barcelona zone or frontier is included
 
 #### Scenario: Empty dataset returns empty lists
 - **WHEN** a GET request is made to `/parking/ser-zones?city=madrid` and no zones are stored
@@ -34,6 +40,33 @@ The API SHALL expose `GET /parking/ser-zones` accepting a required `city` query 
 #### Scenario: Two zone_numbers sharing the same barrio return identical frontier geometry
 - **WHEN** two different zone_numbers both resolve to the same official barrio
 - **THEN** both zone_numbers appear as separate `frontiers` entries with identical `geometry` — this is expected, not deduplicated
+
+### Requirement: Lightweight zone options endpoint for label-only callers
+The API SHALL expose `GET /parking/ser-zone-options` accepting a required `city` query parameter (validated against the live `cities` table, same as `GET /parking/ser-zones`) and an optional `sort` query parameter constrained to `"asc"` or `"desc"` (default `"asc"`). It SHALL return a JSON object with a `city` string field and an `options` array, where each entry has only `zone_number` and `neighbourhood` — no geometry, zone_type, colour, district, or spot_count. This endpoint exists for callers that only need to label a zone by neighbourhood (e.g. the SER parking exemption picker's `<select>`), avoiding the cost of reprojecting and serializing full zone/frontier geometry that `GET /parking/ser-zones` carries. `options` SHALL be sorted by `neighbourhood` in the direction given by `sort`.
+
+#### Scenario: Successful query returns zone_number/neighbourhood pairs only
+- **WHEN** a GET request is made to `/parking/ser-zone-options?city=madrid`
+- **THEN** the response status is 200 and each `options` element has exactly `zone_number` and `neighbourhood`, with no geometry field
+
+#### Scenario: Default sort is ascending by neighbourhood
+- **WHEN** a GET request is made to `/parking/ser-zone-options?city=madrid` with no `sort` parameter
+- **THEN** `options` is ordered by `neighbourhood` ascending (A→Z)
+
+#### Scenario: Explicit descending sort
+- **WHEN** a GET request is made to `/parking/ser-zone-options?city=madrid&sort=desc`
+- **THEN** `options` is ordered by `neighbourhood` descending (Z→A)
+
+#### Scenario: Invalid sort value is rejected
+- **WHEN** a GET request is made to `/parking/ser-zone-options?city=madrid&sort=sideways`
+- **THEN** the response status is 422
+
+#### Scenario: City absent from the cities table returns 404
+- **WHEN** a GET request is made to `/parking/ser-zone-options?city=barcelona` and no `cities` row has `code='barcelona'`
+- **THEN** the response status is 404
+
+#### Scenario: Response is scoped to the requested city only
+- **WHEN** `ser_zone_areas` contains rows for both `city_code='madrid'` and another city, and a GET request is made to `/parking/ser-zone-options?city=madrid`
+- **THEN** every element of `options` corresponds to a `city_code='madrid'` row — no other city's zones are included
 
 ### Requirement: Config endpoint exposes OSM tile URL
 The API SHALL expose `GET /config` returning a JSON object with an `osm_tile_url` field whose value is read from the `OSM_TILE_URL` environment variable. If the variable is not set, the field SHALL be `null`.

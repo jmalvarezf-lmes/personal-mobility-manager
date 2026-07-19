@@ -113,7 +113,19 @@
       "saving": "Guardando…",
       "save": "Guardar",
       "newPassword": "Nueva contraseña",
-      "keepBlank": "(dejar en blanco para no cambiar)"
+      "keepBlank": "(dejar en blanco para no cambiar)",
+      "serExemption": {
+        "title": "Exención de estacionamiento SER",
+        "cityLabel": "Ciudad",
+        "zoneLabel": "Zona SER",
+        "selectCity": "Selecciona una ciudad",
+        "selectZone": "Selecciona una zona",
+        "selectCityFirst": "Selecciona primero una ciudad",
+        "clear": "Quitar",
+        "saveError": "No se pudo guardar la exención de estacionamiento.",
+        "clearError": "No se pudo quitar la exención de estacionamiento.",
+        "loading": "Cargando…"
+      }
     },
     "connectSerProvider": {
       "title": "Conectar {{provider}}",

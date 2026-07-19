@@ -75,7 +75,12 @@ export class MyVehiclesPage {
   }
 
   async submitModal() {
-    await this.modal.getByRole("button", { name: /save|create|add/i }).click();
+    // Anchored to the whole accessible name so it doesn't also match the
+    // SER parking exemption picker's "Clear" button inside the same edit
+    // modal (see ser-parking-exemption.spec.ts). There is now a single save
+    // action for the whole dialog — it persists both the vehicle fields and
+    // any exemption picker changes together.
+    await this.modal.getByRole("button", { name: /^(save|create|add)$/i }).click();
   }
 
   async cancelModal() {
@@ -97,6 +102,45 @@ export class MyVehiclesPage {
 
   get modalPasswordInput(): Locator {
     return this.modal.getByLabel(/password/i);
+  }
+
+  // ------------------------------------------------------------------
+  // SER parking exemption picker (inside the edit modal)
+  // ------------------------------------------------------------------
+
+  get exemptionCitySelect(): Locator {
+    return this.modal.getByLabel(/^city$/i);
+  }
+
+  get exemptionZoneSelect(): Locator {
+    return this.modal.getByLabel(/ser zone/i);
+  }
+
+  // Local-only reset of the picker — does not call the API by itself.
+  // Persisting the clear (if there was a stored exemption) happens via the
+  // single "Save" action (submitModal), same as any other picker change.
+  get clearExemptionButton(): Locator {
+    return this.modal.getByRole("button", { name: /^clear$/i });
+  }
+
+  async selectExemptionCity(cityLabel: string) {
+    await this.exemptionCitySelect.selectOption({ label: cityLabel });
+  }
+
+  async selectExemptionZone(zoneLabel: string) {
+    await this.exemptionZoneSelect.selectOption({ label: zoneLabel });
+  }
+
+  // Persists both the vehicle fields and any exemption picker changes in
+  // one action — there is no separate "save exemption" button anymore.
+  async saveExemption() {
+    await this.submitModal();
+  }
+
+  // Local-only reset of the picker; does not itself call the API. Combine
+  // with saveExemption() to actually persist the clear.
+  async clearExemption() {
+    await this.clearExemptionButton.click();
   }
 
   // ------------------------------------------------------------------

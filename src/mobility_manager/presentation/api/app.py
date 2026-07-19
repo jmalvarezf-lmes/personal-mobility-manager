@@ -27,6 +27,9 @@ from mobility_manager.application.event_handlers.ser_ticket_trigger_handler impo
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
 )
+from mobility_manager.application.use_cases.clear_vehicle_ser_parking_exemption import (
+    ClearVehicleSerParkingExemption,
+)
 from mobility_manager.application.use_cases.connect_ser_ticket_provider import (
     ConnectSerTicketProvider,
 )
@@ -50,6 +53,9 @@ from mobility_manager.application.use_cases.generate_telegram_link_code import (
 from mobility_manager.application.use_cases.get_latest_vehicle_location import (
     GetLatestVehicleLocation,
 )
+from mobility_manager.application.use_cases.get_vehicle_ser_parking_exemption import (
+    GetVehicleSerParkingExemption,
+)
 from mobility_manager.application.use_cases.ingest_ser_zones import IngestSerZones
 from mobility_manager.application.use_cases.list_notification_channels import (
     ListNotificationChannels,
@@ -72,6 +78,9 @@ from mobility_manager.application.use_cases.remove_notification_channel import (
     RemoveNotificationChannel,
 )
 from mobility_manager.application.use_cases.send_notification import SendNotification
+from mobility_manager.application.use_cases.set_vehicle_ser_parking_exemption import (
+    SetVehicleSerParkingExemption,
+)
 from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.config import (
     get_ambient_label_poll_interval_minutes,
@@ -120,6 +129,9 @@ from mobility_manager.infrastructure.parking_services.provider_registry import (
 from mobility_manager.infrastructure.repositories.postgres.ambient_label_icon_repo import (
     PostgresAmbientLabelIconRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.city_repo import (
+    PostgresCityRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.holiday_repo import (
     PostgresHolidayRepository,
 )
@@ -159,6 +171,9 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo
 from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
     PostgresVehicleRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_exemption_repo import (
+    PostgresVehicleSerParkingExemptionRepository,
+)
 from mobility_manager.infrastructure.scheduler import ParkingIngestionScheduler
 from mobility_manager.infrastructure.ser_ticket_providers.registry import (
     SerTicketProviderRegistry,
@@ -178,6 +193,7 @@ from mobility_manager.presentation.api.routers.ambient_labels import (
     router as ambient_labels_router,
 )
 from mobility_manager.presentation.api.routers.auth import router as auth_router
+from mobility_manager.presentation.api.routers.cities import router as cities_router
 from mobility_manager.presentation.api.routers.config import router as config_router
 from mobility_manager.presentation.api.routers.notification_preferences import (
     router as notification_preferences_router,
@@ -217,6 +233,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     meter_provider: MeterProvider | None = None
     if get_otel_endpoint():
         tracer_provider, meter_provider = init_observability(app, engine)
+
+    # --- Cities (city-registry) ---
+    # Built early: GET /parking/ser-zones (below) and GET /cities both need
+    # the live cities table as their sole source of truth for which city
+    # codes are valid — see add-vehicle-ser-parking-exemption design.md D6/D7.
+    city_repo = PostgresCityRepository(engine)
+    app.state.city_repo = city_repo
 
     # --- Parking (existing) ---
     repo = PostgresSerZoneRepository(engine)
@@ -317,6 +340,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_config_repo = PostgresVehicleConfigRepository(engine, encryption_key)
     vehicle_location_repo = PostgresVehicleLocationRepository(engine)
 
+    # --- SER parking exemption ---
+    # Built here (ahead of --- Events ---) since DetermineSerTicketRequirement
+    # (constructed in the Events block below) now needs it injected — see
+    # add-vehicle-ser-parking-exemption design.md D4.
+    vehicle_ser_parking_exemption_repo = PostgresVehicleSerParkingExemptionRepository(engine)
+    get_vehicle_ser_parking_exemption_uc = GetVehicleSerParkingExemption(
+        exemption_repo=vehicle_ser_parking_exemption_repo
+    )
+    set_vehicle_ser_parking_exemption_uc = SetVehicleSerParkingExemption(
+        exemption_repo=vehicle_ser_parking_exemption_repo
+    )
+    clear_vehicle_ser_parking_exemption_uc = ClearVehicleSerParkingExemption(
+        exemption_repo=vehicle_ser_parking_exemption_repo
+    )
+    app.state.vehicle_ser_parking_exemption_repo = vehicle_ser_parking_exemption_repo
+    app.state.get_vehicle_ser_parking_exemption = get_vehicle_ser_parking_exemption_uc
+    app.state.set_vehicle_ser_parking_exemption = set_vehicle_ser_parking_exemption_uc
+    app.state.clear_vehicle_ser_parking_exemption = clear_vehicle_ser_parking_exemption_uc
+
     # --- Ambient label (DGT distintivo ambiental) ---
     # Additive and off the request path except for the best-effort call
     # inside RegisterVehicle.execute() below, which is itself try/except
@@ -344,7 +386,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
     ser_enforcement_schedule = PostgresSerEnforcementSchedule(engine)
-    determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement(enforcement_schedule=ser_enforcement_schedule)
+    determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement(
+        enforcement_schedule=ser_enforcement_schedule,
+        exemption_repo=vehicle_ser_parking_exemption_repo,
+    )
     ser_ticket_trigger_handler = SerTicketTriggerHandler(
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
@@ -481,6 +526,7 @@ app.include_router(auth_router)
 app.include_router(parking_router)
 app.include_router(zones_router)
 app.include_router(config_router)
+app.include_router(cities_router)
 app.include_router(vehicles_router)
 app.include_router(preferences_router)
 app.include_router(ser_ticket_providers_router)

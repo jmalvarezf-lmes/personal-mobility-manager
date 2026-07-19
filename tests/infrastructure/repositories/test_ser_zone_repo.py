@@ -135,6 +135,83 @@ def test_list_zone_areas_skips_invalid_geometry_row() -> None:
 
 
 # ---------------------------------------------------------------------------
+# list_zones_for_city / list_zone_areas_for_city (see
+# add-vehicle-ser-parking-exemption design.md D7)
+# ---------------------------------------------------------------------------
+
+
+def _make_engine_capturing_query_and_params() -> tuple[MagicMock, MagicMock]:
+    engine = MagicMock()
+    conn = MagicMock()
+    engine.connect.return_value.__enter__.return_value = conn
+    return engine, conn
+
+
+def test_list_zones_for_city_issues_a_where_city_code_clause_with_the_given_city() -> None:
+    engine, conn = _make_engine_capturing_query_and_params()
+    conn.execute.return_value.fetchall.return_value = [
+        ("madrid", "100", "Azul", "CENTRO", 5, _VALID_WKT),
+    ]
+    repo = PostgresSerZoneRepository(engine)
+
+    zones = repo.list_zones_for_city("madrid")
+
+    assert len(zones) == 1
+    assert zones[0].zone_number == "100"
+    call = conn.execute.call_args
+    sql = str(call.args[0])
+    params = call.args[1]
+    assert "WHERE city_code = :city_code" in sql
+    assert params == {"city_code": "madrid"}
+
+
+def test_list_zones_for_city_skips_invalid_geometry_row() -> None:
+    engine, conn = _make_engine_capturing_query_and_params()
+    conn.execute.return_value.fetchall.return_value = [
+        ("madrid", "100", "Azul", "CENTRO", 5, _VALID_WKT),
+        ("madrid", "200", "Verde", "CENTRO", 3, "garbage"),
+    ]
+    repo = PostgresSerZoneRepository(engine)
+
+    zones = repo.list_zones_for_city("madrid")
+
+    assert len(zones) == 1
+    assert zones[0].zone_number == "100"
+
+
+def test_list_zone_areas_for_city_issues_a_where_city_code_clause_with_the_given_city() -> None:
+    engine, conn = _make_engine_capturing_query_and_params()
+    conn.execute.return_value.fetchall.return_value = [
+        ("madrid", "100", "Palacio", _VALID_WKT),
+    ]
+    repo = PostgresSerZoneRepository(engine)
+
+    zone_areas = repo.list_zone_areas_for_city("madrid")
+
+    assert len(zone_areas) == 1
+    assert zone_areas[0].neighbourhood == "Palacio"
+    call = conn.execute.call_args
+    sql = str(call.args[0])
+    params = call.args[1]
+    assert "WHERE city_code = :city_code" in sql
+    assert params == {"city_code": "madrid"}
+
+
+def test_list_zone_areas_for_city_skips_invalid_geometry_row() -> None:
+    engine, conn = _make_engine_capturing_query_and_params()
+    conn.execute.return_value.fetchall.return_value = [
+        ("madrid", "100", "Palacio", _VALID_WKT),
+        ("madrid", "200", "Sol", "garbage"),
+    ]
+    repo = PostgresSerZoneRepository(engine)
+
+    zone_areas = repo.list_zone_areas_for_city("madrid")
+
+    assert len(zone_areas) == 1
+    assert zone_areas[0].zone_number == "100"
+
+
+# ---------------------------------------------------------------------------
 # get_street_names / get_zone_area: filtering when two cities share a
 # zone_number/zone_type (see add-ser-enforcement-calendar tasks.md 8.5)
 # ---------------------------------------------------------------------------
@@ -225,19 +302,39 @@ def _bulk_replace_zone_record(city_code: str = "madrid", zone_number: str = "163
 
 
 def test_bulk_replace_deletes_are_scoped_to_the_ingested_city_code_not_a_truncate() -> None:
+    """
+    ser_zones/ser_zone_streets: unchanged scoped text() DELETEs. ser_zone_areas:
+    no zone_areas passed here (empty zone_area_rows), so it still hits the
+    "delete all rows for this city" edge-case path — via a Core
+    .delete().where() construct, not text() — see
+    add-vehicle-ser-parking-exemption tasks.md 11.4.
+    """
     engine, conn = _make_engine_for_bulk_replace()
     repo = PostgresSerZoneRepository(engine)
 
     repo.bulk_replace([_bulk_replace_zone_record(city_code="madrid")])
 
-    delete_calls = [call for call in conn.execute.call_args_list if "DELETE" in str(call.args[0])]
-    assert len(delete_calls) == 3  # ser_zones, ser_zone_streets, ser_zone_areas
-    for call in delete_calls:
+    text_delete_calls = [
+        call
+        for call in conn.execute.call_args_list
+        if "DELETE" in str(call.args[0]) and "ser_zone_areas" not in str(call.args[0])
+    ]
+    assert len(text_delete_calls) == 2  # ser_zones, ser_zone_streets
+    for call in text_delete_calls:
         sql = str(call.args[0])
         params = call.args[1]
         assert "TRUNCATE" not in sql
         assert "WHERE city_code = :city_code" in sql
         assert params == {"city_code": "madrid"}
+
+    core_delete_calls = [
+        call for call in conn.execute.call_args_list if "DELETE" in str(call.args[0]) and "ser_zone_areas" in str(call.args[0])
+    ]
+    assert len(core_delete_calls) == 1
+    core_delete_sql = str(core_delete_calls[0].args[0])
+    assert "TRUNCATE" not in core_delete_sql
+    assert "ser_zone_areas" in core_delete_sql
+    assert "city_code" in core_delete_sql
 
 
 def test_bulk_replace_scopes_delete_to_the_specific_city_being_ingested() -> None:
@@ -247,10 +344,66 @@ def test_bulk_replace_scopes_delete_to_the_specific_city_being_ingested() -> Non
 
     repo.bulk_replace([_bulk_replace_zone_record(city_code="barcelona")])
 
-    delete_calls = [call for call in conn.execute.call_args_list if "DELETE" in str(call.args[0])]
-    assert len(delete_calls) == 3
-    for call in delete_calls:
+    text_delete_calls = [
+        call
+        for call in conn.execute.call_args_list
+        if "DELETE" in str(call.args[0]) and "ser_zone_areas" not in str(call.args[0])
+    ]
+    assert len(text_delete_calls) == 2
+    for call in text_delete_calls:
         assert call.args[1] == {"city_code": "barcelona"}
+
+    core_delete_calls = [
+        call for call in conn.execute.call_args_list if "DELETE" in str(call.args[0]) and "ser_zone_areas" in str(call.args[0])
+    ]
+    assert len(core_delete_calls) == 1
+
+
+def test_bulk_replace_upserts_ser_zone_areas_when_zone_areas_provided_not_delete_then_insert() -> None:
+    """
+    When zone_areas is non-empty, ser_zone_areas must be upserted (INSERT ...
+    ON CONFLICT DO UPDATE), never delete-then-insert — a blanket DELETE would
+    violate vehicle_ser_parking_exemptions' composite FK for any vehicle with
+    a saved exemption referencing a still-live zone_number. See
+    add-vehicle-ser-parking-exemption tasks.md 11.4.
+    """
+    engine, conn = _make_engine_for_bulk_replace()
+    repo = PostgresSerZoneRepository(engine)
+
+    repo.bulk_replace(
+        [_bulk_replace_zone_record(city_code="madrid", zone_number="163")],
+        zone_areas=[
+            {
+                "city_code": "madrid",
+                "zone_number": "163",
+                "neighbourhood": "Sol",
+                "geometry_wkt": _VALID_WKT,
+            }
+        ],
+    )
+
+    # No unconditional "DELETE FROM ser_zone_areas WHERE city_code = ..." text() call
+    # (that unscoped-by-zone_number form is what used to violate the FK).
+    unconditional_delete_calls = [
+        call
+        for call in conn.execute.call_args_list
+        if "DELETE" in str(call.args[0]) and "ser_zone_areas" in str(call.args[0]) and "NOT IN" not in str(call.args[0])
+    ]
+    assert unconditional_delete_calls == []
+
+    insert_calls = [
+        call for call in conn.execute.call_args_list if "INSERT" in str(call.args[0]) and "ON CONFLICT" in str(call.args[0])
+    ]
+    assert len(insert_calls) == 1
+
+    # A targeted DELETE (retired zones only) is still issued via the Core delete() construct.
+    core_delete_calls = [
+        call
+        for call in conn.execute.call_args_list
+        if "DELETE" in str(call.args[0]) and "ser_zone_areas" in str(call.args[0])
+    ]
+    assert len(core_delete_calls) == 1
+    assert "NOT IN" in str(core_delete_calls[0].args[0])
 
 
 def test_bulk_replace_with_empty_records_is_a_no_op() -> None:

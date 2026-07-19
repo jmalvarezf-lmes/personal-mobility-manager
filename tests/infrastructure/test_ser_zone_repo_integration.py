@@ -78,12 +78,16 @@ def pg_engine():
         )
         conn.execute(text("TRUNCATE ser_zones"))
         conn.execute(text("TRUNCATE ser_zone_streets"))
-        conn.execute(text("TRUNCATE ser_zone_areas"))
+        # vehicle_ser_parking_exemptions FKs into ser_zone_areas (see
+        # add-vehicle-ser-parking-exemption) — Postgres refuses to truncate a
+        # referenced table unless the referencing table is truncated in the
+        # same statement (or CASCADE is used), even if that table is empty.
+        conn.execute(text("TRUNCATE vehicle_ser_parking_exemptions, ser_zone_areas"))
     yield engine
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE ser_zones"))
         conn.execute(text("TRUNCATE ser_zone_streets"))
-        conn.execute(text("TRUNCATE ser_zone_areas"))
+        conn.execute(text("TRUNCATE vehicle_ser_parking_exemptions, ser_zone_areas"))
     engine.dispose()
 
 

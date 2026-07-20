@@ -8,9 +8,10 @@ interface VehicleCardProps {
   vehicle: VehicleListItem;
   onEdit: (detail: VehicleDetail) => void;
   onDeleted: (vehicleId: string) => void;
+  onViewHistory: (vehicle: VehicleListItem) => void;
 }
 
-export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardProps) {
+export default function VehicleCard({ vehicle, onEdit, onDeleted, onViewHistory }: VehicleCardProps) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -86,12 +87,21 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted }: VehicleCardP
         </div>
       )}
 
-      <div className="mt-2 text-sm text-gray-600">
+      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-600">
         {vehicle.location ? (
-          <p>
-            {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
-            {vehicle.location.longitude.toFixed(5)}
-          </p>
+          <>
+            <p>
+              {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
+              {vehicle.location.longitude.toFixed(5)}
+            </p>
+            <button
+              type="button"
+              onClick={() => onViewHistory(vehicle)}
+              className="shrink-0 rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
+            >
+              {t("vehicle.viewHistory")}
+            </button>
+          </>
         ) : (
           <p className="italic text-gray-400">{t("vehicle.noLocation")}</p>
         )}

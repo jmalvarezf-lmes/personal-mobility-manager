@@ -4,6 +4,11 @@ export interface VehicleLocation {
   recorded_at: string;
 }
 
+export interface VehicleLocationHistoryPage {
+  items: VehicleLocation[];
+  has_more: boolean;
+}
+
 export interface VehicleListItem {
   vehicle_id: string;
   brand: "toyota" | "generic";

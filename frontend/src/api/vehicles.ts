@@ -2,6 +2,7 @@ import type {
   SerParkingExemption,
   VehicleDetail,
   VehicleListItem,
+  VehicleLocationHistoryPage,
 } from "../types/vehicle";
 
 export async function listVehicles(): Promise<VehicleListItem[]> {
@@ -61,6 +62,26 @@ export async function deleteVehicle(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete vehicle: ${response.status}`);
   }
+}
+
+export async function getVehicleLocationHistory(
+  vehicleId: string,
+  { limit = 5, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<VehicleLocationHistoryPage> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetch(
+    `/api/vehicles/${vehicleId}/locations?${params.toString()}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to get vehicle location history: ${response.status}`,
+    );
+  }
+  return (await response.json()) as VehicleLocationHistoryPage;
 }
 
 export async function getSerParkingExemption(

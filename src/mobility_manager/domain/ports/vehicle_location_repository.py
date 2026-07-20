@@ -45,3 +45,16 @@ class VehicleLocationRepository(ABC):
         recorded_at would then skip past the true previous row.
         """
         ...
+
+    @abstractmethod
+    def list_history(self, vehicle_id: UUID, limit: int, offset: int) -> tuple[list[VehicleLocation], bool]:
+        """
+        Return a page of `vehicle_id`'s location history, newest first.
+
+        Returns up to `limit` rows ordered by recorded_at descending,
+        starting at `offset`, paired with a boolean indicating whether
+        further rows exist beyond this page (has_more). Does not alter
+        save/get_latest/get_previous behavior — see add-vehicle-location-
+        history design.md.
+        """
+        ...

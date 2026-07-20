@@ -188,6 +188,13 @@ class VehicleLocationResponse(BaseModel):
     source: Literal["pull", "push"]
 
 
+class VehicleLocationHistoryResponse(BaseModel):
+    """A page of a vehicle's location history, newest first."""
+
+    items: list[VehicleLocationResponse]
+    has_more: bool
+
+
 # ---------------------------------------------------------------------------
 # Vehicle list / detail schemas (GET /vehicles, GET /vehicles/{id})
 # ---------------------------------------------------------------------------

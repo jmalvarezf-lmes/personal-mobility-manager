@@ -139,6 +139,14 @@
       "instructions": "Abre este enlace para vincular tu cuenta de Telegram:",
       "waiting": "Esperando confirmación…",
       "stillWaiting": "Todavía esperando — puedes cerrar esto y volver más tarde."
+    },
+    "locationHistory": {
+      "title": "Historial de ubicaciones — {{name}}",
+      "loading": "Cargando…",
+      "loadMore": "Cargar más",
+      "loadingMore": "Cargando más…",
+      "empty": "Este vehículo no tiene historial de ubicaciones.",
+      "error": "No se pudo cargar el historial de ubicaciones. Inténtalo de nuevo."
     }
   },
   "vehicle": {
@@ -149,6 +157,7 @@
     "pushUrl": "URL de envío",
     "location": "Ubicación",
     "noLocation": "Sin datos de ubicación",
+    "viewHistory": "Ver historial",
     "licensePlate": "Matrícula",
     "noLicensePlate": "Sin matrícula",
     "ambientLabel": "Etiqueta ambiental",

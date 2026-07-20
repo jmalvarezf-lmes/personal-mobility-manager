@@ -39,8 +39,8 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Manually verify against the running stack: open history for a vehicle with >5 locations, confirm map pins + polyline + newest-pin distinction + popup timestamps + list pairing, click "Load more" through to exhaustion, confirm control disappears
-- [ ] 7.2 Verify empty state for a vehicle with no locations, and that no "View history" button is shown in that case
+- [x] 7.1 Manually verify against the running stack: open history for a vehicle with >5 locations, confirm map pins + polyline + newest-pin distinction + popup timestamps + list pairing, click "Load more" through to exhaustion, confirm control disappears — confirmed working by user against the live stack
+- [x] 7.2 Verify empty state for a vehicle with no locations, and that no "View history" button is shown in that case — confirmed working by user against the live stack
 - [x] 7.3 Run backend and frontend test suites — backend: `pytest tests/` (with local Postgres via `docker compose up -d postgres`) → 828 passed, 1 pre-existing/unrelated failure (`test_ser_enforcement_calendar_migrations_integration.py`, fails identically on the pre-change commit — stale local Postgres volume, not caused by this change). Frontend: no test runner is configured in this repo (no vitest/jest, no `.test.tsx` files anywhere) — ran `npm run type-check`, `npm run lint`, and `npm run build` instead, all pass.
 
 ## 8. Corrections from live-environment review

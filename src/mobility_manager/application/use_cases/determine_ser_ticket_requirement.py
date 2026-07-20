@@ -6,9 +6,16 @@ a given SER zone (or not in any zone at all). A ticket is required only if
 the vehicle is inside a zone AND SER enforcement is currently active for
 that zone's city (weekday hours, calendar exceptions, and holiday status —
 see add-ser-enforcement-calendar design.md D4), evaluated via the injected
-`SerEnforcementSchedule` dependency, AND the vehicle has no stored
+`SerEnforcementSchedule` dependency, AND the vehicle either has no stored
 exemption matching the zone's `(city_code, zone_number)` (see
-add-vehicle-ser-parking-exemption design.md D4).
+add-vehicle-ser-parking-exemption design.md D4), or its matching exemption's
+zone fails the injected `SerExemptionZoneRule` dependency's
+`is_zone_eligible(zone)` check (see add-ser-exemption-zone-rule design.md —
+e.g. Madrid requires the zone to be green ("Verde") for the exemption to
+actually apply). This use case stays city-agnostic: it never names Madrid
+or any zone-type string itself, delegating that per-city fact entirely to
+the injected zone rule. The zone rule is only consulted once a matching
+exemption is confirmed, preserving the cheapest-check-first ordering.
 
 This is deliberately modeled as its own use case rather than a bare function
 or a method on SerZone, because it is the designated seam for factors that
@@ -29,6 +36,7 @@ from uuid import UUID
 
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.ports.ser_enforcement_schedule import SerEnforcementSchedule
+from mobility_manager.domain.ports.ser_exemption_zone_rule import SerExemptionZoneRule
 from mobility_manager.domain.ports.vehicle_ser_parking_exemption_repository import (
     VehicleSerParkingExemptionRepository,
 )
@@ -41,29 +49,35 @@ class DetermineSerTicketRequirement:
         self,
         enforcement_schedule: SerEnforcementSchedule,
         exemption_repo: VehicleSerParkingExemptionRepository,
+        exemption_zone_rule: SerExemptionZoneRule,
     ) -> None:
         self._enforcement_schedule = enforcement_schedule
         self._exemption_repo = exemption_repo
+        self._exemption_zone_rule = exemption_zone_rule
 
     def execute(self, zone: SerZone | None, vehicle_id: UUID) -> bool:
         """
         Return whether a ticket is currently required for `vehicle_id` in `zone`.
 
-        Returns False immediately if `zone` is None, without consulting
-        either injected dependency. Otherwise, returns False if the
-        injected enforcement-schedule dependency's
-        `is_active_now(zone.city_code)` returns False, without consulting
-        the exemption repository. Otherwise, looks up the vehicle's stored
-        exemption; if it matches `(zone.city_code, zone.zone_number)`,
-        returns False. Otherwise returns True. No home-proximity logic is
-        evaluated yet — see module docstring.
+        Returns False immediately if `zone` is None, without consulting any
+        injected dependency. Otherwise, returns False if the injected
+        enforcement-schedule dependency's `is_active_now(zone.city_code)`
+        returns False, without consulting the exemption repository or the
+        zone rule. Otherwise, looks up the vehicle's stored exemption; if it
+        does not match `(zone.city_code, zone.zone_number)`, returns True
+        without consulting the zone rule. Otherwise (a matching exemption
+        exists), returns False only if the injected `SerExemptionZoneRule`
+        dependency's `is_zone_eligible(zone)` returns True. No
+        home-proximity logic is evaluated yet — see module docstring.
         """
         if zone is None:
             return False
         if not self._enforcement_schedule.is_active_now(zone.city_code):
             return False
         exemption = self._exemption_repo.find_by_vehicle_id(vehicle_id)
-        return exemption is None or (exemption.city_code, exemption.zone_number) != (
+        if exemption is None or (exemption.city_code, exemption.zone_number) != (
             zone.city_code,
             zone.zone_number,
-        )
+        ):
+            return True
+        return not self._exemption_zone_rule.is_zone_eligible(zone)

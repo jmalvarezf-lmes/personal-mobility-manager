@@ -126,6 +126,9 @@ from mobility_manager.infrastructure.parking_services.provider_registry import (
     build_providers,
     list_city_codes,
 )
+from mobility_manager.infrastructure.parking_services.ser_exemption_zone_rules import (
+    CitySerExemptionZoneRule,
+)
 from mobility_manager.infrastructure.repositories.postgres.ambient_label_icon_repo import (
     PostgresAmbientLabelIconRepository,
 )
@@ -386,9 +389,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # than moving down with the rest of this block.
     event_publisher = InMemoryEventPublisher()
     ser_enforcement_schedule = PostgresSerEnforcementSchedule(engine)
+    ser_exemption_zone_rule = CitySerExemptionZoneRule()
     determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement(
         enforcement_schedule=ser_enforcement_schedule,
         exemption_repo=vehicle_ser_parking_exemption_repo,
+        exemption_zone_rule=ser_exemption_zone_rule,
     )
     ser_ticket_trigger_handler = SerTicketTriggerHandler(
         vehicle_repo=vehicle_repo,

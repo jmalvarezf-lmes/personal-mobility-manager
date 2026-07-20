@@ -46,11 +46,23 @@ class _FakeVehicleSerParkingExemptionRepository:
         raise NotImplementedError
 
 
-def _make_ser_zone(zone_number: str = "163") -> SerZone:
+class _FakeSerExemptionZoneRule:
+    """Minimal fake exemption zone rule returning a fixed answer."""
+
+    def __init__(self, eligible: bool = True) -> None:
+        self._eligible = eligible
+        self.calls: list[SerZone] = []
+
+    def is_zone_eligible(self, zone: SerZone) -> bool:
+        self.calls.append(zone)
+        return self._eligible
+
+
+def _make_ser_zone(zone_number: str = "163", zone_type: str = "Azul") -> SerZone:
     return SerZone(
         city_code="madrid",
         zone_number=zone_number,
-        zone_type="Azul",
+        zone_type=zone_type,
         district="CENTRO",
         spot_count=15,
         geometry=_SQUARE,
@@ -71,6 +83,7 @@ def test_execute_returns_true_when_zone_is_not_none_and_enforcement_active_no_ex
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     assert use_case.execute(_make_ser_zone(), vehicle_id) is True
@@ -87,6 +100,7 @@ def test_execute_returns_false_when_zone_is_not_none_and_enforcement_inactive() 
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     assert use_case.execute(_make_ser_zone(), vehicle_id) is False
@@ -97,22 +111,29 @@ def test_execute_returns_false_when_zone_is_none() -> None:
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     assert use_case.execute(None, vehicle_id) is False
 
 
 def test_execute_does_not_consult_dependencies_when_zone_is_none() -> None:
-    """zone=None must short-circuit without calling either injected dependency."""
+    """zone=None must short-circuit without calling any injected dependency."""
     vehicle_id = uuid4()
     fake_schedule = _FakeSerEnforcementSchedule(active=True)
     fake_exemption_repo = _FakeVehicleSerParkingExemptionRepository(exemption=None)
-    use_case = DetermineSerTicketRequirement(enforcement_schedule=fake_schedule, exemption_repo=fake_exemption_repo)
+    fake_zone_rule = _FakeSerExemptionZoneRule()
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=fake_schedule,
+        exemption_repo=fake_exemption_repo,
+        exemption_zone_rule=fake_zone_rule,
+    )
 
     use_case.execute(None, vehicle_id)
 
     assert fake_schedule.calls == []
     assert fake_exemption_repo.calls == []
+    assert fake_zone_rule.calls == []
 
 
 def test_execute_does_not_consult_exemption_repo_when_enforcement_inactive() -> None:
@@ -122,6 +143,7 @@ def test_execute_does_not_consult_exemption_repo_when_enforcement_inactive() -> 
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=fake_exemption_repo,
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     use_case.execute(_make_ser_zone(), vehicle_id)
@@ -136,6 +158,7 @@ def test_execute_delegates_to_enforcement_schedule_with_zone_city_code_when_zone
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=fake_schedule,
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     use_case.execute(_make_ser_zone(), vehicle_id)
@@ -144,14 +167,33 @@ def test_execute_delegates_to_enforcement_schedule_with_zone_city_code_when_zone
 
 
 def test_execute_returns_false_when_vehicle_has_matching_exemption() -> None:
+    """A matching exemption in a green ("Verde") Madrid zone remains exempt."""
     vehicle_id = uuid4()
     exemption = _make_exemption(vehicle_id, city_code="madrid", zone_number="163")
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(eligible=True),
     )
 
-    assert use_case.execute(_make_ser_zone(zone_number="163"), vehicle_id) is False
+    zone = _make_ser_zone(zone_number="163", zone_type="Verde")
+
+    assert use_case.execute(zone, vehicle_id) is False
+
+
+def test_execute_returns_true_when_vehicle_has_matching_exemption_but_zone_rule_rejects_zone() -> None:
+    """A matching exemption in a non-green Madrid zone now requires a ticket."""
+    vehicle_id = uuid4()
+    exemption = _make_exemption(vehicle_id, city_code="madrid", zone_number="163")
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(eligible=False),
+    )
+
+    zone = _make_ser_zone(zone_number="163", zone_type="Azul")
+
+    assert use_case.execute(zone, vehicle_id) is True
 
 
 def test_execute_returns_true_when_vehicle_exemption_is_for_a_different_zone() -> None:
@@ -160,9 +202,26 @@ def test_execute_returns_true_when_vehicle_exemption_is_for_a_different_zone() -
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     assert use_case.execute(_make_ser_zone(zone_number="163"), vehicle_id) is True
+
+
+def test_execute_does_not_consult_zone_rule_when_exemption_does_not_match() -> None:
+    """No matching exemption must short-circuit before the zone rule is consulted."""
+    vehicle_id = uuid4()
+    exemption = _make_exemption(vehicle_id, city_code="madrid", zone_number="200")
+    fake_zone_rule = _FakeSerExemptionZoneRule()
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
+        exemption_zone_rule=fake_zone_rule,
+    )
+
+    use_case.execute(_make_ser_zone(zone_number="163"), vehicle_id)
+
+    assert fake_zone_rule.calls == []
 
 
 def test_execute_looks_up_exemption_by_vehicle_id() -> None:
@@ -171,6 +230,7 @@ def test_execute_looks_up_exemption_by_vehicle_id() -> None:
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
     )
 
     use_case.execute(_make_ser_zone(), vehicle_id)

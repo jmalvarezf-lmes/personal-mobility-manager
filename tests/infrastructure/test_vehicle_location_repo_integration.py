@@ -298,6 +298,143 @@ def test_get_previous_ties_on_recorded_at_use_received_at(pg_engine) -> None:
     assert previous.latitude == 2.0  # must be poll_1 (same position), not old_position
 
 
+def test_list_history_returns_newest_first_page(pg_engine) -> None:
+    """10 rows, limit=5, offset=0 -> 5 rows, highest recorded_at first, has_more True."""
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    for i in range(10):
+        repo.save(
+            VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=float(i),
+                longitude=0.0,
+                recorded_at=now + timedelta(minutes=i),
+                received_at=now + timedelta(minutes=i),
+                source="pull",
+            )
+        )
+
+    items, has_more = repo.list_history(vehicle_id, limit=5, offset=0)
+
+    assert has_more is True
+    assert len(items) == 5
+    assert [item.latitude for item in items] == [9.0, 8.0, 7.0, 6.0, 5.0]
+    assert items == sorted(items, key=lambda loc: loc.recorded_at, reverse=True)
+
+
+def test_list_history_reports_no_further_pages(pg_engine) -> None:
+    """3 rows, limit=5, offset=0 -> all 3 rows, has_more False."""
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    for i in range(3):
+        repo.save(
+            VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=float(i),
+                longitude=0.0,
+                recorded_at=now + timedelta(minutes=i),
+                received_at=now + timedelta(minutes=i),
+                source="pull",
+            )
+        )
+
+    items, has_more = repo.list_history(vehicle_id, limit=5, offset=0)
+
+    assert has_more is False
+    assert len(items) == 3
+
+
+def test_list_history_second_page_via_offset(pg_engine) -> None:
+    """8 rows, limit=5, offset=5 -> remaining 3 rows, has_more False."""
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    for i in range(8):
+        repo.save(
+            VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=float(i),
+                longitude=0.0,
+                recorded_at=now + timedelta(minutes=i),
+                received_at=now + timedelta(minutes=i),
+                source="pull",
+            )
+        )
+
+    items, has_more = repo.list_history(vehicle_id, limit=5, offset=5)
+
+    assert has_more is False
+    assert len(items) == 3
+    assert [item.latitude for item in items] == [2.0, 1.0, 0.0]
+
+
+def test_list_history_out_of_range_offset_returns_empty(pg_engine) -> None:
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    repo.save(
+        VehicleLocation(
+            id=uuid4(),
+            vehicle_id=vehicle_id,
+            latitude=1.0,
+            longitude=0.0,
+            recorded_at=now,
+            received_at=now,
+            source="pull",
+        )
+    )
+
+    items, has_more = repo.list_history(vehicle_id, limit=5, offset=10)
+
+    assert items == []
+    assert has_more is False
+
+
+def test_list_history_unknown_vehicle_returns_empty(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    items, has_more = repo.list_history(uuid4(), limit=5, offset=0)
+
+    assert items == []
+    assert has_more is False
+
+
 def test_get_previous_returns_none_for_first_ever_location(pg_engine) -> None:
     from mobility_manager.domain.entities.vehicle_location import VehicleLocation
     from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (

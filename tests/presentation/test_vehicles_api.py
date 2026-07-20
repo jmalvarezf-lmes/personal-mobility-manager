@@ -75,6 +75,7 @@ def _build_app(
     user_repo=None,
     vehicle_repo=None,
     ambient_label_repo=None,
+    list_history_uc=None,
 ) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
@@ -101,6 +102,8 @@ def _build_app(
         app.state.vehicle_repo = vehicle_repo
     if ambient_label_repo is not None:
         app.state.vehicle_ambient_label_repo = ambient_label_repo
+    if list_history_uc is not None:
+        app.state.list_vehicle_location_history = list_history_uc
     return app
 
 
@@ -1398,3 +1401,157 @@ class TestUpdateVehicle:
 
         assert response.status_code == 200
         assert response.json()["license_plate"] is None
+
+
+# ---------------------------------------------------------------------------
+# GET /vehicles/{vehicle_id}/locations — paginated location history
+# ---------------------------------------------------------------------------
+
+
+class TestListLocationHistory:
+    def test_unauthenticated_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = None
+        client = TestClient(
+            _build_app(user_repo=mock_repo),
+            raise_server_exceptions=False,
+        )
+
+        response = client.get(f"/vehicles/{uuid4()}/locations")
+
+        assert response.status_code == 401
+
+    def test_default_pagination_returns_5_items_and_has_more(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        locations = [_make_location(vehicle_id=vehicle_id) for _ in range(5)]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (locations, True)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/locations", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 5
+        assert data["has_more"] is True
+        mock_uc.execute.assert_called_once_with(vehicle_id, limit=5, offset=0)
+
+    def test_second_page_via_offset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        locations = [_make_location(vehicle_id=vehicle_id) for _ in range(3)]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (locations, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app)
+
+        response = client.get(
+            f"/vehicles/{vehicle_id}/locations?limit=5&offset=5",
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 3
+        assert data["has_more"] is False
+        mock_uc.execute.assert_called_once_with(vehicle_id, limit=5, offset=5)
+
+    def test_limit_above_max_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            f"/vehicles/{vehicle_id}/locations?limit=51",
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_negative_offset_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            f"/vehicles/{vehicle_id}/locations?offset=-1",
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        other_owner_id = uuid4()
+
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, other_owner_id)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{vehicle_id}/locations", cookies={"session": cookie})
+
+        assert response.status_code == 403
+        mock_uc.execute.assert_not_called()
+
+    def test_unknown_vehicle_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{uuid4()}/locations", cookies={"session": cookie})
+
+        assert response.status_code == 404
+        mock_uc.execute.assert_not_called()
+
+    def test_zero_locations_returns_200_with_empty_items(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = ([], False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/locations", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == []
+        assert data["has_more"] is False

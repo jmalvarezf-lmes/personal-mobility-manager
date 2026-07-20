@@ -139,6 +139,13 @@
       "instructions": "Open this link to link your Telegram account:",
       "waiting": "Waiting for confirmation…",
       "stillWaiting": "Still waiting — you can close this and check back later."
+    },
+    "locationHistory": {
+      "title": "Location history — {{name}}",
+      "loading": "Loading…",
+      "loadMore": "Load more",
+      "loadingMore": "Loading more…",
+      "empty": "No location history for this vehicle."
     }
   },
   "vehicle": {

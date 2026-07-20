@@ -10,6 +10,8 @@ is used rather than recorded_at (source GPS fix time) because some sources
 report the same recorded_at across many consecutive polls (a stale/cached
 fix) — comparing on recorded_at would then skip past the true previous row
 and fall back to an older, possibly distant, one.
+list_history pages through the full history, newest first (see
+add-vehicle-location-history design.md).
 """
 
 from datetime import datetime
@@ -74,6 +76,27 @@ class PostgresVehicleLocationRepository(VehicleLocationRepository):
         if row is None:
             return None
         return self._row_to_location(row)
+
+    def list_history(self, vehicle_id: UUID, limit: int, offset: int) -> tuple[list[VehicleLocation], bool]:
+        """
+        Return a page of `vehicle_id`'s location history, newest first.
+
+        Fetches `limit + 1` rows so `has_more` can be derived from whether
+        that extra row came back, avoiding a second COUNT(*) query (see
+        add-vehicle-location-history design.md). The extra row, if present,
+        is trimmed before returning.
+        """
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(vehicle_locations_table)
+                .where(vehicle_locations_table.c.vehicle_id == vehicle_id)
+                .order_by(desc(vehicle_locations_table.c.recorded_at))
+                .offset(offset)
+                .limit(limit + 1)
+            ).fetchall()
+
+        has_more = len(rows) > limit
+        return [self._row_to_location(row) for row in rows[:limit]], has_more
 
     @staticmethod
     def _row_to_location(row: object) -> VehicleLocation:

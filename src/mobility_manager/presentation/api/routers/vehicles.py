@@ -4,6 +4,7 @@ Presentation: Vehicles API router.
 Endpoints:
   POST   /vehicles                                — register a new vehicle
   GET    /vehicles/{vehicle_id}/location           — latest known location
+  GET    /vehicles/{vehicle_id}/locations          — paginated location history
   POST   /vehicles/{token}/location                — push ingest from generic device
   GET    /vehicles/{vehicle_id}/ser-parking-exemptions    — view exemption
   POST   /vehicles/{vehicle_id}/ser-parking-exemptions    — set/replace exemption
@@ -12,7 +13,7 @@ Endpoints:
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from mobility_manager.domain.entities.user import User
@@ -49,6 +50,7 @@ from mobility_manager.presentation.api.schemas import (
     UpdateVehicleRequest,
     VehicleDetailResponse,
     VehicleListItem,
+    VehicleLocationHistoryResponse,
     VehicleLocationResponse,
     VehicleLocationSummary,
     VehicleResponse,
@@ -259,6 +261,35 @@ def get_latest_location(
         recorded_at=location.recorded_at,
         received_at=location.received_at,
         source=location.source,
+    )
+
+
+@router.get("/{vehicle_id}/locations", response_model=VehicleLocationHistoryResponse)
+def list_location_history(
+    request: Request,
+    vehicle_id: UUID,
+    limit: int = Query(default=5, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+) -> VehicleLocationHistoryResponse:
+    """Return a page of the given vehicle's location history, newest first."""
+    use_case = request.app.state.list_vehicle_location_history
+
+    items, has_more = use_case.execute(vehicle_id, limit=limit, offset=offset)
+
+    return VehicleLocationHistoryResponse(
+        items=[
+            VehicleLocationResponse(
+                vehicle_id=item.vehicle_id,
+                latitude=item.latitude,
+                longitude=item.longitude,
+                recorded_at=item.recorded_at,
+                received_at=item.received_at,
+                source=item.source,
+            )
+            for item in items
+        ],
+        has_more=has_more,
     )
 
 

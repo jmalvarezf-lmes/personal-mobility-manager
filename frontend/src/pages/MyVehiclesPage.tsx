@@ -5,6 +5,7 @@ import AddVehicleModal from "../components/AddVehicleModal";
 import EditVehicleModal from "../components/EditVehicleModal";
 import Nav from "../components/Nav";
 import VehicleCard from "../components/VehicleCard";
+import VehicleLocationHistoryModal from "../components/VehicleLocationHistoryModal";
 import VehicleMap from "../components/VehicleMap";
 import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
 
@@ -15,6 +16,7 @@ export default function MyVehiclesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editVehicle, setEditVehicle] = useState<VehicleDetail | null>(null);
+  const [historyVehicle, setHistoryVehicle] = useState<VehicleListItem | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -101,6 +103,7 @@ export default function MyVehiclesPage() {
               vehicle={v}
               onEdit={(detail) => setEditVehicle(detail)}
               onDeleted={handleDeleted}
+              onViewHistory={(vehicle) => setHistoryVehicle(vehicle)}
             />
           ))}
         </div>
@@ -118,6 +121,13 @@ export default function MyVehiclesPage() {
           vehicle={editVehicle}
           onClose={() => setEditVehicle(null)}
           onUpdated={handleUpdated}
+        />
+      )}
+
+      {historyVehicle && (
+        <VehicleLocationHistoryModal
+          vehicle={historyVehicle}
+          onClose={() => setHistoryVehicle(null)}
         />
       )}
     </div>

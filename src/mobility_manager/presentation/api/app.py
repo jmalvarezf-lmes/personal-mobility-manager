@@ -64,6 +64,9 @@ from mobility_manager.application.use_cases.list_ser_ticket_provider_connections
     ListSerTicketProviderConnections,
 )
 from mobility_manager.application.use_cases.list_user_vehicles import ListUserVehicles
+from mobility_manager.application.use_cases.list_vehicle_location_history import (
+    ListVehicleLocationHistory,
+)
 from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import (
     LookupVehicleAmbientLabel,
 )
@@ -423,6 +426,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo, event_publisher=event_publisher)
     get_latest_uc = GetLatestVehicleLocation(location_repo=vehicle_location_repo)
+    list_location_history_uc = ListVehicleLocationHistory(location_repo=vehicle_location_repo)
 
     list_uc = ListUserVehicles(vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo)
     delete_uc = DeleteVehicle(vehicle_repo=vehicle_repo)
@@ -431,6 +435,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.register_vehicle = register_uc
     app.state.record_vehicle_location = record_uc
     app.state.get_latest_vehicle_location = get_latest_uc
+    app.state.list_vehicle_location_history = list_location_history_uc
     app.state.list_user_vehicles = list_uc
     app.state.delete_vehicle = delete_uc
     app.state.update_vehicle = update_uc

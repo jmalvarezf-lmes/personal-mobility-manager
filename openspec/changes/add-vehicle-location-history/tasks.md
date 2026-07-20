@@ -49,3 +49,11 @@
 - [x] 8.2 In `VehicleLocationHistoryModal.tsx`: add a small bearing-based direction arrow on each polyline segment (between chronologically consecutive pins), pointing from the older point toward the newer one — computed inline (standard `atan2` bearing formula), no new dependency; skip arrows entirely when only one location is loaded
 - [x] 8.3 Add/update i18n strings if the button needs new label text (e.g. `vehicle.viewHistory`) in en/es translation files
 - [x] 8.4 Re-run `npm run type-check`, `npm run lint`, and `npm run build` after these changes — all three pass clean with no changes required beyond what 8.1-8.2 introduced
+
+## 9. Fixes from 4R review
+
+- [x] 9.1 Add `received_at` as a secondary `ORDER BY` key in `list_history` (`vehicle_location_repo.py`) so pagination is deterministic across page-load queries when rows share `recorded_at`
+- [x] 9.2 Add a dedicated `modal.locationHistory.error` i18n key (en/es) and use it as the fetch-failure fallback in `VehicleLocationHistoryModal.tsx`, replacing the reused `title`/`loadMore` keys
+- [x] 9.3 Add rate limiting to `GET /vehicles/{vehicle_id}/locations`, matching this router's existing `@limiter.limit(...)` convention
+- [x] 9.4 Add a repository/route test for the exact `has_more` boundary (remaining rows count equals `limit`) and a route test asserting `limit=0` is rejected with 422
+- [x] 9.5 Re-run backend and frontend verification (pytest, type-check, lint, build) — backend: `pytest tests/` → 809 passed, 22 failed; all 22 failures confirmed pre-existing/unrelated (verified via `git stash`: identical failure set and identical `ser_zones_city_code_fkey` root cause on the pre-fix commit — stale local Postgres volume, `cities` seed data missing, cascades into `test_ser_zone_repo_integration.py`); `ruff check` and `mypy src/` both clean. Frontend: `npm run type-check`, `npm run lint`, `npm run build` all pass clean.

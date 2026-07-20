@@ -265,8 +265,12 @@ def get_latest_location(
 
 
 @router.get("/{vehicle_id}/locations", response_model=VehicleLocationHistoryResponse)
+@limiter.limit("120/minute")
 def list_location_history(
     request: Request,
+    # Unused directly, but required — see the identical note on update_vehicle
+    # above / limiter.py's headers_enabled note.
+    response: Response,
     vehicle_id: UUID,
     limit: int = Query(default=5, ge=1, le=50),
     offset: int = Query(default=0, ge=0),

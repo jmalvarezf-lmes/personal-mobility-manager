@@ -362,6 +362,38 @@ def test_list_history_reports_no_further_pages(pg_engine) -> None:
     assert len(items) == 3
 
 
+def test_list_history_remaining_rows_exactly_equal_limit(pg_engine) -> None:
+    """5 rows, limit=5, offset=0 -> all 5 rows, has_more False (limit+1 over-fetch boundary)."""
+    from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+    from mobility_manager.infrastructure.repositories.postgres.vehicle_location_repo import (
+        PostgresVehicleLocationRepository,
+    )
+
+    repo = PostgresVehicleLocationRepository(pg_engine)
+    vehicle_id = uuid4()
+    _insert_vehicle(pg_engine, vehicle_id)
+
+    now = datetime.now(UTC)
+    for i in range(5):
+        repo.save(
+            VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=float(i),
+                longitude=0.0,
+                recorded_at=now + timedelta(minutes=i),
+                received_at=now + timedelta(minutes=i),
+                source="pull",
+            )
+        )
+
+    items, has_more = repo.list_history(vehicle_id, limit=5, offset=0)
+
+    assert has_more is False
+    assert len(items) == 5
+    assert [item.latitude for item in items] == [4.0, 3.0, 2.0, 1.0, 0.0]
+
+
 def test_list_history_second_page_via_offset(pg_engine) -> None:
     """8 rows, limit=5, offset=5 -> remaining 3 rows, has_more False."""
     from mobility_manager.domain.entities.vehicle_location import VehicleLocation

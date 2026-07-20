@@ -97,7 +97,7 @@ export default function VehicleLocationHistoryModal({
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(
-          err instanceof Error ? err.message : t("modal.locationHistory.title"),
+          err instanceof Error ? err.message : t("modal.locationHistory.error"),
         );
       })
       .finally(() => {
@@ -125,7 +125,7 @@ export default function VehicleLocationHistoryModal({
       setOffset((prev) => prev + page.items.length);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : t("modal.locationHistory.loadMore"),
+        err instanceof Error ? err.message : t("modal.locationHistory.error"),
       );
     } finally {
       setLoadingMore(false);

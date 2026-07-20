@@ -1487,6 +1487,24 @@ class TestListLocationHistory:
         assert response.status_code == 422
         mock_uc.execute.assert_not_called()
 
+    def test_limit_zero_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_history_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            f"/vehicles/{vehicle_id}/locations?limit=0",
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
     def test_negative_offset_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         vehicle_id = uuid4()

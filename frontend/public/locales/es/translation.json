@@ -145,7 +145,8 @@
       "loading": "Cargando…",
       "loadMore": "Cargar más",
       "loadingMore": "Cargando más…",
-      "empty": "Este vehículo no tiene historial de ubicaciones."
+      "empty": "Este vehículo no tiene historial de ubicaciones.",
+      "error": "No se pudo cargar el historial de ubicaciones. Inténtalo de nuevo."
     }
   },
   "vehicle": {

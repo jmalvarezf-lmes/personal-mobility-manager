@@ -26,6 +26,32 @@ const newestIcon = L.divIcon({
   iconAnchor: [16, 16],
 });
 
+// Standard compass bearing (0-360deg, 0 = north) from p1 to p2.
+function bearingDegrees(
+  p1: [number, number],
+  p2: [number, number],
+): number {
+  const lat1 = (p1[0] * Math.PI) / 180;
+  const lat2 = (p2[0] * Math.PI) / 180;
+  const deltaLon = ((p2[1] - p1[1]) * Math.PI) / 180;
+
+  const y = Math.sin(deltaLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+  const bearing = (Math.atan2(y, x) * 180) / Math.PI;
+  return (bearing + 360) % 360;
+}
+
+function arrowIcon(bearing: number): L.DivIcon {
+  return L.divIcon({
+    html: `<div style="transform: rotate(${bearing}deg); font-size:14px; line-height:1; color:#2563eb;">▲</div>`,
+    className: "",
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
 interface FitBoundsProps {
   positions: [number, number][];
 }
@@ -117,6 +143,19 @@ export default function VehicleLocationHistoryModal({
     loc.longitude,
   ]);
 
+  // One directional arrow per segment between chronologically consecutive
+  // points, placed at the segment midpoint and rotated to point from the
+  // older point toward the newer one. Empty when there's only one point
+  // (no segments), matching the polyline's own single-point behaviour.
+  const segmentArrows = positions.slice(1).map((p2, i) => {
+    const p1 = positions[i];
+    return {
+      key: `${p1[0]},${p1[1]}-${p2[0]},${p2[1]}`,
+      midpoint: [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number],
+      bearing: bearingDegrees(p1, p2),
+    };
+  });
+
   const isEmpty = !loading && locations.length === 0 && !error;
 
   return (
@@ -166,6 +205,14 @@ export default function VehicleLocationHistoryModal({
                 />
                 <FitBounds positions={positions} />
                 <Polyline positions={positions} pathOptions={{ color: "#2563eb" }} />
+                {segmentArrows.map((arrow) => (
+                  <Marker
+                    key={arrow.key}
+                    position={arrow.midpoint}
+                    icon={arrowIcon(arrow.bearing)}
+                    interactive={false}
+                  />
+                ))}
                 {locations.map((loc, index) =>
                   index === 0 ? (
                     <Marker

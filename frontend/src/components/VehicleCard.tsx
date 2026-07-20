@@ -87,16 +87,21 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted, onViewHistory 
         </div>
       )}
 
-      <div className="mt-2 text-sm text-gray-600">
+      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-600">
         {vehicle.location ? (
-          <button
-            type="button"
-            onClick={() => onViewHistory(vehicle)}
-            className="text-left hover:underline"
-          >
-            {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
-            {vehicle.location.longitude.toFixed(5)}
-          </button>
+          <>
+            <p>
+              {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
+              {vehicle.location.longitude.toFixed(5)}
+            </p>
+            <button
+              type="button"
+              onClick={() => onViewHistory(vehicle)}
+              className="shrink-0 rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
+            >
+              {t("vehicle.viewHistory")}
+            </button>
+          </>
         ) : (
           <p className="italic text-gray-400">{t("vehicle.noLocation")}</p>
         )}

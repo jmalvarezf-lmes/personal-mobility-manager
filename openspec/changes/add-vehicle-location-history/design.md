@@ -35,7 +35,11 @@ The existing `GET /vehicles/{id}/location` endpoint and its `VehicleLocationResp
 
 **Newest-pin distinction.** The first item in the (newest-first) array gets the same car-style `DivIcon` already used for "current location" on the shared `VehicleMap`, for visual continuity. Older pins use a smaller, plain circle marker. Clicking any pin (new or old) opens a popup with that location's `recorded_at`.
 
-**Modal follows the existing `AddVehicleModal`/`EditVehicleModal` convention.** State (`historyVehicle: VehicleListItem | null`) lives in `MyVehiclesPage`, set by a new callback prop from `VehicleCard` (e.g. `onViewHistory`), rendered as `{historyVehicle && <VehicleLocationHistoryModal vehicle={historyVehicle} onClose={...} />}`. `VehicleCard`'s existing static location line becomes a clickable trigger instead of a new button, reusing existing layout.
+**Modal follows the existing `AddVehicleModal`/`EditVehicleModal` convention.** State (`historyVehicle: VehicleListItem | null`) lives in `MyVehiclesPage`, set by a new callback prop from `VehicleCard` (e.g. `onViewHistory`), rendered as `{historyVehicle && <VehicleLocationHistoryModal vehicle={historyVehicle} onClose={...} />}`.
+
+**Trigger is a dedicated button, not a clickable location line.** `VehicleCard`'s location line stays plain text; a new "View history" button is rendered next to it, shown only when `vehicle.location` is present. Revised after live use: a clickable text line reads as informational, not interactive — a button makes the affordance unambiguous.
+
+**Direction arrows per polyline segment, no new dependency.** For each pair of chronologically consecutive points, compute the bearing between them and render a small rotated `DivIcon` marker at the segment's midpoint, rotated via CSS `transform: rotate(<bearing>deg)` pointing from the older point toward the newer one. Chosen over a plugin like `leaflet-polylinedecorator` to avoid adding a new frontend dependency for a small, self-contained bit of geometry (standard bearing formula: `atan2` of the delta longitude/latitude, adjusted to compass degrees). Revised after live use: a plain polyline with dots didn't communicate which end was "older" without opening popups on every pin — segment arrows make the route's direction legible at a glance.
 
 ## Risks / Trade-offs
 

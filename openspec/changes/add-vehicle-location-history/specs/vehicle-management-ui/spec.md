@@ -5,7 +5,8 @@ Below the map the system SHALL render one card per vehicle belonging to the auth
 - `display_name` and `brand` badge
 - `license_plate` (localised label) if set, or a localised "no plate" placeholder if null
 - Brand-specific config section (see vehicle-detail spec for what is shown)
-- Last known location as coordinates (lat, lon) if available, or a localised "no location" placeholder if not. If a location is present, this line SHALL be clickable and SHALL open a `VehicleLocationHistoryModal` scoped to that vehicle (see vehicle-location-history-ui spec). If no location is available, the placeholder SHALL NOT be clickable.
+- Last known location as coordinates (lat, lon) if available, or a localised "no location" placeholder if not. This line is plain text, not clickable.
+- A "View history" button, shown alongside the location line, that opens a `VehicleLocationHistoryModal` scoped to that vehicle (see vehicle-location-history-ui spec). The button SHALL only be shown/enabled when the vehicle has a known location.
 - Action buttons: Edit and Delete (labels localised)
 
 #### Scenario: Vehicle card shows Toyota config
@@ -26,12 +27,12 @@ Below the map the system SHALL render one card per vehicle belonging to the auth
 
 #### Scenario: Card shows coordinates when location is available
 - **WHEN** the vehicle has a last known location
-- **THEN** the card displays latitude and longitude to 6 decimal places, rendered as a clickable trigger
+- **THEN** the card displays latitude and longitude to 6 decimal places, and a "View history" button is shown next to it
 
 #### Scenario: Card shows localised placeholder when no location
 - **WHEN** the vehicle has no location history
-- **THEN** the card displays a localised placeholder string (e.g. "No location data" in English, "Sin datos de ubicación" in Spanish), not clickable
+- **THEN** the card displays a localised placeholder string (e.g. "No location data" in English, "Sin datos de ubicación" in Spanish), and no "View history" button is shown
 
-#### Scenario: Clicking the location opens the history modal
-- **WHEN** a user clicks the coordinates line on a card whose vehicle has a location
+#### Scenario: Clicking "View history" opens the history modal
+- **WHEN** a user clicks the "View history" button on a card whose vehicle has a location
 - **THEN** the `VehicleLocationHistoryModal` opens scoped to that vehicle

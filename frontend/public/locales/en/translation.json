@@ -156,6 +156,7 @@
     "pushUrl": "Push URL",
     "location": "Location",
     "noLocation": "No location data",
+    "viewHistory": "View history",
     "licensePlate": "License Plate",
     "noLicensePlate": "No license plate",
     "ambientLabel": "Ambient label",

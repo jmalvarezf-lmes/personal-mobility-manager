@@ -156,6 +156,7 @@
     "pushUrl": "URL de envío",
     "location": "Ubicación",
     "noLocation": "Sin datos de ubicación",
+    "viewHistory": "Ver historial",
     "licensePlate": "Matrícula",
     "noLicensePlate": "Sin matrícula",
     "ambientLabel": "Etiqueta ambiental",

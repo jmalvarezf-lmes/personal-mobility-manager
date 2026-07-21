@@ -43,6 +43,19 @@ export class MyVehiclesPage {
     return this.vehicleCard(displayName).getByRole("button", { name: /delete/i });
   }
 
+  viewHistoryButton(displayName: string): Locator {
+    return this.vehicleCard(displayName).getByRole("button", { name: /view history/i });
+  }
+
+  get historyModal(): Locator {
+    return this.page.getByRole("dialog", { name: /location history/i });
+  }
+
+  async openHistoryModal(displayName: string) {
+    await this.viewHistoryButton(displayName).click();
+    await this.historyModal.waitFor({ state: "visible" });
+  }
+
   // ------------------------------------------------------------------
   // Add modal helpers
   // ------------------------------------------------------------------

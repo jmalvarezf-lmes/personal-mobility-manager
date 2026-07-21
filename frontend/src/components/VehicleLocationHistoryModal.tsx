@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CircleMarker,
@@ -11,8 +11,10 @@ import {
   TileLayer,
   useMap,
 } from "react-leaflet";
+import { getPreferences } from "../api/preferences";
 import { getVehicleLocationHistory } from "../api/vehicles";
 import type { VehicleListItem, VehicleLocation } from "../types/vehicle";
+import { formatInTimezone, resolveDisplayTimezone } from "../utils/timezone";
 
 const OSM_FALLBACK = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const PAGE_SIZE = 5;
@@ -84,6 +86,29 @@ export default function VehicleLocationHistoryModal({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The user's saved timezone preference, if any — fetched once and merged
+  // into the resolution cascade below. Left null if the fetch fails, which
+  // simply falls through to the browser-detected/UTC fallback.
+  const [savedTimezone, setSavedTimezone] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPreferences()
+      .then((prefs) => {
+        if (!cancelled) setSavedTimezone(prefs.timezone);
+      })
+      .catch(() => {
+        // Fall back to browser detection / UTC — see resolveDisplayTimezone.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Resolved once per render from the saved preference; formatInTimezone
+  // itself computes each row's abbreviation per that row's own date, so
+  // this value is just the zone name, not a cached formatted string.
+  const displayTimezone = useMemo(() => resolveDisplayTimezone(savedTimezone), [savedTimezone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,7 +245,7 @@ export default function VehicleLocationHistoryModal({
                       position={[loc.latitude, loc.longitude]}
                       icon={newestIcon}
                     >
-                      <Popup>{loc.recorded_at}</Popup>
+                      <Popup>{formatInTimezone(loc.recorded_at, displayTimezone)}</Popup>
                     </Marker>
                   ) : (
                     <CircleMarker
@@ -229,7 +254,7 @@ export default function VehicleLocationHistoryModal({
                       radius={6}
                       pathOptions={{ color: "#2563eb", fillColor: "#93c5fd", fillOpacity: 1 }}
                     >
-                      <Popup>{loc.recorded_at}</Popup>
+                      <Popup>{formatInTimezone(loc.recorded_at, displayTimezone)}</Popup>
                     </CircleMarker>
                   ),
                 )}
@@ -242,7 +267,7 @@ export default function VehicleLocationHistoryModal({
                   key={`${loc.recorded_at}-${index}`}
                   className="flex items-center justify-between border-b border-gray-100 py-1 text-sm text-gray-600"
                 >
-                  <span>{loc.recorded_at}</span>
+                  <span>{formatInTimezone(loc.recorded_at, displayTimezone)}</span>
                   <span>
                     {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
                   </span>

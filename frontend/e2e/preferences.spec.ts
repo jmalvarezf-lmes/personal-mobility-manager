@@ -11,6 +11,7 @@ const DEFAULT_PREFERENCES = {
   auto_create_ticket: false,
   preferred_notification_channel: null as string | null,
   notification_language: null as string | null,
+  timezone: null as string | null,
 };
 
 type NotificationConfigFieldSchema = { type: string; min?: number };
@@ -106,6 +107,7 @@ async function mockPreferencesApis(
         auto_create_ticket: boolean;
         preferred_notification_channel: string | null;
         notification_language: string | null;
+        timezone: string | null;
       };
       if (body.default_ticket_duration_minutes <= 0) {
         await route.fulfill({
@@ -121,6 +123,7 @@ async function mockPreferencesApis(
       preferences.preferred_notification_channel =
         body.preferred_notification_channel;
       preferences.notification_language = body.notification_language;
+      preferences.timezone = body.timezone;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -377,5 +380,89 @@ test.describe("Preferences page", () => {
     await preferences.setNotificationEnabled("location_moved", false);
 
     await expect(preferences.notificationThresholdInput("location_moved")).toHaveCount(0);
+  });
+
+  test("searching for a timezone, selecting it, and saving sends it in PUT and reflects on reload", async ({
+    page,
+  }) => {
+    const preferencesState = { ...DEFAULT_PREFERENCES };
+    await mockPreferencesApis(page, preferencesState);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await preferences.searchTimezone("Madrid");
+    await preferences.setTimezone("Europe/Madrid");
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/preferences") && req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as { timezone: string | null };
+    expect(body.timezone).toBe("Europe/Madrid");
+    await expect(preferences.savedMessage).toBeVisible();
+
+    // Reload the page — the mocked GET now reflects the previously-saved
+    // PUT body, so the combobox input should come back pre-populated with
+    // the selected option's full label (zone id + abbreviation).
+    await preferences.goto();
+    await expect(preferences.timezoneSearchInput).toHaveValue(/Europe\/Madrid/);
+  });
+
+  test("clearing a saved timezone and saving sends null in PUT", async ({ page }) => {
+    const preferencesState = { ...DEFAULT_PREFERENCES, timezone: "Europe/Madrid" };
+    await mockPreferencesApis(page, preferencesState);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    await expect(preferences.timezoneSearchInput).toHaveValue(/Europe\/Madrid/);
+
+    await preferences.clearTimezone();
+
+    const [putRequest] = await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.url().includes("/api/preferences") && req.method() === "PUT",
+      ),
+      preferences.save(),
+    ]);
+
+    const body = putRequest.postDataJSON() as { timezone: string | null };
+    expect(body.timezone).toBeNull();
+    await expect(preferences.savedMessage).toBeVisible();
+  });
+
+  test("typing in the timezone search shows a live-filtered dropdown and does not submit the form on Enter", async ({
+    page,
+  }) => {
+    const preferencesState = { ...DEFAULT_PREFERENCES };
+    await mockPreferencesApis(page, preferencesState);
+    const preferences = new PreferencesPage(page);
+    await preferences.goto();
+
+    let putRequestFired = false;
+    page.on("request", (req) => {
+      if (req.url().includes("/api/preferences") && req.method() === "PUT") {
+        putRequestFired = true;
+      }
+    });
+
+    await preferences.searchTimezone("Madrid");
+
+    // The bug: a plain <select> never visibly updates while typing. The fix
+    // renders a real listbox below the input that reflects the filter live,
+    // without needing to open/click anything else first.
+    await expect(page.getByRole("option", { name: /Europe\/Madrid/ })).toBeVisible();
+
+    // Pressing Enter must never trigger the page's native form submit (the
+    // original bug). It's allowed to commit the top filtered match instead.
+    await preferences.timezoneSearchInput.press("Enter");
+
+    expect(putRequestFired).toBe(false);
+    await expect(preferences.savedMessage).not.toBeVisible();
+    await expect(preferences.timezoneSearchInput).toHaveValue(/Europe\/Madrid/);
   });
 });

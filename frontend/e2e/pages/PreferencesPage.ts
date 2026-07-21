@@ -21,6 +21,8 @@ export class PreferencesPage {
   readonly preferredChannelSelect: Locator;
   readonly noChannelsConnectedMessage: Locator;
   readonly notificationLanguageSelect: Locator;
+  readonly timezoneSearchInput: Locator;
+  readonly clearTimezoneButton: Locator;
 
   constructor(private readonly page: Page) {
     this.heading = page.getByRole("heading", { name: "Preferences" });
@@ -32,6 +34,8 @@ export class PreferencesPage {
     this.preferredChannelSelect = page.getByLabel(/preferred notification channel/i);
     this.noChannelsConnectedMessage = page.getByText(/connect a notification channel/i);
     this.notificationLanguageSelect = page.getByLabel(/notification language/i);
+    this.timezoneSearchInput = page.getByRole("combobox", { name: /^timezone$/i });
+    this.clearTimezoneButton = page.getByRole("button", { name: /^clear$/i });
   }
 
   notificationToggle(typeKey: string): Locator {
@@ -75,6 +79,24 @@ export class PreferencesPage {
 
   async setNotificationLanguage(displayName: string) {
     await this.notificationLanguageSelect.selectOption({ label: displayName });
+  }
+
+  async searchTimezone(term: string) {
+    await this.timezoneSearchInput.fill(term);
+  }
+
+  async setTimezone(zoneValue: string) {
+    await this.timezoneSearchInput.fill(zoneValue);
+    // Option labels are "<Zone> (<abbreviation>)" — anchor to the start and
+    // require the zone id to be immediately followed by " (" so a zone id
+    // that happens to be a prefix of another (e.g. "America/Indiana" vs.
+    // "America/Indiana/Indianapolis") can't match the wrong option.
+    const escaped = zoneValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await this.page.getByRole("option", { name: new RegExp(`^${escaped} \\(`) }).click();
+  }
+
+  async clearTimezone() {
+    await this.clearTimezoneButton.click();
   }
 
   async save() {

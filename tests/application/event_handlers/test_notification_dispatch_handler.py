@@ -80,6 +80,7 @@ class FakeUserPreferencesRepo:
             auto_create_ticket=False,
             preferred_notification_channel="telegram",
             notification_language=notification_language,
+            timezone=None,
             updated_at=datetime.now(UTC),
         )
 

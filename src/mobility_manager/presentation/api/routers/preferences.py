@@ -6,6 +6,8 @@ Endpoints:
   PUT /preferences — replace the authenticated user's preferences
 """
 
+from zoneinfo import available_timezones
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from mobility_manager.application.notification_templates import SUPPORTED_LANGUAGES
@@ -39,6 +41,7 @@ def get_preferences(
         auto_create_ticket=preferences.auto_create_ticket,
         preferred_notification_channel=preferences.preferred_notification_channel,
         notification_language=preferences.notification_language,
+        timezone=preferences.timezone,
     )
 
 
@@ -49,14 +52,17 @@ def update_preferences(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> UserPreferencesResponse:
     """
-    Replace all four fields of the authenticated user's preferences.
+    Replace all five fields of the authenticated user's preferences.
 
     A non-null preferred_notification_channel must correspond to a channel
     the current user has already connected (checked via
     UserNotificationChannelConfigRepository.find) — otherwise 422. A
     non-null notification_language must be one of
-    notification_templates.SUPPORTED_LANGUAGES — otherwise 422. `null` is
-    always allowed for either field, to let the user clear the preference.
+    notification_templates.SUPPORTED_LANGUAGES — otherwise 422. A non-null
+    timezone must be a recognized IANA timezone identifier (checked via
+    zoneinfo.available_timezones()) — otherwise 422. `null` is always
+    allowed for any of these three fields, to let the user clear the
+    preference.
     """
     if body.preferred_notification_channel is not None:
         config_repo = request.app.state.user_notification_channel_config_repo
@@ -73,6 +79,12 @@ def update_preferences(
             detail=f"Language '{body.notification_language}' is not supported",
         )
 
+    if body.timezone is not None and body.timezone not in available_timezones():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Timezone '{body.timezone}' is not a recognized IANA timezone",
+        )
+
     preferences_repo = request.app.state.user_preferences_repo
     updated = preferences_repo.update(
         user_id=current_user.id,
@@ -80,10 +92,12 @@ def update_preferences(
         auto_create_ticket=body.auto_create_ticket,
         preferred_notification_channel=body.preferred_notification_channel,
         notification_language=body.notification_language,
+        timezone=body.timezone,
     )
     return UserPreferencesResponse(
         default_ticket_duration_minutes=updated.default_ticket_duration_minutes,
         auto_create_ticket=updated.auto_create_ticket,
         preferred_notification_channel=updated.preferred_notification_channel,
         notification_language=updated.notification_language,
+        timezone=updated.timezone,
     )

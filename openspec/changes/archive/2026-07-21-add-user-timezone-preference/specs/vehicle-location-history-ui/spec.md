@@ -1,23 +1,4 @@
-### Requirement: Location history modal opens from a vehicle card button
-A "View history" button on a `VehicleCard`, shown alongside its location line, SHALL open a `VehicleLocationHistoryModal` scoped to that vehicle. The location line itself SHALL remain plain (non-interactive) text. The modal SHALL NOT include a vehicle selector — the vehicle is fixed to the card that triggered it. Closing the modal SHALL discard its loaded state (a subsequent open starts from the first page again).
-
-#### Scenario: Clicking "View history" opens the modal
-- **WHEN** a user clicks the "View history" button on a vehicle card that has at least one recorded location
-- **THEN** `VehicleLocationHistoryModal` opens for that vehicle and loads the first page of history
-
-#### Scenario: Location text is not a click target
-- **WHEN** a user clicks the coordinates text on a vehicle card
-- **THEN** no modal opens (only the adjacent "View history" button opens it)
-
-#### Scenario: No selector is present
-- **WHEN** the modal is open
-- **THEN** no vehicle-switching control is rendered inside it
-
-#### Scenario: Reopening starts fresh
-- **WHEN** a user closes the modal after loading two pages, then reopens it for the same vehicle
-- **THEN** the modal loads only the first page again, not the previously accumulated pages
-
----
+## MODIFIED Requirements
 
 ### Requirement: Modal shows a map with connected, directional, click-to-reveal pins
 The modal SHALL render a small Leaflet map containing one pin per currently loaded location. Pins SHALL be connected by a polyline drawn in chronological order (oldest to newest), regardless of the order locations are listed in. Each segment of the polyline (between two chronologically consecutive pins) SHALL display a directional arrow, oriented from the older pin toward the newer pin, so the travel direction of the route is visible without relying on pin order alone. The newest loaded location SHALL be rendered with a visually distinct marker from older locations. Clicking any pin SHALL open a popup showing that location's `recorded_at` timestamp, formatted in the resolved display timezone and suffixed with that zone's abbreviation for the timestamp's own date (see "Displayed timestamps resolve to a display timezone").
@@ -74,6 +55,8 @@ Below the map, the modal SHALL render a list of the same loaded locations, newes
 - **THEN** the modal shows a localised empty-state message instead of a map and list
 
 ---
+
+## ADDED Requirements
 
 ### Requirement: Displayed timestamps resolve to a display timezone
 Every `recorded_at` timestamp shown in `VehicleLocationHistoryModal` (list rows and map pin popups) SHALL be formatted in a display timezone resolved, at render time, as: the user's saved `timezone` preference if set; otherwise the browser's detected timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`); otherwise `UTC`. The formatted value SHALL be suffixed with the resolved zone's abbreviation (e.g. "CEST"), computed against that specific timestamp's own date — not a single cached abbreviation for the zone — so it reflects whichever offset (standard or daylight saving) applied at that instant. This resolution and formatting SHALL happen entirely client-side — the underlying API response and any internal use of the timestamp (ordering, pagination) SHALL remain unaffected and continue to use raw UTC values.

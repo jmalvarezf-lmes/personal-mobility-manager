@@ -55,6 +55,7 @@ class InMemoryUserPreferencesRepo:
             auto_create_ticket=False,
             preferred_notification_channel=preferred_notification_channel,
             notification_language=None,
+            timezone=None,
             updated_at=datetime.now(UTC),
         )
 

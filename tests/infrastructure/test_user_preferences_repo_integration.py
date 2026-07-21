@@ -41,6 +41,7 @@ def pg_engine():
                     auto_create_ticket BOOLEAN NOT NULL DEFAULT false,
                     preferred_notification_channel TEXT NULL,
                     notification_language TEXT NULL,
+                    timezone TEXT NULL,
                     updated_at TIMESTAMPTZ NOT NULL
                 )
                 """
@@ -82,6 +83,7 @@ def test_ensure_default_creates_row_with_defaults(pg_engine) -> None:
     assert preferences.auto_create_ticket is False
     assert preferences.preferred_notification_channel is None
     assert preferences.notification_language is None
+    assert preferences.timezone is None
 
 
 def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
@@ -99,6 +101,7 @@ def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
         auto_create_ticket=True,
         preferred_notification_channel="telegram",
         notification_language="es",
+        timezone="Europe/Madrid",
     )
 
     # Calling ensure_default again must not touch the now-customized row.
@@ -110,6 +113,7 @@ def test_ensure_default_is_noop_for_existing_row(pg_engine) -> None:
     assert preferences.auto_create_ticket is True
     assert preferences.preferred_notification_channel == "telegram"
     assert preferences.notification_language == "es"
+    assert preferences.timezone == "Europe/Madrid"
 
 
 def test_find_by_user_id_returns_none_when_missing(pg_engine) -> None:
@@ -138,12 +142,14 @@ def test_update_overwrites_values_and_updated_at(pg_engine) -> None:
         auto_create_ticket=True,
         preferred_notification_channel="telegram",
         notification_language="es",
+        timezone="Europe/Madrid",
     )
 
     assert updated.default_ticket_duration_minutes == 120
     assert updated.auto_create_ticket is True
     assert updated.preferred_notification_channel == "telegram"
     assert updated.notification_language == "es"
+    assert updated.timezone == "Europe/Madrid"
     assert updated.updated_at >= original.updated_at
 
     refetched = repo.find_by_user_id(user_id)
@@ -152,6 +158,7 @@ def test_update_overwrites_values_and_updated_at(pg_engine) -> None:
     assert refetched.auto_create_ticket is True
     assert refetched.preferred_notification_channel == "telegram"
     assert refetched.notification_language == "es"
+    assert refetched.timezone == "Europe/Madrid"
 
 
 def test_set_preferred_notification_channel_updates_only_that_field(pg_engine) -> None:
@@ -168,6 +175,7 @@ def test_set_preferred_notification_channel_updates_only_that_field(pg_engine) -
         auto_create_ticket=True,
         preferred_notification_channel=None,
         notification_language=None,
+        timezone=None,
     )
 
     repo.set_preferred_notification_channel(user_id, "telegram")
@@ -193,6 +201,7 @@ def test_set_preferred_notification_channel_accepts_none_to_clear(pg_engine) -> 
         auto_create_ticket=False,
         preferred_notification_channel="telegram",
         notification_language=None,
+        timezone=None,
     )
 
     repo.set_preferred_notification_channel(user_id, None)
@@ -216,6 +225,7 @@ def test_set_preferred_notification_channel_leaves_notification_language_untouch
         auto_create_ticket=False,
         preferred_notification_channel=None,
         notification_language="es",
+        timezone=None,
     )
 
     repo.set_preferred_notification_channel(user_id, "telegram")
@@ -240,6 +250,7 @@ def test_update_can_clear_notification_language(pg_engine) -> None:
         auto_create_ticket=False,
         preferred_notification_channel=None,
         notification_language="es",
+        timezone=None,
     )
 
     updated = repo.update(
@@ -248,6 +259,65 @@ def test_update_can_clear_notification_language(pg_engine) -> None:
         auto_create_ticket=False,
         preferred_notification_channel=None,
         notification_language=None,
+        timezone=None,
     )
 
     assert updated.notification_language is None
+
+
+def test_update_persists_timezone(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+
+    updated = repo.update(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=False,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone="Europe/Madrid",
+    )
+
+    assert updated.timezone == "Europe/Madrid"
+
+    refetched = repo.find_by_user_id(user_id)
+    assert refetched is not None
+    assert refetched.timezone == "Europe/Madrid"
+
+
+def test_update_can_clear_timezone(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+    repo.update(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=False,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone="Europe/Madrid",
+    )
+
+    updated = repo.update(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=False,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone=None,
+    )
+
+    assert updated.timezone is None
+
+    refetched = repo.find_by_user_id(user_id)
+    assert refetched is not None
+    assert refetched.timezone is None

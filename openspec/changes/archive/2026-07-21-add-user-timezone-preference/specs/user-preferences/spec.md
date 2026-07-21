@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: UserPreferences entity represents per-user settings
 The system SHALL define a `UserPreferences` domain entity with fields: `user_id` (UUID), `default_ticket_duration_minutes` (int), `auto_create_ticket` (bool), `preferred_notification_channel` (str | None), `notification_language` (str | None), `timezone` (str | None), `updated_at` (datetime).
 
@@ -46,24 +48,6 @@ The system SHALL define a `UserPreferencesRepository` port with:
 #### Scenario: set_preferred_notification_channel accepts None to clear the preference
 - **WHEN** `set_preferred_notification_channel` is called with `channel=None` for a user with a previously set preference
 - **THEN** `preferred_notification_channel` becomes `NULL`
-
----
-
-### Requirement: Login provisions default preferences for the user
-The system SHALL call `ensure_default` for the authenticated user's `id` as part of the Google login flow (`authenticate_google_user`), immediately after the `users` upsert, so every user has a preferences row by the time they can access the preferences page. The two writes SHALL each be individually atomic and idempotent (`ensure_default` uses `ON CONFLICT DO NOTHING`); they are not required to share a single database transaction, since a failure between them leaves a user temporarily without a preferences row until their next login, which self-heals it — no partial or inconsistent state persists.
-
-#### Scenario: First login for a new user creates preferences
-- **WHEN** a user logs in via Google for the first time
-- **THEN** a `users` row is created
-- **THEN** a `user_preferences` row is created for that user with default values
-
-#### Scenario: Login for an existing user without preferences backfills them
-- **WHEN** a user who already has a `users` row (created before this change) logs in
-- **THEN** a `user_preferences` row is created for that user with default values if none existed
-
-#### Scenario: Login for a user with existing preferences does not alter them
-- **WHEN** a user with a `user_preferences` row already set to non-default values logs in
-- **THEN** their preferences values are unchanged after login
 
 ---
 
@@ -166,18 +150,7 @@ The system SHALL provide a frontend "Preferences" page, reachable only via a pro
 
 ---
 
-### Requirement: Logged-in navigation exposes an account dropdown
-The system SHALL replace the flat logged-in nav links with a dropdown menu triggered by the user's email, containing links to My Vehicles, Preferences, and Logout.
-
-#### Scenario: Logged-in user opens the account dropdown
-- **WHEN** an authenticated user clicks their email in the nav
-- **THEN** a menu appears with links to My Vehicles and Preferences, and a Logout action
-
-#### Scenario: Logged-out user sees no account dropdown
-- **WHEN** an unauthenticated visitor views the nav
-- **THEN** no account dropdown, My Vehicles link, or Preferences link is shown
-
----
+## ADDED Requirements
 
 ### Requirement: Timezone picker options are city-searchable and DST-aware
 The timezone picker on the Preferences page SHALL let the user filter the full IANA zone list by typing part of a zone or city name (e.g. "Madrid" matches `Europe/Madrid`). Each option's displayed abbreviation SHALL be computed against the current date at render time, not a hardcoded or cached value, so it reflects whichever offset (standard or daylight saving) currently applies to that zone.

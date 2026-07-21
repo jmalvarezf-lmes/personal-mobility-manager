@@ -327,6 +327,7 @@ class UserPreferencesResponse(BaseModel):
     auto_create_ticket: bool
     preferred_notification_channel: str | None
     notification_language: str | None
+    timezone: str | None
 
 
 class UpdateUserPreferencesRequest(StrictRequestModel):
@@ -336,6 +337,7 @@ class UpdateUserPreferencesRequest(StrictRequestModel):
     auto_create_ticket: bool
     preferred_notification_channel: str | None
     notification_language: str | None
+    timezone: str | None
 
 
 # ---------------------------------------------------------------------------

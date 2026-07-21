@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getAvailableLanguages, getConfiguredChannels } from "../api/notifications";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../api/notificationPreferences";
 import { getPreferences, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
+import { listTimezoneOptions, type TimezoneOption } from "../utils/timezone";
 
 type NotificationPrefValue = {
   enabled: boolean;
@@ -33,14 +34,31 @@ function prefsEqual(a: NotificationPrefValue, b: NotificationPrefValue): boolean
   return a.enabled === b.enabled && JSON.stringify(a.config) === JSON.stringify(b.config);
 }
 
+/** The combobox's display text for a committed timezone value: its option label, or "" if unset/unmatched. */
+function labelForTimezone(value: string | null, options: TimezoneOption[]): string {
+  if (!value) return "";
+  return options.find((option) => option.value === value)?.label ?? "";
+}
+
 export default function PreferencesPage() {
   const { t } = useTranslation();
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [autoCreateTicket, setAutoCreateTicket] = useState(false);
   const [preferredChannel, setPreferredChannel] = useState<string | null>(null);
   const [notificationLanguage, setNotificationLanguage] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState<string | null>(null);
+  // Holds whatever text the combobox input currently displays: either the
+  // label of the committed `timezone` value (when the dropdown isn't
+  // actively open for searching), or in-progress typed search text.
+  const [timezoneSearch, setTimezoneSearch] = useState("");
+  const [isTimezoneDropdownOpen, setIsTimezoneDropdownOpen] = useState(false);
+  const timezoneBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connectedChannels, setConnectedChannels] = useState<string[]>([]);
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
+  // Computed once on mount — the picker's abbreviation labels are evaluated
+  // against today's date, which doesn't need to change per keystroke or
+  // per render (see design.md Decision 3).
+  const [timezoneOptions] = useState<TimezoneOption[]>(() => listTimezoneOptions());
   const [notificationTypes, setNotificationTypes] = useState<NotificationType[]>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefState>({});
   const [notificationPrefsBaseline, setNotificationPrefsBaseline] = useState<NotificationPrefState>({});
@@ -48,6 +66,15 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // The blur handler below defers closing the combobox by a short delay so a
+  // click on a dropdown option can register first; clear that timer on
+  // unmount so it never fires setState after the component is gone.
+  useEffect(() => {
+    return () => {
+      if (timezoneBlurTimeout.current) clearTimeout(timezoneBlurTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -63,6 +90,8 @@ export default function PreferencesPage() {
         setAutoCreateTicket(prefs.auto_create_ticket);
         setPreferredChannel(prefs.preferred_notification_channel);
         setNotificationLanguage(prefs.notification_language);
+        setTimezone(prefs.timezone);
+        setTimezoneSearch(labelForTimezone(prefs.timezone, timezoneOptions));
         setConnectedChannels(channels.channels);
         setAvailableLanguages(languages.languages);
         setNotificationTypes(types);
@@ -76,7 +105,28 @@ export default function PreferencesPage() {
       }
     }
     void load();
-  }, [t]);
+  }, [t, timezoneOptions]);
+
+  // Filter-as-you-type over the full IANA zone list. The currently selected
+  // zone is always kept in the option list (even if it no longer matches
+  // the search term) so the combobox's committed value stays valid.
+  const filteredTimezoneOptions = useMemo(() => {
+    const term = timezoneSearch.trim().toLowerCase();
+    const base = term
+      ? timezoneOptions.filter((option) => option.value.toLowerCase().includes(term))
+      : timezoneOptions;
+    if (timezone && !base.some((option) => option.value === timezone)) {
+      const current = timezoneOptions.find((option) => option.value === timezone);
+      if (current) return [current, ...base];
+    }
+    return base;
+  }, [timezoneSearch, timezone, timezoneOptions]);
+
+  function selectTimezoneOption(option: TimezoneOption) {
+    setTimezone(option.value);
+    setTimezoneSearch(option.label);
+    setIsTimezoneDropdownOpen(false);
+  }
 
   function handleNotificationToggle(typeKey: string, enabled: boolean) {
     setNotificationPrefs((prev) => ({
@@ -129,11 +179,13 @@ export default function PreferencesPage() {
         auto_create_ticket: autoCreateTicket,
         preferred_notification_channel: preferredChannel,
         notification_language: notificationLanguage,
+        timezone,
       });
       setDurationMinutes(updated.default_ticket_duration_minutes);
       setAutoCreateTicket(updated.auto_create_ticket);
       setPreferredChannel(updated.preferred_notification_channel);
       setNotificationLanguage(updated.notification_language);
+      setTimezone(updated.timezone);
 
       const changedTypeKeys = notificationTypes
         .map((type) => type.key)
@@ -281,6 +333,102 @@ export default function PreferencesPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="timezone-search"
+            >
+              {t("page.preferences.timezoneLabel")}
+            </label>
+            <div className="flex gap-2">
+              <div className="relative w-full">
+                <input
+                  id="timezone-search"
+                  type="text"
+                  role="combobox"
+                  aria-expanded={isTimezoneDropdownOpen}
+                  aria-autocomplete="list"
+                  aria-controls="timezone-listbox"
+                  autoComplete="off"
+                  value={timezoneSearch}
+                  onChange={(e) => {
+                    setTimezoneSearch(e.target.value);
+                    setIsTimezoneDropdownOpen(true);
+                  }}
+                  onFocus={(e) => {
+                    if (timezoneBlurTimeout.current) {
+                      clearTimeout(timezoneBlurTimeout.current);
+                      timezoneBlurTimeout.current = null;
+                    }
+                    setIsTimezoneDropdownOpen(true);
+                    e.target.select();
+                  }}
+                  onBlur={() => {
+                    timezoneBlurTimeout.current = setTimeout(() => {
+                      setIsTimezoneDropdownOpen(false);
+                      setTimezoneSearch(labelForTimezone(timezone, timezoneOptions));
+                    }, 150);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (isTimezoneDropdownOpen && filteredTimezoneOptions.length > 0) {
+                        selectTimezoneOption(filteredTimezoneOptions[0]);
+                      }
+                    } else if (e.key === "Escape") {
+                      setIsTimezoneDropdownOpen(false);
+                    }
+                  }}
+                  placeholder={t("page.preferences.timezoneSearchPlaceholder")}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                />
+                {isTimezoneDropdownOpen && (
+                  <ul
+                    id="timezone-listbox"
+                    role="listbox"
+                    className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded border border-gray-300 bg-white shadow-md"
+                  >
+                    {filteredTimezoneOptions.length === 0 ? (
+                      <li className="px-3 py-2 text-sm text-gray-500">
+                        {t("page.preferences.noTimezoneMatches")}
+                      </li>
+                    ) : (
+                      filteredTimezoneOptions.map((option) => (
+                        <li
+                          key={option.value}
+                          role="option"
+                          aria-selected={option.value === timezone}
+                        >
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectTimezoneOption(option)}
+                            className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                          >
+                            {option.label}
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
+              </div>
+              {timezone && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTimezone(null);
+                    setTimezoneSearch("");
+                    setIsTimezoneDropdownOpen(false);
+                  }}
+                  className="rounded bg-gray-100 px-3 py-2 text-sm hover:bg-gray-200"
+                >
+                  {t("page.preferences.clearTimezone")}
+                </button>
+              )}
+            </div>
           </div>
 
           {notificationTypes.length > 0 && (

@@ -136,6 +136,7 @@ def test_successful_dispatch_produces_a_span_and_records_metric(
         auto_create_ticket=False,
         preferred_notification_channel="telegram",
         notification_language=None,
+        timezone=None,
         updated_at=now,
     )
     notification_preference = UserNotificationPreference(
@@ -199,6 +200,7 @@ def test_failed_send_marks_span_as_error_without_raising(
         auto_create_ticket=False,
         preferred_notification_channel="telegram",
         notification_language=None,
+        timezone=None,
         updated_at=now,
     )
     notification_preference = UserNotificationPreference(

@@ -49,6 +49,11 @@
       "noChannelsConnected": "Connect a notification channel to choose a preferred one.",
       "notificationLanguageLabel": "Notification language",
       "noNotificationLanguage": "None",
+      "timezoneLabel": "Timezone",
+      "timezoneSearchPlaceholder": "Search by zone or city…",
+      "noTimezoneMatches": "No matching timezones",
+      "noTimezone": "None (use browser timezone)",
+      "clearTimezone": "Clear",
       "languages": {
         "en": "English",
         "es": "Spanish"

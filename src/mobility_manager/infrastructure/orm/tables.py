@@ -134,6 +134,7 @@ user_preferences_table = Table(
     Column("auto_create_ticket", Boolean, nullable=False, server_default="false"),
     Column("preferred_notification_channel", Text, nullable=True),
     Column("notification_language", Text, nullable=True),
+    Column("timezone", Text, nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 

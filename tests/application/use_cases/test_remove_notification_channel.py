@@ -39,6 +39,7 @@ class InMemoryUserPreferencesRepo:
             auto_create_ticket=False,
             preferred_notification_channel=preferred_notification_channel,
             notification_language=None,
+            timezone=None,
             updated_at=datetime.now(UTC),
         )
 
@@ -55,6 +56,7 @@ class InMemoryUserPreferencesRepo:
                 auto_create_ticket=existing.auto_create_ticket,
                 preferred_notification_channel=channel,
                 notification_language=existing.notification_language,
+                timezone=existing.timezone,
                 updated_at=existing.updated_at,
             )
 

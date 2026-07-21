@@ -3,6 +3,7 @@ export interface UserPreferences {
   auto_create_ticket: boolean;
   preferred_notification_channel: string | null;
   notification_language: string | null;
+  timezone: string | null;
 }
 
 export async function getPreferences(): Promise<UserPreferences> {

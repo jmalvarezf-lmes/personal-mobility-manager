@@ -59,6 +59,7 @@ def _make_preferences(
         auto_create_ticket=False,
         preferred_notification_channel=preferred_notification_channel,
         notification_language=notification_language,
+        timezone=None,
         updated_at=datetime.now(UTC),
     )
 

@@ -2,7 +2,7 @@
 Domain entity: UserPreferences.
 
 Represents a user's per-account settings (ticket-creation defaults, preferred
-notification channel, notification language).
+notification channel, notification language, timezone).
 """
 
 from dataclasses import dataclass
@@ -19,4 +19,5 @@ class UserPreferences:
     auto_create_ticket: bool
     preferred_notification_channel: str | None
     notification_language: str | None
+    timezone: str | None
     updated_at: datetime

@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 
 from mobility_manager.domain.entities.parking_ticket import ParkingTicket
 from mobility_manager.domain.entities.vehicle import Vehicle
+from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.domain.value_objects.ser_provider_credentials import (
     SerProviderCredentials,
 )
@@ -31,8 +32,22 @@ class SerTicketProviderPort(ABC):
         ...
 
     @abstractmethod
-    def create_ticket(self, session: SerProviderSession, vehicle: Vehicle, duration_minutes: int) -> ParkingTicket:
-        """Create a parking ticket for the given vehicle using a previously obtained session."""
+    def create_ticket(
+        self, session: SerProviderSession, vehicle: Vehicle, duration_minutes: int, location: GeoLocation
+    ) -> ParkingTicket:
+        """
+        Create a parking ticket for the given vehicle, at the given location,
+        using a previously obtained session.
+
+        `location` is always a resolved GeoLocation — the port itself never
+        falls back to a stored or default location; that decision is made by
+        the caller (see CreateSerTicket).
+
+        Raises:
+            SerProviderVehicleNotFoundError: `vehicle`'s license plate could
+                not be matched against the provider's own vehicle records.
+            SerProviderApiError: Any other provider-side failure.
+        """
         ...
 
     @abstractmethod

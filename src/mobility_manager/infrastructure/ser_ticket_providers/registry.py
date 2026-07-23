@@ -19,7 +19,12 @@ deferring to the first connection attempt.
 import logging
 import os
 
+from mobility_manager.domain.ports.city_repository import CityRepository
 from mobility_manager.domain.ports.ser_ticket_provider import SerTicketProviderPort
+from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
+from mobility_manager.infrastructure.ser_ticket_providers.elparking.zone_mapping_repository import (
+    PostgresElParkingZoneMappingRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +34,22 @@ _ELPARKING_CODE = "elparking"
 class SerTicketProviderRegistry:
     """Returns the mapping of currently available SerTicketProviderPort implementations."""
 
-    def build_providers(self) -> dict[str, SerTicketProviderPort]:
+    def build_providers(
+        self,
+        ser_zone_repo: SerZoneRepository,
+        city_repo: CityRepository,
+        zone_mapping_repo: PostgresElParkingZoneMappingRepository,
+    ) -> dict[str, SerTicketProviderPort]:
         """
         Instantiate every enabled SER ticket provider, keyed by provider name.
+
+        Args:
+            ser_zone_repo: Threaded into ElParkingSerTicketProvider for
+                spatial containment lookups (our own zone geometry).
+            city_repo: Threaded into ElParkingSerTicketProvider to resolve
+                city names for ElParking town matching.
+            zone_mapping_repo: Threaded into ElParkingSerTicketProvider as
+                its ElParking town/zone/rate ID-translation cache.
 
         Returns an empty dict when no known provider is enabled — callers
         must treat this as an expected, handleable condition rather than an
@@ -63,7 +81,11 @@ class SerTicketProviderRegistry:
                     ElParkingSerTicketProvider,
                 )
 
-                providers[_ELPARKING_CODE] = ElParkingSerTicketProvider()
+                providers[_ELPARKING_CODE] = ElParkingSerTicketProvider(
+                    ser_zone_repo=ser_zone_repo,
+                    city_repo=city_repo,
+                    zone_mapping_repo=zone_mapping_repo,
+                )
                 logger.info("ElParking SER ticket provider registered")
 
             else:

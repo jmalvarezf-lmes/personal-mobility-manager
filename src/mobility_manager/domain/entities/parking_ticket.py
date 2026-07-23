@@ -20,4 +20,6 @@ class ParkingTicket:
     provider: str
     duration_minutes: int
     provider_reference: str | None
+    cost: float
+    end_date: datetime
     created_at: datetime

@@ -30,6 +30,8 @@ class PostgresParkingTicketRepository(ParkingTicketRepository):
                     provider=ticket.provider,
                     duration_minutes=ticket.duration_minutes,
                     provider_reference=ticket.provider_reference,
+                    cost=ticket.cost,
+                    end_date=ticket.end_date,
                     created_at=ticket.created_at,
                 )
             )

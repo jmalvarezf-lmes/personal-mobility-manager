@@ -79,3 +79,9 @@ class InvalidSerParkingExemptionZoneError(Exception):
     """Raised when a (city_code, zone_number) pair has no matching ser_zone_areas row."""
 
     pass
+
+
+class SerProviderVehicleNotFoundError(Exception):
+    """Raised when a vehicle's license plate cannot be matched against a SER ticket provider's own vehicle records."""
+
+    pass

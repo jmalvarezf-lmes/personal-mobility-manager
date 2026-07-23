@@ -58,6 +58,8 @@ def pg_engine():
                     provider TEXT NOT NULL,
                     duration_minutes INT NOT NULL,
                     provider_reference TEXT,
+                    cost NUMERIC NOT NULL,
+                    end_date TIMESTAMPTZ NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL
                 )
                 """
@@ -100,6 +102,7 @@ def test_save_persists_all_fields(pg_engine) -> None:
 
     ticket_id = uuid4()
     created_at = datetime.now(UTC)
+    end_date = datetime.now(UTC)
     ticket = ParkingTicket(
         id=ticket_id,
         vehicle_id=vehicle_id,
@@ -107,6 +110,8 @@ def test_save_persists_all_fields(pg_engine) -> None:
         provider="madrid_ser_app",
         duration_minutes=120,
         provider_reference="REF-001",
+        cost=1.2,
+        end_date=end_date,
         created_at=created_at,
     )
     repo.save(ticket)
@@ -123,6 +128,8 @@ def test_save_persists_all_fields(pg_engine) -> None:
     assert row.provider == "madrid_ser_app"
     assert row.duration_minutes == 120
     assert row.provider_reference == "REF-001"
+    assert float(row.cost) == 1.2
+    assert row.end_date == end_date
 
 
 def test_save_with_none_provider_reference(pg_engine) -> None:
@@ -143,6 +150,8 @@ def test_save_with_none_provider_reference(pg_engine) -> None:
         provider="madrid_ser_app",
         duration_minutes=60,
         provider_reference=None,
+        cost=0.6,
+        end_date=datetime.now(UTC),
         created_at=datetime.now(UTC),
     )
     repo.save(ticket)

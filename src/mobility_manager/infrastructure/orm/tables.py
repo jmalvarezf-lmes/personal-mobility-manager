@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     MetaData,
+    Numeric,
     SmallInteger,
     String,
     Table,
@@ -205,7 +206,19 @@ parking_tickets_table = Table(
     Column("provider", Text, nullable=False),
     Column("duration_minutes", Integer, nullable=False),
     Column("provider_reference", Text, nullable=True),
+    Column("cost", Numeric, nullable=False),
+    Column("end_date", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+ser_ticket_provider_zone_mappings_table = Table(
+    "ser_ticket_provider_zone_mappings",
+    metadata,
+    Column("city_code", Text, ForeignKey("cities.code"), primary_key=True),
+    Column("provider", Text, primary_key=True),
+    Column("id_ser_town", Text, nullable=False),
+    Column("zones_payload", JSONB, nullable=False),  # raw fetched zones: id, name, polygon_wkt, rates[]
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
 )
 
 vehicle_ambient_labels_table = Table(

@@ -181,6 +181,9 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_e
     PostgresVehicleSerParkingExemptionRepository,
 )
 from mobility_manager.infrastructure.scheduler import ParkingIngestionScheduler
+from mobility_manager.infrastructure.ser_ticket_providers.elparking.zone_mapping_repository import (
+    PostgresElParkingZoneMappingRepository,
+)
 from mobility_manager.infrastructure.ser_ticket_providers.registry import (
     SerTicketProviderRegistry,
 )
@@ -480,7 +483,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         ser_encryption_key = get_encryption_key()
 
     ser_ticket_provider_registry = SerTicketProviderRegistry()
-    ser_ticket_providers = ser_ticket_provider_registry.build_providers()
+    elparking_zone_mapping_repo = PostgresElParkingZoneMappingRepository(engine)
+    ser_ticket_providers = ser_ticket_provider_registry.build_providers(
+        ser_zone_repo=repo,
+        city_repo=city_repo,
+        zone_mapping_repo=elparking_zone_mapping_repo,
+    )
     user_ser_provider_config_repo = PostgresUserSerProviderConfigRepository(engine, ser_encryption_key)
     parking_ticket_repo = PostgresParkingTicketRepository(engine)
     connect_ser_ticket_provider_uc = ConnectSerTicketProvider(
@@ -492,6 +500,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         config_repo=user_ser_provider_config_repo,
         ticket_repo=parking_ticket_repo,
         providers=ser_ticket_providers,
+        event_publisher=event_publisher,
+        get_latest_vehicle_location=get_latest_uc,
     )
     disconnect_ser_ticket_provider_uc = DisconnectSerTicketProvider(
         providers=ser_ticket_providers,

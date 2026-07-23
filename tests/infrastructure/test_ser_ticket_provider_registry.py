@@ -16,6 +16,32 @@ except ImportError:
     _CRYPTO_AVAILABLE = False
 
 
+class FakeSerZoneRepo:
+    def find_containing(self, location):
+        return None
+
+
+class FakeCityRepo:
+    def list_all(self):
+        return []
+
+
+class FakeZoneMappingRepo:
+    def get(self, city_code, provider):
+        return None
+
+    def save(self, city_code, provider, mapping):
+        pass
+
+
+def _build_providers(registry: SerTicketProviderRegistry):
+    return registry.build_providers(
+        ser_zone_repo=FakeSerZoneRepo(),
+        city_repo=FakeCityRepo(),
+        zone_mapping_repo=FakeZoneMappingRepo(),
+    )
+
+
 def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     from cryptography.fernet import Fernet
 
@@ -29,7 +55,7 @@ def test_elparking_registered_by_default(monkeypatch: pytest.MonkeyPatch) -> Non
     _set_required_env(monkeypatch)
 
     registry = SerTicketProviderRegistry()
-    providers = registry.build_providers()
+    providers = _build_providers(registry)
 
     assert "elparking" in providers
     from mobility_manager.infrastructure.ser_ticket_providers.elparking.provider import (
@@ -45,7 +71,7 @@ def test_elparking_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ELPARKING_API_BASE_URL", raising=False)
 
     registry = SerTicketProviderRegistry()
-    providers = registry.build_providers()
+    providers = _build_providers(registry)
 
     assert "elparking" not in providers
     assert providers == {}
@@ -58,7 +84,7 @@ def test_missing_encryption_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
     registry = SerTicketProviderRegistry()
     with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
-        registry.build_providers()
+        _build_providers(registry)
 
 
 @pytest.mark.skipif(not _CRYPTO_AVAILABLE, reason="cryptography not installed")
@@ -71,7 +97,7 @@ def test_missing_base_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
     registry = SerTicketProviderRegistry()
     with pytest.raises(RuntimeError, match="ELPARKING_API_BASE_URL"):
-        registry.build_providers()
+        _build_providers(registry)
 
 
 def test_unknown_provider_is_skipped_with_warning(
@@ -81,7 +107,7 @@ def test_unknown_provider_is_skipped_with_warning(
 
     registry = SerTicketProviderRegistry()
     with caplog.at_level("WARNING"):
-        providers = registry.build_providers()
+        providers = _build_providers(registry)
 
     assert providers == {}
     assert "unknown_provider" in caplog.text

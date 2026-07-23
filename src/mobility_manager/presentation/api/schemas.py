@@ -38,6 +38,26 @@ def _validate_toyota_locale(value: str) -> str:
     return value
 
 
+class CreateSerTicketRequest(StrictRequestModel):
+    """Request body for POST /parking/ser-tickets."""
+
+    vehicle_id: UUID
+    provider: str
+    duration_minutes: int = Field(..., gt=0)
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+
+
+class ParkingTicketResponse(BaseModel):
+    """A created SER parking ticket."""
+
+    id: UUID
+    cost: float
+    end_date: datetime
+    provider_reference: str | None
+    duration_minutes: int
+
+
 class SerZoneResponse(BaseModel):
     zone_number: str
     zone_type: str

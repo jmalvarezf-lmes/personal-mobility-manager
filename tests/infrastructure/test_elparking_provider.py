@@ -229,7 +229,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 42, "license_plate": "1234ABC"}]
+    client.list_vehicles_return = [{"id": 42, "number_plate": "1234ABC"}]
     client.get_steps_return = {"steps": [{"stay_duration": 60, "fare_qty": 2.5, "step_request": "opaque-token"}]}
     client.create_ticket_return = {"id": "ticket-99", "total_qty": 2.5, "end_date": "2026-07-23T14:00:00+00:00"}
 
@@ -262,7 +262,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
 def test_create_ticket_vehicle_not_found_raises_without_further_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     vehicle = _make_vehicle(license_plate="9999ZZZ")
     provider, client = _make_provider(monkeypatch)
-    client.list_vehicles_return = [{"id": 1, "license_plate": "1234ABC"}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": "1234ABC"}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -276,7 +276,7 @@ def test_create_ticket_vehicle_not_found_raises_without_further_calls(monkeypatc
 def test_create_ticket_no_containing_ser_zone_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     vehicle = _make_vehicle()
     provider, client = _make_provider(monkeypatch, ser_zone_repo=FakeSerZoneRepo(None))
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -319,7 +319,7 @@ def test_create_ticket_disambiguates_duplicate_zone_number_by_polygon(monkeypatc
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {"steps": [{"stay_duration": 30, "fare_qty": 1.0, "step_request": "tok"}]}
     client.create_ticket_return = {"id": "ticket-1", "total_qty": 1.0, "end_date": "2026-07-23T14:00:00+00:00"}
 
@@ -352,7 +352,7 @@ def test_create_ticket_cache_hit_skips_town_zone_fetch(monkeypatch: pytest.Monke
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=zone_mapping_repo,
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {"steps": [{"stay_duration": 30, "fare_qty": 1.0, "step_request": "tok"}]}
     client.create_ticket_return = {"id": "ticket-1", "total_qty": 1.0, "end_date": "2026-07-23T14:00:00+00:00"}
 
@@ -377,7 +377,7 @@ def test_create_ticket_cache_miss_fetches_and_saves_mapping(monkeypatch: pytest.
         city_repo=city_repo,
         zone_mapping_repo=zone_mapping_repo,
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.list_towns_return = [{"id": "town-1", "name": "Madrid"}]
     client.list_zones_return = [
         {
@@ -412,7 +412,7 @@ def test_create_ticket_no_city_registered_raises_provider_api_error(monkeypatch:
         city_repo=FakeCityRepo([]),
         zone_mapping_repo=FakeZoneMappingRepo(None),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -433,7 +433,7 @@ def test_create_ticket_no_elparking_town_match_raises_provider_api_error(monkeyp
         city_repo=FakeCityRepo([City(code="madrid", name="Madrid")]),
         zone_mapping_repo=FakeZoneMappingRepo(None),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.list_towns_return = [{"id": "town-1", "name": "Barcelona"}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -465,7 +465,7 @@ def test_create_ticket_no_matching_elparking_zone_raises_provider_api_error(monk
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -478,7 +478,7 @@ def test_create_ticket_no_matching_elparking_zone_raises_provider_api_error(monk
 def test_create_ticket_no_license_plate_raises_vehicle_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     vehicle = _make_vehicle(license_plate=None)
     provider, client = _make_provider(monkeypatch)
-    client.list_vehicles_return = [{"id": 1, "license_plate": "1234ABC"}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": "1234ABC"}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -509,7 +509,7 @@ def test_create_ticket_malformed_step_missing_fare_qty_raises_provider_api_error
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     # Matches duration, but missing "fare_qty"/"step_request" — malformed shape.
     client.get_steps_return = {"steps": [{"stay_duration": 60}]}
 
@@ -542,7 +542,7 @@ def test_create_ticket_malformed_steps_response_raises_provider_api_error(monkey
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     # "steps" is not iterable — malformed shape.
     client.get_steps_return = {"steps": None}
 
@@ -568,7 +568,7 @@ def test_create_ticket_malformed_zones_response_raises_provider_api_error(monkey
         city_repo=city_repo,
         zone_mapping_repo=zone_mapping_repo,
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.list_towns_return = [{"id": "town-1", "name": "Madrid"}]
     # Missing "polygon_wkt" — malformed shape.
     client.list_zones_return = [{"id": "zone-84", "name": "84 - PILAR"}]
@@ -602,7 +602,7 @@ def test_create_ticket_no_matching_rate_raises_provider_api_error(monkeypatch: p
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 
@@ -635,7 +635,7 @@ def test_create_ticket_no_pricing_step_for_duration_raises_provider_api_error(
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {"steps": [{"stay_duration": 30, "fare_qty": 1.0, "step_request": "tok"}]}
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -669,7 +669,7 @@ def test_create_ticket_malformed_ticket_response_missing_total_qty_raises_provid
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {"steps": [{"stay_duration": 60, "fare_qty": 1.0, "step_request": "tok"}]}
     # Missing "total_qty" entirely — malformed response shape.
     client.create_ticket_return = {"id": "ticket-1", "end_date": "2026-07-23T14:00:00+00:00"}
@@ -703,7 +703,7 @@ def test_create_ticket_malformed_ticket_response_missing_end_date_raises_provide
         ser_zone_repo=FakeSerZoneRepo(ser_zone),
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
-    client.list_vehicles_return = [{"id": 1, "license_plate": vehicle.license_plate}]
+    client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {"steps": [{"stay_duration": 60, "fare_qty": 1.0, "step_request": "tok"}]}
     # Missing "end_date" entirely — malformed response shape.
     client.create_ticket_return = {"id": "ticket-1", "total_qty": 1.0}

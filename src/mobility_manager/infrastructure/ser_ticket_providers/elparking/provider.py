@@ -244,18 +244,15 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         """
         Match `license_plate` against ElParking's vehicle list; return its `id`, or None.
 
-        ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.3):
-        the exact field names GET /v1/users/me/vehicles returns for a
-        vehicle's plate and identifier aren't confirmed by any sampled
-        response; "license_plate"/"id" are the most conventional choices
-        given this codebase's own Vehicle entity and ElParking's snake_case
-        ser-towns.json/ser-zones.json field style. Update this method alone
-        if real-API testing shows different keys.
+        Confirmed against a real GET /v1/users/me/vehicles response: the
+        plate field is "number_plate", not "license_plate" — the latter was
+        an unverified assumption that never matched, so ticket creation
+        always raised SerProviderVehicleNotFoundError. "id" was correct.
         """
         if license_plate is None:
             return None
         for v in elparking_vehicles:
-            if v.get("license_plate") == license_plate:
+            if v.get("number_plate") == license_plate:
                 return v.get("id")
         return None
 

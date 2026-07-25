@@ -57,12 +57,6 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_NAME = "elparking"
 
-# Only TYPE_NORMAL is supported in this change — see design.md Non-Goals
-# ("No support for TYPE_EXTENDED"). ElParking's documented ticket types
-# distinguish a brand-new ticket (TYPE_NORMAL) from extending an existing
-# active one (TYPE_EXTENDED); this integration only ever creates new tickets.
-_TICKET_TYPE_NORMAL = "TYPE_NORMAL"
-
 
 class ElParkingSerTicketProvider(SerTicketProviderPort):
     """SER ticket provider backed by ElParking's REST API."""
@@ -116,11 +110,16 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         access_token = session.data["access_token"]
 
         elparking_vehicles = self._client.list_vehicles(access_token)
-        id_vehicle = self._match_vehicle(elparking_vehicles, vehicle.license_plate)
-        if id_vehicle is None:
+        matched_vehicle = self._match_vehicle(elparking_vehicles, vehicle.license_plate)
+        if matched_vehicle is None:
             raise SerProviderVehicleNotFoundError(
                 f"No ElParking vehicle found matching license plate {vehicle.license_plate!r}"
             )
+        try:
+            id_vehicle = matched_vehicle["id"]
+            id_wallet = matched_vehicle["wallet"]["id"]
+        except (KeyError, TypeError) as exc:
+            raise SerProviderApiError(f"ElParking vehicle entry has an unexpected shape: {exc}") from exc
 
         ser_zone = self._ser_zone_repo.find_containing(location)
         if ser_zone is None:
@@ -131,15 +130,13 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         elparking_zone = resolve_zone(ser_zone.zone_number, location, mapping.zones)
         if elparking_zone is None:
             raise SerProviderApiError(
-                f"No ElParking zone found matching zone_number {ser_zone.zone_number!r} "
-                f"in town {mapping.id_ser_town!r}"
+                f"No ElParking zone found matching zone_number {ser_zone.zone_number!r} in town {mapping.id_ser_town!r}"
             )
 
         elparking_rate = resolve_rate(ser_zone.zone_type, elparking_zone.rates)
         if elparking_rate is None:
             raise SerProviderApiError(
-                f"No ElParking rate found matching zone_type {ser_zone.zone_type!r} "
-                f"for zone {elparking_zone.id!r}"
+                f"No ElParking rate found matching zone_type {ser_zone.zone_type!r} for zone {elparking_zone.id!r}"
             )
 
         steps_response = self._client.get_steps(access_token, elparking_zone.id, elparking_rate.id, id_vehicle)
@@ -149,11 +146,13 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
 
         body = self._build_ticket_request_body(
             id_vehicle=id_vehicle,
+            id_wallet=id_wallet,
             elparking_zone_id=elparking_zone.id,
             elparking_rate_id=elparking_rate.id,
             duration_minutes=duration_minutes,
             location=location,
             step=step,
+            steps_response=steps_response,
         )
 
         response = self._client.create_ticket(access_token, body)
@@ -175,64 +174,87 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
     def _build_ticket_request_body(
         self,
         id_vehicle: int,
+        id_wallet: int,
         elparking_zone_id: str,
         elparking_rate_id: str,
         duration_minutes: int,
         location: GeoLocation,
         step: dict[str, Any],
+        steps_response: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Build the POST /v1/ser-tickets request body.
 
-        ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.3):
-        the exact body field names aren't confirmed by any sampled response;
-        these follow the snake_case convention already observed in
-        ser-towns.json/ser-zones.json and the fields design.md explicitly
-        calls out (id_vehicle, id_ser_zone, id_ser_rate, fare_qty,
-        step_request). Update this method alone if real-API testing shows
-        different keys.
+        "step_request" is the *entire* GET /v1/ser-steps response body
+        (`steps_response`), forwarded verbatim — design.md is explicit that
+        the server re-validates the `security_checksum` embedded in that
+        whole response and rejects stale requests, so it must be echoed back
+        whole, not reconstructed from a subset of fields. The former
+        implementation looked for a "step_request" key *inside* the selected
+        per-minute `step` entry — that key never existed there (confirmed by
+        a real response sample), which raised "unexpected shape" for every
+        ticket creation. "fare_qty" does come from the selected `step`.
+
+        "type" and the duration field name were also wrong against the live
+        API (per direct user correction): "type" is mandatory but must be
+        the integer 0 for a normal ticket, not the string "TYPE_NORMAL" this
+        used to send; and the duration field is "stay_duration", not
+        "duration_minutes" (that name is this codebase's own internal
+        parameter name, kept as-is; only the outgoing JSON key changed).
+
+        Also per direct user correction: "start_date" must be a Unix
+        timestamp in whole seconds, not an ISO 8601 string — "user_latitude"/
+        "user_longitude" must be sent alongside "latitude"/"longitude" with
+        the same values — and "id_wallet" (the matched vehicle's nested
+        `wallet.id` from GET /v1/users/me/vehicles) must be included.
 
         Raises:
-            SerProviderApiError: `step` is missing an expected key (a
+            SerProviderApiError: `step` is missing the "fare_qty" key (a
                 malformed/unexpected-shape `get_steps()` response).
         """
         try:
             fare_qty = step["fare_qty"]
-            # Forwarded verbatim — never constructed or altered — the server
-            # re-validates its own security_checksum embedded in this value
-            # (see design.md Risk: Step 5's freshness window).
-            step_request = step["step_request"]
         except (KeyError, TypeError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking pricing step has an unexpected shape: {exc}") from exc
 
         return {
             "id_vehicle": id_vehicle,
+            "id_wallet": id_wallet,
             "id_ser_zone": elparking_zone_id,
             "id_ser_rate": elparking_rate_id,
-            "type": _TICKET_TYPE_NORMAL,
-            "start_date": datetime.now(UTC).isoformat(),
-            "duration_minutes": duration_minutes,
+            # Mandatory — a normal (non-extended) ticket is integer 0, not the
+            # string "TYPE_NORMAL" this used to send (per user correction
+            # against the live API).
+            "type": 0,
+            "start_date": int(datetime.now(UTC).timestamp()),
+            "stay_duration": duration_minutes,
             "latitude": location.lat,
             "longitude": location.lng,
+            "user_latitude": location.lat,
+            "user_longitude": location.lng,
             "fare_qty": fare_qty,
-            "step_request": step_request,
+            "step_request": steps_response,
         }
 
     def _parse_ticket_response(self, response: dict[str, Any]) -> tuple[float, datetime, str | None]:
         """
         Parse `POST /v1/ser-tickets`'s response into (cost, end_date, provider_reference).
 
-        ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.3):
-        the response's exact field names for cost/end-date/ticket-id aren't
-        confirmed by any sampled response; "total_qty"/"end_date"/"id"
-        follow design.md's explicit mention of these names.
+        "total_qty" is a nested money object (`{"amount": float, "amountInMinorUnits":
+        int, "currency": str, ...}`), not a bare number — confirmed by a real
+        GET /v1/ser-steps response, where every *_qty field (fare_qty,
+        commission_qty, total_qty, ...) uses this same shape. The
+        ticket-creation response isn't itself sampled yet, but this money-object
+        convention is consistent everywhere else in ElParking's API (including
+        the vehicle wallet's `qty` field), so it's applied here too.
+        "end_date"/"id" remain unverified assumptions (see design.md 10.3).
 
         Raises:
             SerProviderApiError: The response is missing/malformed for
                 `total_qty` or `end_date`.
         """
         try:
-            cost = float(response["total_qty"])
+            cost = float(response["total_qty"]["amount"])
             end_date = datetime.fromisoformat(response["end_date"])
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking ticket creation returned an unexpected response body: {exc}") from exc
@@ -240,28 +262,38 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         provider_reference = str(response.get("id")) if response.get("id") is not None else None
         return cost, end_date, provider_reference
 
-    def _match_vehicle(self, elparking_vehicles: list[dict[str, Any]], license_plate: str | None) -> int | None:
+    def _match_vehicle(
+        self, elparking_vehicles: list[dict[str, Any]], license_plate: str | None
+    ) -> dict[str, Any] | None:
         """
-        Match `license_plate` against ElParking's vehicle list; return its `id`, or None.
+        Match `license_plate` against ElParking's vehicle list; return the matched entry, or None.
 
-        ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.3):
-        the exact field names GET /v1/users/me/vehicles returns for a
-        vehicle's plate and identifier aren't confirmed by any sampled
-        response; "license_plate"/"id" are the most conventional choices
-        given this codebase's own Vehicle entity and ElParking's snake_case
-        ser-towns.json/ser-zones.json field style. Update this method alone
-        if real-API testing shows different keys.
+        Confirmed against a real GET /v1/users/me/vehicles response: the
+        plate field is "number_plate", not "license_plate" — the latter was
+        an unverified assumption that never matched, so ticket creation
+        always raised SerProviderVehicleNotFoundError. "id" was correct.
+        Returns the whole matched dict (not just its "id") because the
+        caller also needs its nested "wallet"."id" for id_wallet.
         """
         if license_plate is None:
             return None
         for v in elparking_vehicles:
-            if v.get("license_plate") == license_plate:
-                return v.get("id")
+            if v.get("number_plate") == license_plate:
+                return v
         return None
 
     def _select_step(self, steps_response: dict[str, Any], duration_minutes: int) -> dict[str, Any] | None:
         """
-        Select the steps[] entry whose stay_duration equals duration_minutes.
+        Select the steps[] entry closest to duration_minutes.
+
+        Confirmed against a real GET /v1/ser-steps response: each entry's
+        duration field is "minute" — "stay_duration" (the former assumption)
+        doesn't exist anywhere in the response, so it never matched and every
+        ticket creation failed with "No ElParking pricing step found".
+        ElParking's steps are irregular (e.g. 16, 30, 39, 47, ... minutes),
+        not one per minute, so an exact match is the exception rather than
+        the rule: the entry whose "minute" is numerically closest to
+        duration_minutes is used instead (ties keep the earlier entry).
 
         Raises:
             SerProviderApiError: `steps_response` has an unexpected shape
@@ -269,12 +301,12 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         """
         try:
             steps: list[dict[str, Any]] = steps_response.get("steps", [])
-            for step in steps:
-                if step.get("stay_duration") == duration_minutes:
-                    return step
+            return min(steps, key=lambda step: abs(step["minute"] - duration_minutes))
+        except ValueError:
+            # min() on an empty steps list — genuinely no pricing step offered.
+            return None
         except (KeyError, TypeError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking steps response has an unexpected shape: {exc}") from exc
-        return None
 
     def _get_or_refresh_mapping(self, access_token: str, city_code: str) -> ElParkingZoneMapping:
         """

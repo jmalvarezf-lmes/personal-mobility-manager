@@ -1,4 +1,14 @@
 allowBuilds:
+  # Transitive deps of swagger-ui-react -> swagger-client -> @swagger-api/apidom-*,
+  # used only for multi-format (YAML/JSON) $ref resolution when Swagger UI is
+  # given a spec `url`. This app always passes a pre-fetched, mutated spec
+  # object via the `spec` prop (see ApiDocsPage.tsx), so that code path is
+  # never exercised — deny running their install/build scripts.
+  '@scarf/scarf': false
+  '@tree-sitter-grammars/tree-sitter-yaml': false
+  core-js-pure: false
   esbuild: true
+  tree-sitter: false
+  tree-sitter-json: false
 onlyBuiltDependencies:
   - esbuild

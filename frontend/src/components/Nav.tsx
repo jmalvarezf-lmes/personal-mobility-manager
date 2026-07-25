@@ -59,6 +59,9 @@ export default function Nav() {
         <Link to="/map" className="text-blue-600 hover:underline">
           {t("nav.map")}
         </Link>
+        <Link to="/api-docs" className="text-blue-600 hover:underline">
+          {t("nav.apiDocs")}
+        </Link>
         {user ? (
           <div ref={menuRef} className="relative">
             <button

@@ -246,6 +246,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
             "id_vehicle": 42,
             "id_ser_zone": "zone-84",
             "id_ser_rate": "rate-azul",
+            "type": 0,
             "start_date": client.create_ticket_calls[0]["start_date"],
             "stay_duration": 60,
             "latitude": location.lat,

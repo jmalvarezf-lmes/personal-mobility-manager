@@ -189,9 +189,9 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         ticket creation. "fare_qty" does come from the selected `step`.
 
         "type" and the duration field name were also wrong against the live
-        API (per direct user correction): ElParking's ticket-creation body
-        has no "type" field carrying the string "TYPE_NORMAL" — it's omitted
-        here for now — and the duration field is "stay_duration", not
+        API (per direct user correction): "type" is mandatory but must be
+        the integer 0 for a normal ticket, not the string "TYPE_NORMAL" this
+        used to send; and the duration field is "stay_duration", not
         "duration_minutes" (that name is this codebase's own internal
         parameter name, kept as-is; only the outgoing JSON key changed).
 
@@ -208,9 +208,10 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             "id_vehicle": id_vehicle,
             "id_ser_zone": elparking_zone_id,
             "id_ser_rate": elparking_rate_id,
-            # "type" omitted for now — ElParking expects an integer (0) or no
-            # field at all for a normal ticket, not the string "TYPE_NORMAL"
-            # this used to send (per user correction against the live API).
+            # Mandatory — a normal (non-extended) ticket is integer 0, not the
+            # string "TYPE_NORMAL" this used to send (per user correction
+            # against the live API).
+            "type": 0,
             "start_date": datetime.now(UTC).isoformat(),
             "stay_duration": duration_minutes,
             "latitude": location.lat,

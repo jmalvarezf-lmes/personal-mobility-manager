@@ -5,6 +5,15 @@ No PostGIS: geometry is stored as WKT text (EPSG:25830). find_containing()
 and find_nearest() load all zone rows via list_all() and run shapely checks
 in Python — no SQL bounding-box prefilter, since the post-dissolve row count
 is small (a few hundred). See design.md D5.
+
+find_containing() applies a configurable containment tolerance (see
+get_ser_zone_containment_tolerance_cm() and add-ser-zone-containment-tolerance
+design.md D1) so a location within that distance of a zone's stored polygon
+boundary counts as contained, compensating for GPS positioning error. This is
+the single shared code path for both of find_containing()'s callers —
+FindContainingSerZone (application layer) and ElParkingSerTicketProvider
+(infrastructure, calls this repository directly) — so the tolerance applies
+identically to both without either needing to pass it explicitly.
 """
 
 import logging
@@ -16,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
+from mobility_manager.config import get_ser_zone_containment_tolerance_cm
 from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.ports.ser_zone_repository import SerZoneRepository
 from mobility_manager.domain.value_objects.location import GeoLocation, _wgs84_to_utm
@@ -52,9 +62,18 @@ class PostgresSerZoneRepository(SerZoneRepository):
         return min(zones, key=lambda z: z.geometry.distance(point))
 
     def find_containing(self, location: GeoLocation) -> SerZone | None:
-        """Return the first stored zone whose polygon contains the location, or None."""
+        """
+        Return the first stored zone whose polygon contains the location, or
+        whose polygon boundary is within the configured containment
+        tolerance of the location, or None.
+
+        The tolerance (see get_ser_zone_containment_tolerance_cm(), default
+        50cm) compensates for GPS positioning error and is applied
+        identically regardless of caller — see module docstring.
+        """
+        tolerance_m = get_ser_zone_containment_tolerance_cm() / 100
         for zone in self.list_all():
-            if zone.contains(location):
+            if zone.contains(location, tolerance_m=tolerance_m):
                 return zone
         return None
 

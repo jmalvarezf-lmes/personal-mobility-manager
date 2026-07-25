@@ -1,4 +1,4 @@
-.PHONY: install install-dev run test lint docker-build docker-run db-migrate db-revision api
+.PHONY: install install-dev run test coverage lint docker-build docker-run db-migrate db-revision api
 
 VENV    := venv
 PYTHON  := $(VENV)/bin/python
@@ -16,6 +16,10 @@ run:
 
 test:
 	$(PYTHON) -m pytest tests/ --cov=mobility_manager --cov-report=term-missing
+
+# Alias for `test` — AGENTS.md's documented coverage-check command; `test`
+# already runs with --cov, kept as one command so the two never drift apart.
+coverage: test
 
 lint:
 	$(VENV)/bin/ruff check src/ tests/

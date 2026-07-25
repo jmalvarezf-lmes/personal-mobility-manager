@@ -372,6 +372,26 @@ def get_holiday_refresh_interval_hours() -> int:
         return 4380
 
 
+def get_ser_zone_containment_tolerance_cm() -> int:
+    """
+    Return the SER zone containment tolerance in centimetres from
+    SER_ZONE_CONTAINMENT_TOLERANCE_CM, or 50 if unset/invalid.
+
+    Compensates for GPS positioning error in SerZone.contains() checks (see
+    add-ser-zone-containment-tolerance design.md D3): a location within this
+    distance of a zone's polygon boundary is treated as contained. This is a
+    technical/operational tuning knob, not a per-user preference — it is not
+    exposed through any user-facing API or preference storage.
+
+    Mirrors get_vehicle_poll_interval_minutes()'s int-with-fallback style.
+    """
+    raw = os.environ.get("SER_ZONE_CONTAINMENT_TOLERANCE_CM", "50")
+    try:
+        return int(raw)
+    except ValueError:
+        return 50
+
+
 def get_otel_endpoint() -> str | None:
     """
     Return the OTLP exporter endpoint from OTEL_EXPORTER_OTLP_ENDPOINT, or

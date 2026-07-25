@@ -105,3 +105,47 @@ def test_contains_false_for_exterior_point() -> None:
     # Far outside Madrid entirely.
     location = GeoLocation(lat=41.0, lng=-4.5)
     assert zone.contains(location) is False
+
+
+def _location_at_utm_offset(offset_m: float) -> GeoLocation:
+    """
+    Build a GeoLocation whose UTM projection sits offset_m metres outside
+    _SQUARE's right edge (x = _CENTRE_UTM[0] + 10.0), at the edge's
+    mid-point in y. Round-trips through UTM->WGS84->UTM (matching the
+    pattern used in test_contains_true_for_boundary_point and the
+    infrastructure integration tests) so the distance is exact — no
+    sub-millimetre floating point noise from an independently-chosen WGS84
+    coordinate.
+    """
+    from pyproj import Transformer
+
+    utm_to_wgs84 = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+    x = _CENTRE_UTM[0] + 10.0 + offset_m
+    y = _CENTRE_UTM[1]
+    lng, lat = utm_to_wgs84.transform(x, y)
+    return GeoLocation(lat=lat, lng=lng)
+
+
+def test_contains_default_tolerance_returns_false_for_point_just_outside() -> None:
+    """
+    Regression guard: omitting tolerance_m (defaults to 0.0) must preserve
+    the exact old zero-tolerance boundary-inclusive behavior — a point 1m
+    outside the polygon is still rejected.
+    """
+    zone = _make_ser_zone()
+    location = _location_at_utm_offset(1.0)
+    assert zone.contains(location) is False
+
+
+def test_contains_true_for_point_outside_within_tolerance() -> None:
+    """A point 0.5m outside the boundary is contained when tolerance_m=1.0."""
+    zone = _make_ser_zone()
+    location = _location_at_utm_offset(0.5)
+    assert zone.contains(location, tolerance_m=1.0) is True
+
+
+def test_contains_false_for_point_outside_tolerance() -> None:
+    """A point 2m outside the boundary is not contained when tolerance_m=1.0."""
+    zone = _make_ser_zone()
+    location = _location_at_utm_offset(2.0)
+    assert zone.contains(location, tolerance_m=1.0) is False

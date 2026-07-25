@@ -158,6 +158,65 @@ def test_find_containing_returns_none_when_outside_all_zones(pg_engine) -> None:
     assert zone is None
 
 
+def _location_outside_square_a(offset_m: float) -> GeoLocation:
+    """
+    Build a GeoLocation offset_m metres outside _SQUARE_A_WKT's right edge
+    (x=440604), at the edge's mid-point in y (4474469), matching the
+    round-trip UTM->WGS84 pattern used elsewhere in this file.
+    """
+    from pyproj import Transformer
+
+    utm_to_wgs84 = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+    lng, lat = utm_to_wgs84.transform(440604 + offset_m, 4474469)
+    return GeoLocation(lat=lat, lng=lng)
+
+
+def test_find_containing_returns_zone_within_default_tolerance(pg_engine) -> None:
+    """
+    A point 0.3m outside the polygon boundary is still returned by
+    find_containing() because it's within the default 50cm tolerance (see
+    add-ser-zone-containment-tolerance).
+    """
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record()])
+
+    zone = repo.find_containing(_location_outside_square_a(0.3))
+
+    assert zone is not None
+    assert zone.zone_number == "163"
+
+
+def test_find_containing_returns_none_beyond_default_tolerance(pg_engine) -> None:
+    """A point 2m outside the polygon boundary is beyond the default 50cm tolerance."""
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record()])
+
+    zone = repo.find_containing(_location_outside_square_a(2.0))
+
+    assert zone is None
+
+
+def test_find_containing_tolerance_is_configurable_via_env_var(pg_engine, monkeypatch) -> None:
+    """
+    Overriding SER_ZONE_CONTAINMENT_TOLERANCE_CM changes find_containing()'s
+    tolerance: a point 2m outside is not contained with the default (50cm)
+    but is contained once the env var is widened to 300cm.
+    """
+    repo = PostgresSerZoneRepository(pg_engine)
+    repo.bulk_replace([_make_zone_record()])
+
+    location = _location_outside_square_a(2.0)
+
+    assert repo.find_containing(location) is None
+
+    monkeypatch.setenv("SER_ZONE_CONTAINMENT_TOLERANCE_CM", "300")
+
+    zone = repo.find_containing(location)
+
+    assert zone is not None
+    assert zone.zone_number == "163"
+
+
 def test_find_containing_returns_none_when_empty(pg_engine) -> None:
     repo = PostgresSerZoneRepository(pg_engine)
     repo.bulk_replace([])

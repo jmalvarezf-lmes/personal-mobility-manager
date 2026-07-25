@@ -39,14 +39,19 @@ class SerZone:
     spot_count: int  # -1 means unknown
     geometry: BaseGeometry  # Polygon or MultiPolygon, EPSG:25830 metres
 
-    def contains(self, location: GeoLocation) -> bool:
+    def contains(self, location: GeoLocation, tolerance_m: float = 0.0) -> bool:
         """
-        Return True if the given location falls within this zone's boundary.
+        Return True if the given location falls within this zone's boundary,
+        or within tolerance_m metres of its edge.
 
         Boundary-inclusive: a point exactly on the polygon's edge counts as
         contained (uses shapely's covers(), not the boundary-exclusive
-        contains()).
+        contains()). tolerance_m defaults to 0.0, which preserves the exact
+        zero-tolerance boundary-inclusive behavior for any caller that
+        doesn't pass a tolerance — it compensates for GPS positioning error
+        when the caller opts in (see add-ser-zone-containment-tolerance
+        design.md D2).
         """
         utm_x, utm_y = _wgs84_to_utm.transform(location.lng, location.lat)
         point = Point(utm_x, utm_y)
-        return bool(self.geometry.covers(point))
+        return bool(self.geometry.covers(point) or self.geometry.distance(point) <= tolerance_m)

@@ -110,11 +110,16 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         access_token = session.data["access_token"]
 
         elparking_vehicles = self._client.list_vehicles(access_token)
-        id_vehicle = self._match_vehicle(elparking_vehicles, vehicle.license_plate)
-        if id_vehicle is None:
+        matched_vehicle = self._match_vehicle(elparking_vehicles, vehicle.license_plate)
+        if matched_vehicle is None:
             raise SerProviderVehicleNotFoundError(
                 f"No ElParking vehicle found matching license plate {vehicle.license_plate!r}"
             )
+        try:
+            id_vehicle = matched_vehicle["id"]
+            id_wallet = matched_vehicle["wallet"]["id"]
+        except (KeyError, TypeError) as exc:
+            raise SerProviderApiError(f"ElParking vehicle entry has an unexpected shape: {exc}") from exc
 
         ser_zone = self._ser_zone_repo.find_containing(location)
         if ser_zone is None:
@@ -141,6 +146,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
 
         body = self._build_ticket_request_body(
             id_vehicle=id_vehicle,
+            id_wallet=id_wallet,
             elparking_zone_id=elparking_zone.id,
             elparking_rate_id=elparking_rate.id,
             duration_minutes=duration_minutes,
@@ -168,6 +174,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
     def _build_ticket_request_body(
         self,
         id_vehicle: int,
+        id_wallet: int,
         elparking_zone_id: str,
         elparking_rate_id: str,
         duration_minutes: int,
@@ -195,6 +202,12 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         "duration_minutes" (that name is this codebase's own internal
         parameter name, kept as-is; only the outgoing JSON key changed).
 
+        Also per direct user correction: "start_date" must be a Unix
+        timestamp in whole seconds, not an ISO 8601 string — "user_latitude"/
+        "user_longitude" must be sent alongside "latitude"/"longitude" with
+        the same values — and "id_wallet" (the matched vehicle's nested
+        `wallet.id` from GET /v1/users/me/vehicles) must be included.
+
         Raises:
             SerProviderApiError: `step` is missing the "fare_qty" key (a
                 malformed/unexpected-shape `get_steps()` response).
@@ -206,16 +219,19 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
 
         return {
             "id_vehicle": id_vehicle,
+            "id_wallet": id_wallet,
             "id_ser_zone": elparking_zone_id,
             "id_ser_rate": elparking_rate_id,
             # Mandatory — a normal (non-extended) ticket is integer 0, not the
             # string "TYPE_NORMAL" this used to send (per user correction
             # against the live API).
             "type": 0,
-            "start_date": datetime.now(UTC).isoformat(),
+            "start_date": int(datetime.now(UTC).timestamp()),
             "stay_duration": duration_minutes,
             "latitude": location.lat,
             "longitude": location.lng,
+            "user_latitude": location.lat,
+            "user_longitude": location.lng,
             "fare_qty": fare_qty,
             "step_request": steps_response,
         }
@@ -246,20 +262,24 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         provider_reference = str(response.get("id")) if response.get("id") is not None else None
         return cost, end_date, provider_reference
 
-    def _match_vehicle(self, elparking_vehicles: list[dict[str, Any]], license_plate: str | None) -> int | None:
+    def _match_vehicle(
+        self, elparking_vehicles: list[dict[str, Any]], license_plate: str | None
+    ) -> dict[str, Any] | None:
         """
-        Match `license_plate` against ElParking's vehicle list; return its `id`, or None.
+        Match `license_plate` against ElParking's vehicle list; return the matched entry, or None.
 
         Confirmed against a real GET /v1/users/me/vehicles response: the
         plate field is "number_plate", not "license_plate" — the latter was
         an unverified assumption that never matched, so ticket creation
         always raised SerProviderVehicleNotFoundError. "id" was correct.
+        Returns the whole matched dict (not just its "id") because the
+        caller also needs its nested "wallet"."id" for id_wallet.
         """
         if license_plate is None:
             return None
         for v in elparking_vehicles:
             if v.get("number_plate") == license_plate:
-                return v.get("id")
+                return v
         return None
 
     def _select_step(self, steps_response: dict[str, Any], duration_minutes: int) -> dict[str, Any] | None:

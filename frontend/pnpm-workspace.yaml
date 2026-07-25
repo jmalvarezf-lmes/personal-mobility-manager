@@ -12,3 +12,7 @@ allowBuilds:
   tree-sitter-json: false
 onlyBuiltDependencies:
   - esbuild
+overrides:
+  # ReDoS fix (GHSA advisory), pulled in transitively via
+  # swagger-ui-react -> swagger-client -> @swagger-api/apidom-reference -> minimatch.
+  brace-expansion: ^5.0.7

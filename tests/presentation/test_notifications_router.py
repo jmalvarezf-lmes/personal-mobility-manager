@@ -43,6 +43,7 @@ def _make_session_cookie(user: User, secret: str = _JWT_SECRET) -> str:
     payload = {
         "sub": str(user.id),
         "email": user.email,
+        "sid": str(uuid4()),
         "exp": datetime.now(UTC) + timedelta(hours=1),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
@@ -89,6 +90,9 @@ def _build_app(
         app.state.notification_channels = notification_channels
     if preferences_repo is not None:
         app.state.user_preferences_repo = preferences_repo
+    mock_validate_session = MagicMock()
+    mock_validate_session.execute.return_value = True
+    app.state.validate_session = mock_validate_session
     return app
 
 

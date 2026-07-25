@@ -1,19 +1,4 @@
-## ADDED Requirements
-
-### Requirement: Backend initiates Google OAuth2 authorization flow
-The system SHALL expose `GET /auth/google/login` that redirects the browser to Google's OAuth2 authorization endpoint. The redirect URL MUST include `client_id`, `redirect_uri`, `scope` (`openid email profile`), `response_type=code`, and a signed `state` parameter. The state SHALL be a time-limited token signed with `itsdangerous.URLSafeTimedSerializer` using `JWT_SECRET` as the key.
-
-#### Scenario: Login endpoint redirects to Google
-- **WHEN** a client sends `GET /auth/google/login`
-- **THEN** the system responds with HTTP 302 to Google's OAuth consent URL
-- **THEN** the redirect URL contains `client_id`, `redirect_uri`, `scope=openid+email+profile`, and a non-empty `state` parameter
-
-#### Scenario: State parameter is signed
-- **WHEN** the login endpoint generates a state value
-- **THEN** the state can be verified by `URLSafeTimedSerializer(JWT_SECRET).loads(state, max_age=300)` without raising
-- **THEN** the state contains a random nonce (not a predictable value)
-
----
+## MODIFIED Requirements
 
 ### Requirement: Callback exchanges code, provisions user, and issues JWT cookie
 The system SHALL expose `GET /auth/google/callback` that accepts `code` and `state` query parameters from Google. It MUST verify the state signature and max_age (5 minutes). On valid state, it SHALL exchange the code for an ID token via Google's token endpoint, extract `sub`, `email`, and `name` from the userinfo, upsert the user in the `users` table, create a session record, sign a 24h JWT that includes the session's id as a `sid` claim, and set a session cookie. After success it SHALL redirect the browser to `/`.
@@ -43,19 +28,6 @@ The system SHALL expose `GET /auth/google/callback` that accepts `code` and `sta
 - **WHEN** Google returns an error or the code has already been used
 - **THEN** the system responds with HTTP 400 and does not issue a session cookie
 - **THEN** no session row is created
-
----
-
-### Requirement: Session introspection endpoint returns current user
-The system SHALL expose `GET /auth/me` that reads the `session` cookie, validates the JWT, and returns the current user's `id`, `email`, and `display_name` as JSON. If no valid cookie is present, it SHALL return HTTP 401.
-
-#### Scenario: Authenticated user receives their profile
-- **WHEN** a client sends `GET /auth/me` with a valid session cookie
-- **THEN** the system responds with HTTP 200 and `{ "id": "<uuid>", "email": "<email>", "display_name": "<name>" }`
-
-#### Scenario: Unauthenticated request is rejected
-- **WHEN** a client sends `GET /auth/me` without a session cookie or with an expired/invalid JWT
-- **THEN** the system responds with HTTP 401
 
 ---
 

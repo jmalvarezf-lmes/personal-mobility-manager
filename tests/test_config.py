@@ -13,6 +13,7 @@ from mobility_manager.config import (
     get_ambient_label_request_delay_seconds,
     get_ambient_label_retry_cooldown_hours,
     get_default_notification_movement_threshold_meters,
+    get_session_cleanup_retention_days,
     resolve_effective_threshold,
 )
 
@@ -120,3 +121,34 @@ class TestAmbientLabelConfig:
     def test_request_delay_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", "not-a-number")
         assert get_ambient_label_request_delay_seconds() == 5
+
+
+class TestSessionCleanupRetentionDays:
+    def test_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("SESSION_CLEANUP_RETENTION_DAYS", raising=False)
+        assert get_session_cleanup_retention_days() == 30
+
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SESSION_CLEANUP_RETENTION_DAYS", "7")
+        assert get_session_cleanup_retention_days() == 7
+
+    def test_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SESSION_CLEANUP_RETENTION_DAYS", "not-a-number")
+        assert get_session_cleanup_retention_days() == 30
+
+    def test_negative_value_falls_back_to_default_and_warns(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """
+        4R review fix 2: a negative retention window would push
+        CleanupExpiredSessions's cutoff into the future and delete every
+        active session — must fall back to the 30-day default instead.
+        """
+        monkeypatch.setenv("SESSION_CLEANUP_RETENTION_DAYS", "-5")
+
+        with caplog.at_level(logging.WARNING):
+            result = get_session_cleanup_retention_days()
+
+        assert result == 30
+        assert len(caplog.records) == 1
+        assert "SESSION_CLEANUP_RETENTION_DAYS" in caplog.records[0].message

@@ -6,7 +6,8 @@ import contextlib
 import logging
 import os
 import re
-from typing import Any
+from datetime import timedelta
+from typing import Any, Final
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,13 @@ logger = logging.getLogger(__name__)
 
 _LEGACY_NOTIFICATION_THRESHOLD_ENV_VAR = "NOTIFICATION_MOVEMENT_THRESHOLD_METERS"
 _NOTIFICATION_THRESHOLD_ENV_VAR = "DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS"
+
+# Single source of truth for the server-side session lifetime, shared by
+# CreateSession (sets the DB row's expires_at) and auth.py (sets the JWT's
+# exp claim and the cookie's max_age) — see add-session-revocation 4R review
+# fix 4. Deliberately not env-configurable: this is a de-duplication, not a
+# new tunable.
+SESSION_LIFETIME: Final[timedelta] = timedelta(hours=24)
 
 
 def get_postgres_dsn() -> str:
@@ -390,6 +398,49 @@ def get_ser_zone_containment_tolerance_cm() -> int:
         return int(raw)
     except ValueError:
         return 50
+
+
+def get_session_cleanup_retention_days() -> int:
+    """
+    Return the session cleanup retention window in days from
+    SESSION_CLEANUP_RETENTION_DAYS, or 30 if unset/invalid/negative.
+
+    Controls how long a revoked-or-expired `sessions` row survives before
+    the cleanup job purges it. Mirrors get_vehicle_poll_interval_minutes()'s
+    int-with-fallback style, plus a lower-bound guard: a negative value
+    would push CleanupExpiredSessions's cutoff into the future, causing
+    delete_older_than to purge every session (including active ones) —
+    see add-session-revocation 4R review fix 2.
+    """
+    raw = os.environ.get("SESSION_CLEANUP_RETENTION_DAYS", "30")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 30
+
+    if value < 0:
+        logger.warning(
+            "SESSION_CLEANUP_RETENTION_DAYS is negative (%s), which would delete all active sessions. "
+            "Falling back to the default of 30 days.",
+            value,
+        )
+        return 30
+
+    return value
+
+
+def get_session_cleanup_interval_hours() -> int:
+    """
+    Return the session cleanup job's run interval in hours from
+    SESSION_CLEANUP_INTERVAL_HOURS, or 24 if unset/invalid.
+
+    Mirrors get_ingestion_interval_hours()'s int-with-fallback style.
+    """
+    raw = os.environ.get("SESSION_CLEANUP_INTERVAL_HOURS", "24")
+    try:
+        return int(raw)
+    except ValueError:
+        return 24
 
 
 def get_otel_endpoint() -> str | None:

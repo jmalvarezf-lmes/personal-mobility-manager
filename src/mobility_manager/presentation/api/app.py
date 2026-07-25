@@ -27,6 +27,9 @@ from mobility_manager.application.event_handlers.ser_ticket_trigger_handler impo
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
 )
+from mobility_manager.application.use_cases.cleanup_expired_sessions import (
+    CleanupExpiredSessions,
+)
 from mobility_manager.application.use_cases.clear_vehicle_ser_parking_exemption import (
     ClearVehicleSerParkingExemption,
 )
@@ -34,6 +37,7 @@ from mobility_manager.application.use_cases.connect_ser_ticket_provider import (
     ConnectSerTicketProvider,
 )
 from mobility_manager.application.use_cases.create_ser_ticket import CreateSerTicket
+from mobility_manager.application.use_cases.create_session import CreateSession
 from mobility_manager.application.use_cases.delete_vehicle import DeleteVehicle
 from mobility_manager.application.use_cases.determine_ser_ticket_requirement import (
     DetermineSerTicketRequirement,
@@ -80,11 +84,13 @@ from mobility_manager.application.use_cases.register_vehicle import RegisterVehi
 from mobility_manager.application.use_cases.remove_notification_channel import (
     RemoveNotificationChannel,
 )
+from mobility_manager.application.use_cases.revoke_session import RevokeSession
 from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.application.use_cases.set_vehicle_ser_parking_exemption import (
     SetVehicleSerParkingExemption,
 )
 from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
+from mobility_manager.application.use_cases.validate_session import ValidateSession
 from mobility_manager.config import (
     get_ambient_label_poll_interval_minutes,
     get_ambient_label_request_delay_seconds,
@@ -98,6 +104,8 @@ from mobility_manager.config import (
     get_ingestion_interval_hours,
     get_log_level,
     get_otel_endpoint,
+    get_session_cleanup_interval_hours,
+    get_session_cleanup_retention_days,
     get_vehicle_poll_interval_minutes,
 )
 from mobility_manager.domain.events.vehicle_location_updated import (
@@ -153,6 +161,9 @@ from mobility_manager.infrastructure.repositories.postgres.ser_enforcement_sched
 from mobility_manager.infrastructure.repositories.postgres.ser_zone_repo import (
     PostgresSerZoneRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.session_repo import (
+    PostgresSessionRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.user_notification_channel_config_repo import (
     PostgresUserNotificationChannelConfigRepository,
 )
@@ -180,7 +191,10 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
 from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_exemption_repo import (
     PostgresVehicleSerParkingExemptionRepository,
 )
-from mobility_manager.infrastructure.scheduler import ParkingIngestionScheduler
+from mobility_manager.infrastructure.scheduler import (
+    ParkingIngestionScheduler,
+    SessionCleanupScheduler,
+)
 from mobility_manager.infrastructure.ser_ticket_providers.elparking.zone_mapping_repository import (
     PostgresElParkingZoneMappingRepository,
 )
@@ -307,6 +321,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.user_preferences_repo = user_preferences_repo
     app.state.notification_preferences_repo = notification_preferences_repo
     app.state.authenticate_google_user = authenticate_google_user_uc
+
+    # --- Sessions (add-session-revocation) ---
+    # Server-side session lifecycle backing get_current_user's revocation
+    # check — see deps.py and openspec/changes/add-session-revocation.
+    session_repo = PostgresSessionRepository(engine)
+    create_session_uc = CreateSession(session_repo=session_repo)
+    revoke_session_uc = RevokeSession(session_repo=session_repo)
+    validate_session_uc = ValidateSession(session_repo=session_repo)
+    cleanup_expired_sessions_uc = CleanupExpiredSessions(
+        session_repo=session_repo,
+        retention_days=get_session_cleanup_retention_days(),
+    )
+    app.state.session_repo = session_repo
+    app.state.create_session = create_session_uc
+    app.state.revoke_session = revoke_session_uc
+    app.state.validate_session = validate_session_uc
+
+    session_cleanup_scheduler = SessionCleanupScheduler(
+        cleanup_use_case=cleanup_expired_sessions_uc,
+        interval_hours=get_session_cleanup_interval_hours(),
+    )
+    session_cleanup_scheduler.start()
+    app.state.session_cleanup_scheduler = session_cleanup_scheduler
 
     # --- Notification channels ---
     # Moved ahead of --- Vehicles --- and --- Events --- (was originally
@@ -524,6 +561,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     holiday_refresh_scheduler.stop()
     vehicle_location_scheduler.stop()
     ambient_label_scheduler.stop()
+    session_cleanup_scheduler.stop()
     shutdown_observability(tracer_provider, meter_provider)
 
 

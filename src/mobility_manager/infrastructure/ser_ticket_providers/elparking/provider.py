@@ -57,12 +57,6 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_NAME = "elparking"
 
-# Only TYPE_NORMAL is supported in this change — see design.md Non-Goals
-# ("No support for TYPE_EXTENDED"). ElParking's documented ticket types
-# distinguish a brand-new ticket (TYPE_NORMAL) from extending an existing
-# active one (TYPE_EXTENDED); this integration only ever creates new tickets.
-_TICKET_TYPE_NORMAL = "TYPE_NORMAL"
-
 
 class ElParkingSerTicketProvider(SerTicketProviderPort):
     """SER ticket provider backed by ElParking's REST API."""
@@ -194,6 +188,13 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         a real response sample), which raised "unexpected shape" for every
         ticket creation. "fare_qty" does come from the selected `step`.
 
+        "type" and the duration field name were also wrong against the live
+        API (per direct user correction): ElParking's ticket-creation body
+        has no "type" field carrying the string "TYPE_NORMAL" — it's omitted
+        here for now — and the duration field is "stay_duration", not
+        "duration_minutes" (that name is this codebase's own internal
+        parameter name, kept as-is; only the outgoing JSON key changed).
+
         Raises:
             SerProviderApiError: `step` is missing the "fare_qty" key (a
                 malformed/unexpected-shape `get_steps()` response).
@@ -207,9 +208,11 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             "id_vehicle": id_vehicle,
             "id_ser_zone": elparking_zone_id,
             "id_ser_rate": elparking_rate_id,
-            "type": _TICKET_TYPE_NORMAL,
+            # "type" omitted for now — ElParking expects an integer (0) or no
+            # field at all for a normal ticket, not the string "TYPE_NORMAL"
+            # this used to send (per user correction against the live API).
             "start_date": datetime.now(UTC).isoformat(),
-            "duration_minutes": duration_minutes,
+            "stay_duration": duration_minutes,
             "latitude": location.lat,
             "longitude": location.lng,
             "fare_qty": fare_qty,

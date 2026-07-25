@@ -222,17 +222,21 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         """
         Parse `POST /v1/ser-tickets`'s response into (cost, end_date, provider_reference).
 
-        ASSUMPTION — UNVERIFIED AGAINST THE LIVE API (see tasks.md 10.3):
-        the response's exact field names for cost/end-date/ticket-id aren't
-        confirmed by any sampled response; "total_qty"/"end_date"/"id"
-        follow design.md's explicit mention of these names.
+        "total_qty" is a nested money object (`{"amount": float, "amountInMinorUnits":
+        int, "currency": str, ...}`), not a bare number — confirmed by a real
+        GET /v1/ser-steps response, where every *_qty field (fare_qty,
+        commission_qty, total_qty, ...) uses this same shape. The
+        ticket-creation response isn't itself sampled yet, but this money-object
+        convention is consistent everywhere else in ElParking's API (including
+        the vehicle wallet's `qty` field), so it's applied here too.
+        "end_date"/"id" remain unverified assumptions (see design.md 10.3).
 
         Raises:
             SerProviderApiError: The response is missing/malformed for
                 `total_qty` or `end_date`.
         """
         try:
-            cost = float(response["total_qty"])
+            cost = float(response["total_qty"]["amount"])
             end_date = datetime.fromisoformat(response["end_date"])
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking ticket creation returned an unexpected response body: {exc}") from exc
@@ -258,7 +262,16 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
 
     def _select_step(self, steps_response: dict[str, Any], duration_minutes: int) -> dict[str, Any] | None:
         """
-        Select the steps[] entry whose stay_duration equals duration_minutes.
+        Select the steps[] entry closest to duration_minutes.
+
+        Confirmed against a real GET /v1/ser-steps response: each entry's
+        duration field is "minute" — "stay_duration" (the former assumption)
+        doesn't exist anywhere in the response, so it never matched and every
+        ticket creation failed with "No ElParking pricing step found".
+        ElParking's steps are irregular (e.g. 16, 30, 39, 47, ... minutes),
+        not one per minute, so an exact match is the exception rather than
+        the rule: the entry whose "minute" is numerically closest to
+        duration_minutes is used instead (ties keep the earlier entry).
 
         Raises:
             SerProviderApiError: `steps_response` has an unexpected shape
@@ -266,12 +279,12 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         """
         try:
             steps: list[dict[str, Any]] = steps_response.get("steps", [])
-            for step in steps:
-                if step.get("stay_duration") == duration_minutes:
-                    return step
+            return min(steps, key=lambda step: abs(step["minute"] - duration_minutes))
+        except ValueError:
+            # min() on an empty steps list — genuinely no pricing step offered.
+            return None
         except (KeyError, TypeError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking steps response has an unexpected shape: {exc}") from exc
-        return None
 
     def _get_or_refresh_mapping(self, access_token: str, city_code: str) -> ElParkingZoneMapping:
         """

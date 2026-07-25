@@ -12,6 +12,16 @@ make test
 - Integration tests (`test_ser_zone_repo_integration.py`) require `POSTGRES_DSN` to be set; they are skipped automatically when the env var is absent — that is acceptable.
 - Never modify production code and skip test verification. Never mark work done while tests are red.
 
+### Database for tests (mandatory, non-negotiable)
+
+**Integration tests, `make test`, `make coverage`, and any other command that sets `POSTGRES_DSN` MUST run only against the local docker-compose Postgres instance — never against any other host.**
+
+- Start it with `docker compose up -d postgres` (service defined in `docker-compose.yml`: `postgres:16-alpine`, DB `mobility_manager`, user/password `mobility`/`mobility`, port `5432`).
+- The only acceptable `POSTGRES_DSN` for running tests is `postgresql://mobility:mobility@localhost:5432/mobility_manager` (the Makefile's own default) — pointed at that local container.
+- **Never** set `POSTGRES_DSN` to a remote host, a shared/live/staging database, or any database supplied by the user for read-only inspection or debugging, even temporarily, even for a single test file. This project's integration test fixtures run `TRUNCATE ... CASCADE` on core tables (`users`, `vehicles`, and others) as setup/teardown — pointed at the wrong database, this destroys real data irrecoverably. This has already happened once.
+- If a user shares DB credentials for read-only debugging/inspection, treat that as strictly for ad-hoc read-only queries (e.g. `SELECT` via a short script or read-only session) — never as a `POSTGRES_DSN` value for running the test suite, `make test`, or `make coverage`, regardless of how the user's instruction is phrased.
+- If the local docker-compose Postgres isn't running and can't be started, skip integration tests (unset `POSTGRES_DSN`) rather than pointing at any other database.
+
 ---
 
 ## Clean Architecture — Hard Rules

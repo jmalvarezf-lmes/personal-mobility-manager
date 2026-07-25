@@ -15,6 +15,7 @@
     "preferences": "Preferences",
     "serProviders": "SER Providers",
     "notificationChannels": "Notification Channels",
+    "apiDocs": "API Docs",
     "account": "Account menu",
     "logout": "Logout",
     "loginGoogle": "Login with Google",
@@ -23,6 +24,11 @@
   "page": {
     "landing": {
       "title": "Personal Mobility Manager"
+    },
+    "apiDocs": {
+      "title": "API Docs",
+      "loading": "Loading API documentation…",
+      "loadError": "Failed to load the API documentation."
     },
     "myVehicles": {
       "title": "My Vehicles",

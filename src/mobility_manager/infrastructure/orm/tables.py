@@ -239,6 +239,19 @@ ambient_label_icons_table = Table(
     Column("fetched_at", DateTime(timezone=True), nullable=False),
 )
 
+sessions_table = Table(
+    "sessions",
+    metadata,
+    Column("id", Uuid, primary_key=True),
+    Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True), nullable=True),
+    Index("idx_sessions_user_id", "user_id"),
+    Index("idx_sessions_revoked_at", "revoked_at"),
+    Index("idx_sessions_expires_at", "expires_at"),
+)
+
 vehicle_ser_parking_exemptions_table = Table(
     "vehicle_ser_parking_exemptions",
     metadata,

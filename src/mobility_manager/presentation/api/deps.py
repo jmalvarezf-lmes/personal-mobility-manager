@@ -2,9 +2,15 @@
 Presentation: FastAPI dependencies for authenticated user resolution and
 per-vehicle ownership enforcement.
 
-get_current_user reads the session JWT cookie, validates it with PyJWT, and
-returns the User entity. Raises HTTP 401 on any auth failure — missing
-cookie, invalid token, or unknown user.
+get_current_user reads the session JWT cookie, validates it with PyJWT,
+extracts the `sid` claim, and calls ValidateSession to confirm the
+server-side session referenced by `sid` still exists, isn't revoked, isn't
+expired, and belongs to the JWT's `sub` — this is the security-critical
+server-side revocation check (see add-session-revocation design.md); a
+cryptographically valid but revoked/expired/mismatched session is rejected
+even though the JWT signature itself still verifies. Only then does it fetch
+and return the User entity. Raises HTTP 401 on any failure — missing
+cookie, invalid token, failed session validation, or unknown user.
 
 Ownership enforcement has two entry points sharing one private helper
 (_fetch_owned_vehicle), rather than a single `Depends()` used everywhere.
@@ -26,6 +32,7 @@ for the full rationale.
   the original body-then-ownership order exactly.
 """
 
+from typing import Any
 from uuid import UUID
 
 import jwt
@@ -36,22 +43,44 @@ from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 
+_JWT_ALGORITHM = "HS256"
+
+
+def decode_session_jwt(token: str) -> dict[str, Any]:
+    """
+    Decode and verify the session JWT (HS256, signed with JWT_SECRET).
+
+    Raises jwt.PyJWTError (or a subclass) on any failure — expired,
+    malformed, or tampered token. Callers decide how to handle it. Shared by
+    get_current_user and auth.py's logout, which both need to decode the
+    same cookie the same way.
+    """
+    return jwt.decode(token, get_jwt_secret(), algorithms=[_JWT_ALGORITHM])
+
 
 async def get_current_user(request: Request) -> User:
     """
     FastAPI dependency that resolves the authenticated User from the session cookie.
 
-    Reads the 'session' cookie, decodes the HS256 JWT, and fetches the user
-    from the repository stored in app.state. Raises HTTP 401 on any failure.
+    Reads the 'session' cookie, decodes the HS256 JWT, validates the
+    server-side session referenced by the JWT's `sid` claim via
+    ValidateSession (not revoked, not expired, owned by the JWT's `sub`),
+    and fetches the user from the repository stored in app.state. Raises
+    HTTP 401 on any failure — missing cookie, invalid token, invalid
+    session, or unknown user.
     """
     token = request.cookies.get("session")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
-        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
+        payload = decode_session_jwt(token)
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired session") from None
+
+    sid_str: str | None = payload.get("sid")
+    if not sid_str:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
 
     user_id_str: str | None = payload.get("sub")
     if not user_id_str:
@@ -61,6 +90,15 @@ async def get_current_user(request: Request) -> User:
         user_id = UUID(user_id_str)
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid user ID in session") from None
+
+    try:
+        session_id = UUID(sid_str)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid session ID in session") from None
+
+    validate_session_uc = request.app.state.validate_session
+    if not validate_session_uc.execute(session_id=session_id, user_id=user_id):
+        raise HTTPException(status_code=401, detail="Session is no longer valid")
 
     user_repo = request.app.state.user_repo
     user: User | None = user_repo.find_by_id(user_id)

@@ -84,3 +84,55 @@ class ParkingIngestionScheduler:
         """Stop the scheduler gracefully."""
         self._scheduler.shutdown(wait=False)
         logger.info("Parking ingestion scheduler stopped")
+
+
+class SessionCleanupScheduler:
+    """
+    Schedules periodic purging of revoked/expired `sessions` rows via
+    CleanupExpiredSessions — see add-session-revocation design.md decision 5.
+
+    A single interval job, mirroring ParkingIngestionScheduler's
+    add_job(..., "interval", hours=...) pattern but with only one job (no
+    per-city fan-out).
+    """
+
+    def __init__(
+        self,
+        cleanup_use_case: Any,
+        interval_hours: int = 24,
+    ) -> None:
+        """
+        Args:
+            cleanup_use_case: CleanupExpiredSessions instance.
+            interval_hours: How often the cleanup job runs.
+        """
+        self._cleanup_use_case = cleanup_use_case
+        self._interval_hours = interval_hours
+        self._scheduler = BackgroundScheduler()
+
+    def _run(self) -> None:
+        """Run the cleanup job once. Never raises (defense in depth)."""
+        try:
+            self._cleanup_use_case.execute()
+        except Exception:
+            logger.exception("Session cleanup run failed")
+
+    def start(self) -> None:
+        """Start the scheduler and trigger an immediate first run."""
+        self._scheduler.add_job(
+            self._run,
+            "interval",
+            hours=self._interval_hours,
+            id="session_cleanup",
+        )
+        self._scheduler.start()
+        logger.info(
+            "Session cleanup scheduler started (interval: %dh)",
+            self._interval_hours,
+        )
+        self._run()
+
+    def stop(self) -> None:
+        """Stop the scheduler gracefully."""
+        self._scheduler.shutdown(wait=False)
+        logger.info("Session cleanup scheduler stopped")

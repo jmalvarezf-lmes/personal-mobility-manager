@@ -5,11 +5,13 @@ Endpoints:
   GET  /auth/google/login    — redirect to Google OAuth2 consent screen
   GET  /auth/google/callback — handle Google callback, issue session cookie
   GET  /auth/me              — return current authenticated user
-  POST /auth/logout          — clear session cookie
+  POST /auth/logout          — revoke server-side session and clear cookie
 """
 
-from datetime import UTC, datetime, timedelta
+import logging
+from datetime import UTC, datetime
 from urllib.parse import urlencode
+from uuid import UUID
 
 import httpx
 import jwt
@@ -17,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from mobility_manager.config import (
+    SESSION_LIFETIME,
     get_google_client_id,
     get_google_client_secret,
     get_google_redirect_uri,
@@ -24,8 +27,10 @@ from mobility_manager.config import (
 )
 from mobility_manager.domain.entities.user import User
 from mobility_manager.presentation.api.csrf import generate_signed_state, verify_signed_state
-from mobility_manager.presentation.api.deps import get_current_user
+from mobility_manager.presentation.api.deps import decode_session_jwt, get_current_user
 from mobility_manager.presentation.api.limiter import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -33,7 +38,6 @@ _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
-_SESSION_MAX_AGE = 86400  # 24 hours
 _JWT_ALGORITHM = "HS256"
 
 
@@ -113,11 +117,15 @@ async def google_callback(
         display_name=display_name,
     )
 
+    create_session_uc = request.app.state.create_session
+    session = create_session_uc.execute(user_id=user.id)
+
     now = datetime.now(UTC)
     jwt_payload = {
         "sub": str(user.id),
         "email": user.email,
-        "exp": now + timedelta(seconds=_SESSION_MAX_AGE),
+        "sid": str(session.id),
+        "exp": now + SESSION_LIFETIME,
     }
     session_token = jwt.encode(jwt_payload, get_jwt_secret(), algorithm=_JWT_ALGORITHM)
 
@@ -129,7 +137,7 @@ async def google_callback(
         secure=True,
         samesite="strict",
         path="/",
-        max_age=_SESSION_MAX_AGE,
+        max_age=int(SESSION_LIFETIME.total_seconds()),
     )
     return response
 
@@ -147,8 +155,36 @@ async def get_me(current_user: User = Depends(get_current_user)) -> JSONResponse
 
 
 @router.post("/logout", status_code=204)
-async def logout() -> Response:
-    """Clear the session cookie and respond with 204 No Content."""
+async def logout(request: Request) -> Response:
+    """
+    Revoke the server-side session (if any) and clear the session cookie.
+
+    Decodes the 'session' cookie the same way get_current_user does, but
+    tolerates any decode failure (missing cookie, expired/tampered JWT,
+    missing sid claim) without raising — logout must always succeed with
+    204, whether or not the caller is currently authenticated (see
+    session-management spec: "Logout with no cookie does not error").
+    """
+    token = request.cookies.get("session")
+    sid_str: str | None = None
+    if token:
+        try:
+            payload = decode_session_jwt(token)
+            sid_str = payload.get("sid")
+        except (jwt.PyJWTError, ValueError):
+            sid_str = None
+
+    if sid_str:
+        try:
+            revoke_session_uc = request.app.state.revoke_session
+            revoke_session_uc.execute(session_id=UUID(sid_str))
+        except Exception:
+            # Broad catch is intentional: logout is a best-effort operation
+            # that must always return 204 and clear the cookie regardless of
+            # what kind of DB failure occurs while revoking the session — see
+            # add-session-revocation 4R review fix 1.
+            logger.exception("Failed to revoke session %s during logout", sid_str)
+
     response = Response(status_code=204)
     response.set_cookie(
         key="session",

@@ -46,6 +46,7 @@ def _make_session_cookie(user: User, secret: str = _JWT_SECRET) -> str:
     payload = {
         "sub": str(user.id),
         "email": user.email,
+        "sid": str(uuid4()),
         "exp": datetime.now(UTC) + timedelta(hours=1),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
@@ -72,6 +73,9 @@ def _build_app(create_ser_ticket_uc=None, user_repo=None) -> FastAPI:
         app.state.create_ser_ticket = create_ser_ticket_uc
     if user_repo is not None:
         app.state.user_repo = user_repo
+    mock_validate_session = MagicMock()
+    mock_validate_session.execute.return_value = True
+    app.state.validate_session = mock_validate_session
     return app
 
 

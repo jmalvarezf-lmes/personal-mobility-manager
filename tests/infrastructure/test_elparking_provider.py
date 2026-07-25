@@ -216,9 +216,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
             {
                 "id": "zone-84",
                 "name": "84 - PILAR",
-                "polygon_wkt": (
-                    "POLYGON((-3.70 40.40, -3.699 40.40, -3.699 40.401, -3.70 40.401, -3.70 40.40))"
-                ),
+                "polygon_wkt": ("POLYGON((-3.70 40.40, -3.699 40.40, -3.699 40.401, -3.70 40.401, -3.70 40.40))"),
                 "rates": [{"id": "rate-azul", "name": "Tarifa Azul"}],
             }
         ]
@@ -230,8 +228,15 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
     client.list_vehicles_return = [{"id": 42, "number_plate": "1234ABC"}]
-    client.get_steps_return = {"steps": [{"minute": 60, "fare_qty": 2.5, "step_request": "opaque-token"}]}
-    client.create_ticket_return = {"id": "ticket-99", "total_qty": {"amount": 2.5}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.get_steps_return = {
+        "steps": [{"minute": 60, "fare_qty": 2.5}],
+        "security_checksum": "abc123",
+    }
+    client.create_ticket_return = {
+        "id": "ticket-99",
+        "total_qty": {"amount": 2.5},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     ticket = provider.create_ticket(session, vehicle, duration_minutes=60, location=location)
@@ -247,7 +252,9 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
             "latitude": location.lat,
             "longitude": location.lng,
             "fare_qty": 2.5,
-            "step_request": "opaque-token",
+            # The entire GET /v1/ser-steps response, forwarded verbatim — see
+            # design.md and _build_ticket_request_body's docstring.
+            "step_request": client.get_steps_return,
         }
     ]
     assert ticket.provider == "elparking"
@@ -298,17 +305,13 @@ def test_create_ticket_disambiguates_duplicate_zone_number_by_polygon(monkeypatc
             {
                 "id": "zone-A",
                 "name": "084 - ZONE A",
-                "polygon_wkt": (
-                    "POLYGON((-3.70 40.40, -3.699 40.40, -3.699 40.401, -3.70 40.401, -3.70 40.40))"
-                ),
+                "polygon_wkt": ("POLYGON((-3.70 40.40, -3.699 40.40, -3.699 40.401, -3.70 40.401, -3.70 40.40))"),
                 "rates": [{"id": "rate-azul-a", "name": "Tarifa Azul"}],
             },
             {
                 "id": "zone-B",
                 "name": "084 - ZONE B",
-                "polygon_wkt": (
-                    "POLYGON((-3.60 40.30, -3.599 40.30, -3.599 40.301, -3.60 40.301, -3.60 40.30))"
-                ),
+                "polygon_wkt": ("POLYGON((-3.60 40.30, -3.599 40.30, -3.599 40.301, -3.60 40.301, -3.60 40.30))"),
                 "rates": [{"id": "rate-azul-b", "name": "Tarifa Azul"}],
             },
         ]
@@ -320,8 +323,12 @@ def test_create_ticket_disambiguates_duplicate_zone_number_by_polygon(monkeypatc
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
-    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0, "step_request": "tok"}]}
-    client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 1.0}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0}]}
+    client.create_ticket_return = {
+        "id": "ticket-1",
+        "total_qty": {"amount": 1.0},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     provider.create_ticket(session, vehicle, duration_minutes=30, location=location)
@@ -353,8 +360,12 @@ def test_create_ticket_cache_hit_skips_town_zone_fetch(monkeypatch: pytest.Monke
         zone_mapping_repo=zone_mapping_repo,
     )
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
-    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0, "step_request": "tok"}]}
-    client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 1.0}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0}]}
+    client.create_ticket_return = {
+        "id": "ticket-1",
+        "total_qty": {"amount": 1.0},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     provider.create_ticket(session, vehicle, duration_minutes=30, location=location)
@@ -387,8 +398,12 @@ def test_create_ticket_cache_miss_fetches_and_saves_mapping(monkeypatch: pytest.
             "rates": [{"id": "rate-azul", "name": "Tarifa Azul"}],
         }
     ]
-    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0, "step_request": "tok"}]}
-    client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 1.0}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.get_steps_return = {"steps": [{"minute": 30, "fare_qty": 1.0}]}
+    client.create_ticket_return = {
+        "id": "ticket-1",
+        "total_qty": {"amount": 1.0},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     provider.create_ticket(session, vehicle, duration_minutes=30, location=location)
@@ -510,7 +525,7 @@ def test_create_ticket_malformed_step_missing_fare_qty_raises_provider_api_error
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
-    # Matches duration, but missing "fare_qty"/"step_request" — malformed shape.
+    # Matches duration, but missing "fare_qty" — malformed shape.
     client.get_steps_return = {"steps": [{"minute": 60}]}
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -674,19 +689,25 @@ def test_create_ticket_uses_nearest_step_when_exact_duration_unavailable(
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
     client.get_steps_return = {
         "steps": [
-            {"minute": 16, "fare_qty": 0.05, "step_request": "tok-16"},
-            {"minute": 30, "fare_qty": 0.10, "step_request": "tok-30"},
-            {"minute": 47, "fare_qty": 0.20, "step_request": "tok-47"},
+            {"minute": 16, "fare_qty": 0.05},
+            {"minute": 30, "fare_qty": 0.10},
+            {"minute": 47, "fare_qty": 0.20},
         ]
     }
-    client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 0.10}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.create_ticket_return = {
+        "id": "ticket-1",
+        "total_qty": {"amount": 0.10},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     # Requested 35 — closer to the 30-minute step (distance 5) than 47 (distance 12).
     provider.create_ticket(session, vehicle, duration_minutes=35, location=location)
 
-    assert client.create_ticket_calls[0]["step_request"] == "tok-30"
+    # fare_qty comes from the selected (nearest) step, proving 30-minute was picked.
     assert client.create_ticket_calls[0]["fare_qty"] == 0.10
+    # step_request is always the whole steps_response, regardless of which step matched.
+    assert client.create_ticket_calls[0]["step_request"] == client.get_steps_return
 
 
 def test_create_ticket_nearest_step_breaks_ties_toward_earlier_entry(
@@ -716,16 +737,20 @@ def test_create_ticket_nearest_step_breaks_ties_toward_earlier_entry(
     # 30 and 40 are equidistant from the requested 35 — the earlier entry (30) wins.
     client.get_steps_return = {
         "steps": [
-            {"minute": 30, "fare_qty": 0.10, "step_request": "tok-30"},
-            {"minute": 40, "fare_qty": 0.15, "step_request": "tok-40"},
+            {"minute": 30, "fare_qty": 0.10},
+            {"minute": 40, "fare_qty": 0.15},
         ]
     }
-    client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 0.10}, "end_date": "2026-07-23T14:00:00+00:00"}
+    client.create_ticket_return = {
+        "id": "ticket-1",
+        "total_qty": {"amount": 0.10},
+        "end_date": "2026-07-23T14:00:00+00:00",
+    }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
     provider.create_ticket(session, vehicle, duration_minutes=35, location=location)
 
-    assert client.create_ticket_calls[0]["step_request"] == "tok-30"
+    assert client.create_ticket_calls[0]["fare_qty"] == 0.10
 
 
 def test_create_ticket_malformed_ticket_response_missing_total_qty_raises_provider_api_error(
@@ -752,7 +777,7 @@ def test_create_ticket_malformed_ticket_response_missing_total_qty_raises_provid
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
-    client.get_steps_return = {"steps": [{"minute": 60, "fare_qty": 1.0, "step_request": "tok"}]}
+    client.get_steps_return = {"steps": [{"minute": 60, "fare_qty": 1.0}]}
     # Missing "total_qty" entirely — malformed response shape.
     client.create_ticket_return = {"id": "ticket-1", "end_date": "2026-07-23T14:00:00+00:00"}
 
@@ -786,7 +811,7 @@ def test_create_ticket_malformed_ticket_response_missing_end_date_raises_provide
         zone_mapping_repo=FakeZoneMappingRepo(mapping),
     )
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate}]
-    client.get_steps_return = {"steps": [{"minute": 60, "fare_qty": 1.0, "step_request": "tok"}]}
+    client.get_steps_return = {"steps": [{"minute": 60, "fare_qty": 1.0}]}
     # Missing "end_date" entirely — malformed response shape.
     client.create_ticket_return = {"id": "ticket-1", "total_qty": {"amount": 1.0}}
 

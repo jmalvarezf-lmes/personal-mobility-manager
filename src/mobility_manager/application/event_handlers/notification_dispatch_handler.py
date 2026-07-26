@@ -10,17 +10,18 @@ notification kind after explicitly enabling it via
 PUT /notifications/preferences/location_moved. The effective movement
 threshold is resolved per-user (config.threshold_m, falling back to
 DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS), independently of
-SerTicketTriggerHandler's own threshold for `ser_zone_ticket_required`.
+SerTicketNotificationTriggerHandler's own threshold for `ser_zone_ticket_required`.
 
 The entire `handle` body is wrapped in a broad try/except: this handler is
-subscribed on the same synchronous, unguarded in-memory event publisher as
-SerTicketTriggerHandler (see InMemoryEventPublisher.publish), which invokes
-subscribed handlers in a loop with no per-handler exception isolation. An
-unhandled exception here would both stop SerTicketTriggerHandler from
-running for that event and propagate out as an unhandled error on the
-push-ingestion HTTP path, even though the vehicle location was already
-durably saved before publish was called. This handler must never break the
-caller — see SerTicketTriggerHandler's module docstring for the identical
+subscribed on the same in-memory event publisher as
+SerTicketNotificationTriggerHandler (see InMemoryEventPublisher.publish),
+which dispatches each subscribed handler on its own thread-pool task (see
+add-ser-ticket-auto-creation post-implementation fix 11.2) — an unhandled
+exception here would not stop SerTicketNotificationTriggerHandler from
+running for the same event, but would still be a silent failure of this
+handler's own effect (e.g. a notification never sent) if left unguarded.
+This handler must never break the caller — see
+SerTicketNotificationTriggerHandler's module docstring for the identical
 reasoning.
 """
 
@@ -91,8 +92,9 @@ class NotificationDispatchHandler:
         The entire body is wrapped in a broad try/except so that a failure
         in any collaborator is contained here and never propagates to the
         caller — see module docstring. The whole call is also wrapped in a
-        root trace span (this handler runs synchronously outside any HTTP
-        request context — see design.md decision 4): the span records the
+        root trace span (this handler runs on its own thread-pool worker
+        thread outside any HTTP request context — see design.md decision 4
+        and InMemoryEventPublisher's module docstring): the span records the
         exception and is marked as an error on failure, without changing
         the swallow-and-continue behavior itself. A
         record_notification_dispatch() metric is recorded once per

@@ -119,6 +119,15 @@ def get_vehicle_poll_interval_minutes() -> int:
         return 5
 
 
+def get_event_publisher_max_workers() -> int:
+    """Return InMemoryEventPublisher's async-dispatch thread pool size from environment."""
+    raw = os.environ.get("EVENT_PUBLISHER_MAX_WORKERS", "4")
+    try:
+        return int(raw)
+    except ValueError:
+        return 4
+
+
 def get_ambient_label_poll_interval_minutes() -> int:
     """Return the ambient label scheduler's tick interval in minutes from environment."""
     raw = os.environ.get("AMBIENT_LABEL_POLL_INTERVAL_MINUTES", "60")
@@ -193,7 +202,7 @@ def resolve_effective_threshold(config: dict[str, Any]) -> float:
     `config` dict, falling back to get_default_notification_movement_threshold_meters()
     when the field is absent.
 
-    Shared by NotificationDispatchHandler and SerTicketTriggerHandler, which
+    Shared by NotificationDispatchHandler and SerTicketNotificationTriggerHandler, which
     previously each implemented an identical private `_effective_threshold`
     — see notification-type-preferences review findings R2-001.
     """

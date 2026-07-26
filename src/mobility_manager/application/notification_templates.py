@@ -107,12 +107,15 @@ _env = Environment(
 SUPPORTED_LANGUAGES: frozenset[str] = validate_language_coverage(collect_language_coverage(_loader))
 
 
-def render(type_key: str, language: str | None, **kwargs: str) -> str:
+def render(type_key: str, language: str | None, **kwargs: str | bool) -> str:
     """
     Render the template for `type_key` in `language`, substituting `kwargs`.
 
     Falls back to the default language when `language` is None or not
-    among SUPPORTED_LANGUAGES, rather than raising.
+    among SUPPORTED_LANGUAGES, rather than raising. Most templates only
+    interpolate `str` values; `bool` is additionally accepted for kwargs a
+    template branches on via Jinja `{% if %}` rather than interpolates
+    directly (e.g. `ser_ticket_creation_failed`'s `possibly_created`).
     """
     lang = language if language in SUPPORTED_LANGUAGES else _DEFAULT_LANGUAGE
     template = _env.get_template(f"{type_key}/{lang}.txt.j2")

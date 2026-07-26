@@ -55,6 +55,12 @@ _holiday_refresh_run_counter = _meter.create_counter(
     description="Count of public holiday refresh runs, labeled by outcome.",
 )
 
+_ser_ticket_auto_creation_counter = _meter.create_counter(
+    name="mobility_manager.ser_ticket_auto_creation",
+    unit="1",
+    description="Count of automatic SER ticket creation attempts, labeled by outcome (created/failed).",
+)
+
 
 def record_notification_dispatch(channel: str, success: bool) -> None:
     """Record one notification dispatch attempt through `channel`."""
@@ -85,3 +91,8 @@ def record_ambient_label_lookup(status: str) -> None:
 def record_holiday_refresh_run(success: bool) -> None:
     """Record one public holiday refresh run (shared across every enabled city)."""
     _holiday_refresh_run_counter.add(1, {"success": success})
+
+
+def record_ser_ticket_auto_creation(outcome: str) -> None:
+    """Record one automatic SER ticket creation attempt, labeled `outcome` (`created`/`failed`)."""
+    _ser_ticket_auto_creation_counter.add(1, {"outcome": outcome})

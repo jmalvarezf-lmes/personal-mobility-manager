@@ -47,10 +47,45 @@ def pg_engine():
                 """
             )
         )
-        conn.execute(text("TRUNCATE user_preferences, users CASCADE"))
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS notification_types (
+                    key TEXT PRIMARY KEY,
+                    label TEXT NOT NULL,
+                    config_schema JSONB NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS user_notification_preferences (
+                    user_id UUID REFERENCES users(id),
+                    type_key TEXT REFERENCES notification_types(key),
+                    enabled BOOLEAN NOT NULL,
+                    config JSONB NOT NULL DEFAULT '{}',
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (user_id, type_key)
+                )
+                """
+            )
+        )
+        conn.execute(text("TRUNCATE user_notification_preferences, user_preferences, notification_types, users CASCADE"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO notification_types (key, label, config_schema) VALUES
+                    ('ser_zone_ticket_required', 'SER ticket required', '{}'::jsonb),
+                    ('ser_ticket_created', 'SER ticket created', '{}'::jsonb),
+                    ('ser_ticket_creation_failed', 'SER ticket creation failed', '{}'::jsonb)
+                """
+            )
+        )
     yield engine
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE user_preferences, users CASCADE"))
+        conn.execute(text("TRUNCATE user_notification_preferences, user_preferences, notification_types, users CASCADE"))
     engine.dispose()
 
 
@@ -288,6 +323,152 @@ def test_update_persists_timezone(pg_engine) -> None:
     refetched = repo.find_by_user_id(user_id)
     assert refetched is not None
     assert refetched.timezone == "Europe/Madrid"
+
+
+def test_update_with_notification_cascade_updates_preferences_and_cascade_rows(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+
+    updated = repo.update_with_notification_cascade(
+        user_id,
+        default_ticket_duration_minutes=90,
+        auto_create_ticket=True,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone=None,
+        notification_cascade=[
+            ("ser_zone_ticket_required", False),
+            ("ser_ticket_created", True),
+            ("ser_ticket_creation_failed", True),
+        ],
+    )
+
+    assert updated.default_ticket_duration_minutes == 90
+    assert updated.auto_create_ticket is True
+
+    with pg_engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT type_key, enabled FROM user_notification_preferences WHERE user_id = :user_id"),
+            {"user_id": str(user_id)},
+        ).fetchall()
+    by_type = {row.type_key: row.enabled for row in rows}
+    assert by_type == {
+        "ser_zone_ticket_required": False,
+        "ser_ticket_created": True,
+        "ser_ticket_creation_failed": True,
+    }
+
+
+def test_update_with_notification_cascade_preserves_existing_config(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+    now = datetime.now(UTC)
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO user_notification_preferences (user_id, type_key, enabled, config, updated_at)"
+                " VALUES (:user_id, 'ser_zone_ticket_required', true, :config, :now)"
+            ),
+            {"user_id": str(user_id), "config": '{"threshold_m": 20}', "now": now},
+        )
+
+    repo.update_with_notification_cascade(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=True,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone=None,
+        notification_cascade=[("ser_zone_ticket_required", False)],
+    )
+
+    with pg_engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT enabled, config FROM user_notification_preferences"
+                " WHERE user_id = :user_id AND type_key = 'ser_zone_ticket_required'"
+            ),
+            {"user_id": str(user_id)},
+        ).fetchone()
+
+    assert row is not None
+    assert row.enabled is False
+    assert row.config == {"threshold_m": 20}
+
+
+def test_update_with_notification_cascade_provisions_a_missing_row(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+    # No user_notification_preferences row exists yet for this user/type.
+
+    repo.update_with_notification_cascade(
+        user_id,
+        default_ticket_duration_minutes=60,
+        auto_create_ticket=True,
+        preferred_notification_channel=None,
+        notification_language=None,
+        timezone=None,
+        notification_cascade=[("ser_ticket_created", True)],
+    )
+
+    with pg_engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT enabled, config FROM user_notification_preferences"
+                " WHERE user_id = :user_id AND type_key = 'ser_ticket_created'"
+            ),
+            {"user_id": str(user_id)},
+        ).fetchone()
+
+    assert row is not None
+    assert row.enabled is True
+    assert row.config == {}
+
+
+def test_update_with_notification_cascade_rolls_back_preferences_update_on_cascade_failure(pg_engine) -> None:
+    """
+    A cascade entry referencing a type_key with no matching notification_types
+    row violates the FK constraint mid-transaction — the whole transaction,
+    including the user_preferences UPDATE, must roll back (fix 11.6).
+    """
+    from mobility_manager.infrastructure.repositories.postgres.user_preferences_repo import (
+        PostgresUserPreferencesRepository,
+    )
+
+    repo = PostgresUserPreferencesRepository(pg_engine)
+    user_id = _insert_user(pg_engine)
+    repo.ensure_default(user_id)
+
+    with pytest.raises(Exception):  # noqa: B017 - SQLAlchemy IntegrityError, not imported here on purpose
+        repo.update_with_notification_cascade(
+            user_id,
+            default_ticket_duration_minutes=99,
+            auto_create_ticket=True,
+            preferred_notification_channel=None,
+            notification_language=None,
+            timezone=None,
+            notification_cascade=[("this_type_key_does_not_exist", True)],
+        )
+
+    preferences = repo.find_by_user_id(user_id)
+    assert preferences is not None
+    assert preferences.default_ticket_duration_minutes == 60
+    assert preferences.auto_create_ticket is False
 
 
 def test_update_can_clear_timezone(pg_engine) -> None:

@@ -61,7 +61,12 @@ def _make_preferences(
     )
 
 
-def _build_app(user_repo=None, preferences_repo=None, config_repo=None) -> FastAPI:
+def _build_app(
+    user_repo=None,
+    preferences_repo=None,
+    config_repo=None,
+    provider_config_repo=None,
+) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     if user_repo is not None:
@@ -70,17 +75,28 @@ def _build_app(user_repo=None, preferences_repo=None, config_repo=None) -> FastA
         app.state.user_preferences_repo = preferences_repo
     if config_repo is not None:
         app.state.user_notification_channel_config_repo = config_repo
+    if provider_config_repo is not None:
+        app.state.user_ser_provider_config_repo = provider_config_repo
     mock_validate_session = MagicMock()
     mock_validate_session.execute.return_value = True
     app.state.validate_session = mock_validate_session
     return app
 
 
-def _build_authed_app(preferences_repo=None, config_repo=None) -> tuple[FastAPI, str]:
+def _build_authed_app(
+    preferences_repo=None,
+    config_repo=None,
+    provider_config_repo=None,
+) -> tuple[FastAPI, str]:
     user = _make_test_user()
     mock_user_repo = MagicMock()
     mock_user_repo.find_by_id.return_value = user
-    app = _build_app(user_repo=mock_user_repo, preferences_repo=preferences_repo, config_repo=config_repo)
+    app = _build_app(
+        user_repo=mock_user_repo,
+        preferences_repo=preferences_repo,
+        config_repo=config_repo,
+        provider_config_repo=provider_config_repo,
+    )
     cookie = _make_session_cookie(user)
     return app, cookie
 
@@ -162,7 +178,10 @@ class TestUpdatePreferences:
     def test_authenticated_update_returns_200_with_new_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        # auto_create_ticket is already True — this test isn't exercising the
+        # false->true cascade/validation, just a general field update.
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=True)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=90,
             auto_create_ticket=True,
             preferred_notification_channel="telegram",
@@ -194,13 +213,14 @@ class TestUpdatePreferences:
         assert data["notification_language"] == "es"
         assert data["timezone"] == "Europe/Madrid"
         config_repo.find.assert_called_once_with(_OWNER_ID, "telegram")
-        preferences_repo.update.assert_called_once_with(
+        preferences_repo.update_with_notification_cascade.assert_called_once_with(
             user_id=_OWNER_ID,
             default_ticket_duration_minutes=90,
             auto_create_ticket=True,
             preferred_notification_channel="telegram",
             notification_language="es",
             timezone="Europe/Madrid",
+            notification_cascade=[],
         )
 
     def test_zero_duration_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,7 +242,7 @@ class TestUpdatePreferences:
         )
 
         assert response.status_code == 422
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_negative_duration_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
@@ -243,7 +263,7 @@ class TestUpdatePreferences:
         )
 
         assert response.status_code == 422
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_unrecognized_extra_field_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
@@ -265,7 +285,7 @@ class TestUpdatePreferences:
         )
 
         assert response.status_code == 422
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_preferred_channel_not_configured_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
@@ -289,12 +309,13 @@ class TestUpdatePreferences:
 
         assert response.status_code == 422
         config_repo.find.assert_called_once_with(_OWNER_ID, "telegram")
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_clearing_preferred_channel_with_null_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
@@ -318,13 +339,14 @@ class TestUpdatePreferences:
         assert response.status_code == 200
         assert response.json()["preferred_notification_channel"] is None
         config_repo.find.assert_not_called()
-        preferences_repo.update.assert_called_once_with(
+        preferences_repo.update_with_notification_cascade.assert_called_once_with(
             user_id=_OWNER_ID,
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
             notification_language=None,
             timezone=None,
+            notification_cascade=[],
         )
 
     def test_unrecognized_notification_language_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -346,12 +368,13 @@ class TestUpdatePreferences:
         )
 
         assert response.status_code == 422
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_clearing_notification_language_with_null_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
@@ -374,19 +397,21 @@ class TestUpdatePreferences:
 
         assert response.status_code == 200
         assert response.json()["notification_language"] is None
-        preferences_repo.update.assert_called_once_with(
+        preferences_repo.update_with_notification_cascade.assert_called_once_with(
             user_id=_OWNER_ID,
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
             notification_language=None,
             timezone=None,
+            notification_cascade=[],
         )
 
     def test_updating_with_supported_notification_language_succeeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
@@ -429,12 +454,13 @@ class TestUpdatePreferences:
         )
 
         assert response.status_code == 422
-        preferences_repo.update.assert_not_called()
+        preferences_repo.update_with_notification_cascade.assert_not_called()
 
     def test_clearing_timezone_with_null_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
@@ -458,19 +484,21 @@ class TestUpdatePreferences:
 
         assert response.status_code == 200
         assert response.json()["timezone"] is None
-        preferences_repo.update.assert_called_once_with(
+        preferences_repo.update_with_notification_cascade.assert_called_once_with(
             user_id=_OWNER_ID,
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
             notification_language=None,
             timezone=None,
+            notification_cascade=[],
         )
 
     def test_updating_with_valid_timezone_succeeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         preferences_repo = MagicMock()
-        preferences_repo.update.return_value = _make_preferences(
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(
             default_ticket_duration_minutes=60,
             auto_create_ticket=False,
             preferred_notification_channel=None,
@@ -494,3 +522,119 @@ class TestUpdatePreferences:
 
         assert response.status_code == 200
         assert response.json()["timezone"] == "Europe/Madrid"
+
+    def test_enabling_auto_create_ticket_without_connected_provider_returns_422(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        provider_config_repo = MagicMock()
+        provider_config_repo.list_connected_providers.return_value = []
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo, provider_config_repo=provider_config_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": True,
+                "preferred_notification_channel": None,
+                "notification_language": None,
+                "timezone": None,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"]["error_code"] == "ser_provider_not_connected"
+        provider_config_repo.list_connected_providers.assert_called_once_with(_OWNER_ID)
+        preferences_repo.update_with_notification_cascade.assert_not_called()
+
+    def test_enabling_auto_create_ticket_with_connected_provider_cascades_notification_preferences(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(auto_create_ticket=True)
+        provider_config_repo = MagicMock()
+        provider_config_repo.list_connected_providers.return_value = ["elparking"]
+        app, cookie = _build_authed_app(
+            preferences_repo=preferences_repo,
+            provider_config_repo=provider_config_repo,
+        )
+        client = TestClient(app)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": True,
+                "preferred_notification_channel": None,
+                "notification_language": None,
+                "timezone": None,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        cascade = dict(preferences_repo.update_with_notification_cascade.call_args.kwargs["notification_cascade"])
+        assert cascade["ser_zone_ticket_required"] is False
+        assert cascade["ser_ticket_created"] is True
+        assert cascade["ser_ticket_creation_failed"] is True
+
+    def test_disabling_auto_create_ticket_cascades_notification_preferences(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=True)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(auto_create_ticket=False)
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo)
+        client = TestClient(app)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+                "notification_language": None,
+                "timezone": None,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        cascade = dict(preferences_repo.update_with_notification_cascade.call_args.kwargs["notification_cascade"])
+        assert cascade == {
+            "ser_ticket_created": False,
+            "ser_ticket_creation_failed": False,
+        }
+        # ser_zone_ticket_required is left as-is — never written by this cascade direction.
+        assert "ser_zone_ticket_required" not in cascade
+
+    def test_leaving_auto_create_ticket_unchanged_does_not_cascade(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        preferences_repo = MagicMock()
+        preferences_repo.find_by_user_id.return_value = _make_preferences(auto_create_ticket=False)
+        preferences_repo.update_with_notification_cascade.return_value = _make_preferences(auto_create_ticket=False)
+        app, cookie = _build_authed_app(preferences_repo=preferences_repo)
+        client = TestClient(app)
+
+        response = client.put(
+            "/preferences",
+            json={
+                "default_ticket_duration_minutes": 60,
+                "auto_create_ticket": False,
+                "preferred_notification_channel": None,
+                "notification_language": None,
+                "timezone": None,
+            },
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+        cascade = preferences_repo.update_with_notification_cascade.call_args.kwargs["notification_cascade"]
+        assert cascade == []

@@ -50,6 +50,9 @@
       "loadError": "No se pudieron cargar las preferencias.",
       "saveError": "No se pudieron guardar las preferencias.",
       "invalidDuration": "La duración debe ser mayor que 0.",
+      "errors": {
+        "ser_provider_not_connected": "Conecta un proveedor de tickets SER antes de activar la creación automática de tickets."
+      },
       "preferredChannelLabel": "Canal de notificación preferido",
       "noPreferredChannel": "Ninguno",
       "noChannelsConnected": "Conecta un canal de notificación para elegir uno preferido.",
@@ -68,7 +71,9 @@
         "title": "Notificaciones",
         "typeLabels": {
           "location_moved": "Vehículo movido",
-          "ser_zone_ticket_required": "Ticket SER requerido"
+          "ser_zone_ticket_required": "Ticket SER requerido",
+          "ser_ticket_created": "Ticket SER creado",
+          "ser_ticket_creation_failed": "Error al crear el ticket SER"
         },
         "fields": {
           "threshold_m": {

@@ -87,5 +87,36 @@ describe("preferences api", () => {
         "Failed to update preferences: 500",
       );
     });
+
+    it("extracts the clean `detail` message from a plain-string FastAPI JSON error body", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Timezone 'nope' is not a recognized IANA timezone" }), {
+          status: 422,
+        }),
+      );
+
+      await expect(updatePreferences(payload)).rejects.toThrow(
+        "Timezone 'nope' is not a recognized IANA timezone",
+      );
+    });
+
+    it("extracts both error_code and message from a structured FastAPI detail body", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              error_code: "ser_provider_not_connected",
+              message: "Connect a SER ticket provider before enabling automatic ticket creation.",
+            },
+          }),
+          { status: 422 },
+        ),
+      );
+
+      await expect(updatePreferences(payload)).rejects.toMatchObject({
+        message: "Connect a SER ticket provider before enabling automatic ticket creation.",
+        code: "ser_provider_not_connected",
+      });
+    });
   });
 });

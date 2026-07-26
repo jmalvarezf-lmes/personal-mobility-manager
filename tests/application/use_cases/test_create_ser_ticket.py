@@ -17,6 +17,7 @@ from mobility_manager.domain.events.vehicle_not_present_in_ser_ticket_provider i
 from mobility_manager.domain.exceptions import (
     SerProviderSessionNotFoundError,
     SerProviderVehicleNotFoundError,
+    SerTicketPersistenceError,
     SerTicketProviderNotFoundError,
     VehicleNotFoundError,
 )
@@ -278,8 +279,14 @@ def test_unregistered_provider_raises_provider_not_found() -> None:
     assert ticket_repo.saved == []
 
 
-def test_ticket_repo_save_failure_is_logged_and_reraised(caplog: pytest.LogCaptureFixture) -> None:
-    """The provider already created the real ticket by this point — a save failure must surface, not be swallowed."""
+def test_ticket_repo_save_failure_is_logged_and_raised_as_persistence_error(caplog: pytest.LogCaptureFixture) -> None:
+    """
+    The provider already created the real ticket by this point — a save
+    failure must surface as SerTicketPersistenceError (not a bare re-raise
+    of the underlying exception), chained via `from`, so callers can
+    distinguish "charged but unpersisted" from any other creation failure
+    (see this fix's docstring note in create_ser_ticket.py).
+    """
     vehicle_repo = InMemoryVehicleRepo()
     config_repo = InMemoryUserSerProviderConfigRepo()
     ticket_repo = InMemoryParkingTicketRepo(raise_on_save=True)
@@ -296,7 +303,7 @@ def test_ticket_repo_save_failure_is_logged_and_reraised(caplog: pytest.LogCaptu
     vehicle_repo.add(vehicle)
     config_repo.add(_OWNER, "madrid_ser_app", SerProviderSession(data={"token": "abc"}))
 
-    with caplog.at_level("ERROR"), pytest.raises(RuntimeError, match="db is down"):
+    with caplog.at_level("ERROR"), pytest.raises(SerTicketPersistenceError) as exc_info:
         uc.execute(
             user_id=_OWNER,
             vehicle_id=vehicle.id,
@@ -305,6 +312,7 @@ def test_ticket_repo_save_failure_is_logged_and_reraised(caplog: pytest.LogCaptu
             location=GeoLocation(lat=40.0, lng=-3.0),
         )
 
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
     assert ticket_repo.saved == []
     assert any("Failed to persist ParkingTicket" in record.message for record in caplog.records)
 

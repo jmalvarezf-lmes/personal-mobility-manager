@@ -21,8 +21,11 @@ from slowapi.middleware import SlowAPIMiddleware
 from mobility_manager.application.event_handlers.notification_dispatch_handler import (
     NotificationDispatchHandler,
 )
-from mobility_manager.application.event_handlers.ser_ticket_trigger_handler import (
-    SerTicketTriggerHandler,
+from mobility_manager.application.event_handlers.ser_ticket_creation_trigger_handler import (
+    SerTicketCreationTriggerHandler,
+)
+from mobility_manager.application.event_handlers.ser_ticket_notification_trigger_handler import (
+    SerTicketNotificationTriggerHandler,
 )
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
@@ -99,6 +102,7 @@ from mobility_manager.config import (
     get_enabled_brands,
     get_enabled_ser_providers,
     get_encryption_key,
+    get_event_publisher_max_workers,
     get_holiday_calendar_url,
     get_holiday_refresh_interval_hours,
     get_ingestion_interval_hours,
@@ -107,6 +111,10 @@ from mobility_manager.config import (
     get_session_cleanup_interval_hours,
     get_session_cleanup_retention_days,
     get_vehicle_poll_interval_minutes,
+)
+from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
+from mobility_manager.domain.events.ser_ticket_creation_failed import (
+    SerTicketCreationFailed,
 )
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
@@ -430,15 +438,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # already exist by this point. record_uc below still needs
     # event_publisher, so event_publisher's construction stays here rather
     # than moving down with the rest of this block.
-    event_publisher = InMemoryEventPublisher()
+    event_publisher = InMemoryEventPublisher(max_workers=get_event_publisher_max_workers())
     ser_enforcement_schedule = PostgresSerEnforcementSchedule(engine)
     ser_exemption_zone_rule = CitySerExemptionZoneRule()
+    # Built here (ahead of its own use, and reused below by the SER ticket
+    # provider block) since DetermineSerTicketRequirement now needs it
+    # injected for its active-ticket idempotency short-circuit (see
+    # add-ser-ticket-auto-creation post-implementation fix 11.1).
+    parking_ticket_repo = PostgresParkingTicketRepository(engine)
     determine_ser_ticket_requirement_uc = DetermineSerTicketRequirement(
         enforcement_schedule=ser_enforcement_schedule,
         exemption_repo=vehicle_ser_parking_exemption_repo,
         exemption_zone_rule=ser_exemption_zone_rule,
+        ticket_repo=parking_ticket_repo,
     )
-    ser_ticket_trigger_handler = SerTicketTriggerHandler(
+    ser_ticket_notification_trigger_handler = SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
@@ -447,7 +461,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
         send_notification=send_notification_uc,
     )
-    event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_trigger_handler.handle)
+    event_publisher.subscribe(
+        VehicleLocationUpdated, ser_ticket_notification_trigger_handler.on_vehicle_location_updated
+    )
+    event_publisher.subscribe(SerTicketCreated, ser_ticket_notification_trigger_handler.on_ticket_created)
+    event_publisher.subscribe(
+        SerTicketCreationFailed, ser_ticket_notification_trigger_handler.on_ticket_creation_failed
+    )
     notification_dispatch_handler = NotificationDispatchHandler(
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
@@ -527,7 +547,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         zone_mapping_repo=elparking_zone_mapping_repo,
     )
     user_ser_provider_config_repo = PostgresUserSerProviderConfigRepository(engine, ser_encryption_key)
-    parking_ticket_repo = PostgresParkingTicketRepository(engine)
     connect_ser_ticket_provider_uc = ConnectSerTicketProvider(
         providers=ser_ticket_providers,
         config_repo=user_ser_provider_config_repo,
@@ -555,6 +574,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.disconnect_ser_ticket_provider = disconnect_ser_ticket_provider_uc
     app.state.list_ser_ticket_provider_connections = list_ser_ticket_provider_connections_uc
 
+    # --- SER ticket auto-creation (add-ser-ticket-auto-creation) ---
+    # Built here, after user_ser_provider_config_repo and create_ser_ticket_uc
+    # exist (SER ticket provider block above) — this handler resolves the
+    # owner's connected provider and reuses the exact same create_ser_ticket_uc
+    # instance already built for the manual POST /parking/ser-tickets endpoint.
+    ser_ticket_creation_trigger_handler = SerTicketCreationTriggerHandler(
+        vehicle_repo=vehicle_repo,
+        vehicle_location_repo=vehicle_location_repo,
+        user_preferences_repo=user_preferences_repo,
+        notification_preferences_repo=notification_preferences_repo,
+        user_ser_provider_config_repo=user_ser_provider_config_repo,
+        find_containing_ser_zone=find_containing_uc,
+        determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
+        create_ser_ticket=create_ser_ticket_uc,
+        event_publisher=event_publisher,
+    )
+    event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_creation_trigger_handler.handle)
+
     yield
 
     parking_scheduler.stop()
@@ -562,6 +599,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_location_scheduler.stop()
     ambient_label_scheduler.stop()
     session_cleanup_scheduler.stop()
+    event_publisher.shutdown()
     shutdown_observability(tracer_provider, meter_provider)
 
 

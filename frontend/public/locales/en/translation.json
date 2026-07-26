@@ -50,6 +50,9 @@
       "loadError": "Failed to load preferences.",
       "saveError": "Failed to save preferences.",
       "invalidDuration": "Duration must be greater than 0.",
+      "errors": {
+        "ser_provider_not_connected": "Connect a SER ticket provider before enabling automatic ticket creation."
+      },
       "preferredChannelLabel": "Preferred notification channel",
       "noPreferredChannel": "None",
       "noChannelsConnected": "Connect a notification channel to choose a preferred one.",
@@ -68,7 +71,9 @@
         "title": "Notifications",
         "typeLabels": {
           "location_moved": "Vehicle moved",
-          "ser_zone_ticket_required": "SER ticket required"
+          "ser_zone_ticket_required": "SER ticket required",
+          "ser_ticket_created": "SER ticket created",
+          "ser_ticket_creation_failed": "SER ticket creation failed"
         },
         "fields": {
           "threshold_m": {

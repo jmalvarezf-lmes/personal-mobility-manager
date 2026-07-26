@@ -16,7 +16,10 @@ from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.ports.user_preferences_repository import (
     UserPreferencesRepository,
 )
-from mobility_manager.infrastructure.orm.tables import user_preferences_table
+from mobility_manager.infrastructure.orm.tables import (
+    user_notification_preferences_table,
+    user_preferences_table,
+)
 
 _DEFAULT_TICKET_DURATION_MINUTES = 60
 _DEFAULT_AUTO_CREATE_TICKET = False
@@ -90,6 +93,68 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
             row = conn.execute(stmt).fetchone()
 
         assert row is not None
+        return self._row_to_user_preferences(row)
+
+    def update_with_notification_cascade(
+        self,
+        user_id: UUID,
+        default_ticket_duration_minutes: int,
+        auto_create_ticket: bool,
+        preferred_notification_channel: str | None,
+        notification_language: str | None,
+        timezone: str | None,
+        notification_cascade: list[tuple[str, bool]],
+    ) -> UserPreferences:
+        """
+        Replace all five preference fields and upsert `enabled` for every
+        `(type_key, enabled)` pair in `notification_cascade`, all inside one
+        `engine.begin()` transaction — a failure partway through rolls back
+        every write, including the `user_preferences` update itself (see
+        design.md's post-implementation fix 11.6).
+
+        Each cascade upsert omits `config` from its ON CONFLICT DO UPDATE
+        `set_` clause, so an existing row's `config` is preserved untouched
+        (only `enabled`/`updated_at` change on conflict) while a
+        not-yet-existing row is still provisioned with a default `{}`
+        config on insert — the same "ensure_defaults semantics" `_set_enabled`
+        used to have, just performed here in a single upsert per row rather
+        than a separate SELECT-then-update round trip.
+        """
+        now = datetime.now(UTC)
+        with self._engine.begin() as conn:
+            preferences_stmt = (
+                user_preferences_table.update()
+                .where(user_preferences_table.c.user_id == user_id)
+                .values(
+                    default_ticket_duration_minutes=default_ticket_duration_minutes,
+                    auto_create_ticket=auto_create_ticket,
+                    preferred_notification_channel=preferred_notification_channel,
+                    notification_language=notification_language,
+                    timezone=timezone,
+                    updated_at=now,
+                )
+                .returning(user_preferences_table)
+            )
+            row = conn.execute(preferences_stmt).fetchone()
+            assert row is not None
+
+            for type_key, enabled in notification_cascade:
+                cascade_stmt = (
+                    insert(user_notification_preferences_table)
+                    .values(
+                        user_id=user_id,
+                        type_key=type_key,
+                        enabled=enabled,
+                        config={},
+                        updated_at=now,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=["user_id", "type_key"],
+                        set_={"enabled": enabled, "updated_at": now},
+                    )
+                )
+                conn.execute(cascade_stmt)
+
         return self._row_to_user_preferences(row)
 
     def set_preferred_notification_channel(self, user_id: UUID, channel: str | None) -> None:

@@ -21,6 +21,7 @@ from mobility_manager.domain.events.vehicle_not_present_in_ser_ticket_provider i
 from mobility_manager.domain.exceptions import (
     SerProviderSessionNotFoundError,
     SerProviderVehicleNotFoundError,
+    SerTicketPersistenceError,
     SerTicketProviderNotFoundError,
     VehicleNotFoundError,
 )
@@ -97,6 +98,14 @@ class CreateSerTicket:
                 known SER zone.
             SerProviderApiError: May propagate unmodified from the provider
                 call for any other provider-side or resolution failure.
+            SerTicketPersistenceError: If the provider already created (and
+                charged) the real ticket, but persisting our own
+                ParkingTicket record afterwards fails — this is the one
+                exception this use case itself raises (rather than
+                propagating unmodified), because only this use case knows
+                that specific case occurred (see design.md's "CreateSerTicket
+                stays untouched" decision and its documented exception, this
+                fix).
         """
         vehicle = self._vehicle_repo.find_by_id(vehicle_id)
         if vehicle is None or vehicle.user_id != user_id:
@@ -125,14 +134,17 @@ class CreateSerTicket:
 
         try:
             self._ticket_repo.save(ticket)
-        except Exception:
+        except Exception as exc:
             # The provider has already created (and charged) the real ticket
             # at this point — a failure here means we lose our own record of
             # a transaction that already happened on the provider's side.
             # Log everything needed for a manual reconciliation against the
             # provider's own records (mirrors register_vehicle.py's pattern
             # of logging around a post-critical-write side effect, applied
-            # here to a higher-stakes real-money case).
+            # here to a higher-stakes real-money case). Raised as
+            # SerTicketPersistenceError (rather than a bare `raise`) so
+            # callers can distinguish "charged but unpersisted" from any
+            # other creation failure (see this fix's docstring note above).
             logger.exception(
                 "Failed to persist ParkingTicket after provider already created it: "
                 "vehicle_id=%s user_id=%s provider=%s provider_reference=%s cost=%s end_date=%s",
@@ -143,6 +155,8 @@ class CreateSerTicket:
                 ticket.cost,
                 ticket.end_date,
             )
-            raise
+            raise SerTicketPersistenceError(
+                f"Failed to persist ParkingTicket after provider already created it: vehicle_id={vehicle_id}"
+            ) from exc
 
         return ticket

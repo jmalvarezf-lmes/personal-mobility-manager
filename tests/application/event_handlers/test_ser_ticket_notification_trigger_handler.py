@@ -1,5 +1,5 @@
 """
-Unit tests for SerTicketTriggerHandler.
+Unit tests for SerTicketNotificationTriggerHandler.
 
 Covers every scenario in the ser-zone-ticket-notification and
 vehicle-location-events specs: a disabled (or missing) `ser_zone_ticket_required`
@@ -9,8 +9,9 @@ first-ever recorded location still triggers a zone check, genuine movement
 triggers a zone check, no notification when DetermineSerTicketRequirement
 returns False, a notification with the correct plate/zone_number when it
 returns True, a missing vehicle is skipped without error, its threshold is
-independent from `location_moved`'s, and the message is localized to the
-owner's notification_language (or falls back to the default when unset).
+independent from `location_moved`'s, the message is localized to the
+owner's notification_language (or falls back to the default when unset),
+and the new early exit when the owner's `auto_create_ticket` is enabled.
 Also confirms no ticket-provider or ticket-creation code path is ever
 exercised.
 """
@@ -22,8 +23,8 @@ from uuid import UUID, uuid4
 import pytest
 from shapely.geometry import Polygon
 
-from mobility_manager.application.event_handlers.ser_ticket_trigger_handler import (
-    SerTicketTriggerHandler,
+from mobility_manager.application.event_handlers.ser_ticket_notification_trigger_handler import (
+    SerTicketNotificationTriggerHandler,
 )
 from mobility_manager.config import get_default_notification_movement_threshold_meters
 from mobility_manager.domain.entities.ser_zone import SerZone
@@ -83,11 +84,16 @@ class FakeUserPreferencesRepo:
     def __init__(self) -> None:
         self.preferences: dict[UUID, UserPreferences] = {}
 
-    def set(self, user_id: UUID, notification_language: str | None) -> None:
+    def set(
+        self,
+        user_id: UUID,
+        notification_language: str | None,
+        auto_create_ticket: bool = False,
+    ) -> None:
         self.preferences[user_id] = UserPreferences(
             user_id=user_id,
             default_ticket_duration_minutes=60,
-            auto_create_ticket=False,
+            auto_create_ticket=auto_create_ticket,
             preferred_notification_channel="telegram",
             notification_language=notification_language,
             timezone=None,
@@ -101,6 +107,7 @@ class FakeUserPreferencesRepo:
 class FakeNotificationPreferencesRepo:
     def __init__(self) -> None:
         self._rows: dict[tuple[UUID, str], UserNotificationPreference] = {}
+        self.find_by_user_id_and_type_calls: list[tuple[UUID, str]] = []
 
     def set(self, user_id: UUID, type_key: str, enabled: bool, config: dict[str, Any] | None = None) -> None:
         self._rows[(user_id, type_key)] = UserNotificationPreference(
@@ -121,6 +128,7 @@ class FakeNotificationPreferencesRepo:
         return [row for (uid, _), row in self._rows.items() if uid == user_id]
 
     def find_by_user_id_and_type(self, user_id: UUID, type_key: str) -> UserNotificationPreference | None:
+        self.find_by_user_id_and_type_calls.append((user_id, type_key))
         return self._rows.get((user_id, type_key))
 
     def update(self, user_id, type_key, enabled, config):  # pragma: no cover - not exercised by this handler
@@ -142,7 +150,7 @@ class FakeDetermineSerTicketRequirement:
         self.required = required
         self.calls: list[tuple[SerZone | None, UUID]] = []
 
-    def execute(self, zone: SerZone | None, vehicle_id: UUID) -> bool:
+    def execute(self, zone: SerZone | None, vehicle_id: UUID, at=None) -> bool:
         self.calls.append((zone, vehicle_id))
         return self.required
 
@@ -199,8 +207,8 @@ def _make_handler(
     find_containing_ser_zone: FakeFindContainingSerZone,
     determine_ser_ticket_requirement: FakeDetermineSerTicketRequirement,
     send_notification: FakeSendNotification,
-) -> SerTicketTriggerHandler:
-    return SerTicketTriggerHandler(
+) -> SerTicketNotificationTriggerHandler:
+    return SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,  # type: ignore[arg-type]
         vehicle_location_repo=location_repo,  # type: ignore[arg-type]
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
@@ -220,6 +228,43 @@ def _make_event(vehicle_id: UUID, lat: float, lng: float, now: datetime) -> Vehi
         received_at=now,
         source="push",
     )
+
+
+def test_skips_entirely_when_auto_create_ticket_is_enabled() -> None:
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    preferences_repo = FakeUserPreferencesRepo()
+    preferences_repo.set(user_id, None, auto_create_ticket=True)
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    find_containing = FakeFindContainingSerZone()
+    find_containing.zone = _make_ser_zone()
+    determine_requirement = FakeDetermineSerTicketRequirement(required=True)
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        find_containing,
+        determine_requirement,
+        send_notification,
+    )
+
+    event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
+
+    handler.on_vehicle_location_updated(event)
+
+    assert send_notification.calls == []
+    assert notification_preferences_repo.find_by_user_id_and_type_calls == []
+    assert location_repo.get_previous_calls == []
+    assert find_containing.calls == []
 
 
 def test_disabled_preference_skips_before_location_or_zone_lookup() -> None:
@@ -250,7 +295,7 @@ def test_disabled_preference_skips_before_location_or_zone_lookup() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert location_repo.get_previous_calls == []
     assert find_containing.calls == []
@@ -284,7 +329,7 @@ def test_missing_preference_row_skips_before_location_or_zone_lookup() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert location_repo.get_previous_calls == []
     assert find_containing.calls == []
@@ -319,7 +364,7 @@ def test_skips_when_movement_below_threshold() -> None:
 
     event = _make_event(vehicle_id, _NEAR_LAT, _NEAR_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert find_containing.calls == []
     assert determine_requirement.calls == []
@@ -380,7 +425,7 @@ def test_checks_zone_when_movement_exactly_equals_threshold() -> None:
 
     event = _make_event(vehicle_id, exact_lat, exact_lng, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(find_containing.calls) == 1
 
@@ -413,7 +458,7 @@ def test_checks_zone_on_first_ever_location() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(find_containing.calls) == 1
     assert find_containing.calls[0].lat == _MOVED_LAT
@@ -448,7 +493,7 @@ def test_checks_zone_on_genuine_movement() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(find_containing.calls) == 1
 
@@ -481,7 +526,7 @@ def test_skips_notification_when_ticket_not_required() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert send_notification.calls == []
 
@@ -520,7 +565,7 @@ def test_determine_ser_ticket_requirement_is_called_with_vehicle_id() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert determine_requirement.calls == [(zone, vehicle_id)]
 
@@ -560,7 +605,7 @@ def test_matching_vehicle_exemption_suppresses_notification() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert send_notification.calls == []
 
@@ -594,7 +639,7 @@ def test_sends_notification_with_correct_plate_and_zone_number() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(send_notification.calls) == 1
     called_user_id, message = send_notification.calls[0]
@@ -639,7 +684,7 @@ def test_no_notification_when_ticket_required_but_zone_is_none() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert send_notification.calls == []
 
@@ -669,7 +714,7 @@ def test_missing_vehicle_is_skipped_without_error() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    result = handler.handle(event)
+    result = handler.on_vehicle_location_updated(event)
 
     assert result is None
     assert find_containing.calls == []
@@ -716,7 +761,7 @@ def test_threshold_is_independent_from_location_moved() -> None:
     # (would-suppress) threshold.
     event = _make_event(vehicle_id, _NEAR_LAT, _NEAR_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(find_containing.calls) == 1
 
@@ -750,7 +795,7 @@ def test_message_localized_to_owner_notification_language() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(send_notification.calls) == 1
     _, message = send_notification.calls[0]
@@ -787,7 +832,7 @@ def test_message_falls_back_to_default_language_when_unset() -> None:
 
     event = _make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now)
 
-    handler.handle(event)
+    handler.on_vehicle_location_updated(event)
 
     assert len(send_notification.calls) == 1
     _, message = send_notification.calls[0]
@@ -804,6 +849,6 @@ def test_no_ticket_provider_or_ticket_creation_code_path_is_exercised() -> None:
     """
     import inspect
 
-    params = inspect.signature(SerTicketTriggerHandler.__init__).parameters
+    params = inspect.signature(SerTicketNotificationTriggerHandler.__init__).parameters
     assert "ser_ticket_provider" not in params
     assert "create_ser_ticket" not in params

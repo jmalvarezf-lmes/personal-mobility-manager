@@ -85,3 +85,21 @@ class SerProviderVehicleNotFoundError(Exception):
     """Raised when a vehicle's license plate cannot be matched against a SER ticket provider's own vehicle records."""
 
     pass
+
+
+class SerTicketPersistenceError(Exception):
+    """
+    Raised when a SER ticket provider has already created (and charged) a
+    real ticket, but persisting our own ParkingTicket record afterwards
+    fails.
+
+    Distinguishes this specific "charged but unpersisted" case from an
+    ordinary creation failure — see CreateSerTicket.execute(), whose ticket
+    repository save() failure is re-raised as this type instead of a bare
+    `raise`, and SerTicketCreationTriggerHandler's exception-to-reason
+    mapping, which maps it to the closed-vocabulary reason
+    `"ticket_created_but_not_recorded"` (never leaked verbatim into any
+    user-facing notification).
+    """
+
+    pass

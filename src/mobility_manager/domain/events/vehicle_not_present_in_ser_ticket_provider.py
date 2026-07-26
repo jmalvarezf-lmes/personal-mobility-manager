@@ -5,7 +5,7 @@ Published by CreateSerTicket when the provider's create_ticket raises
 SerProviderVehicleNotFoundError — the vehicle's license plate could not be
 matched against the SER ticket provider's own vehicle records. No handler is
 registered for this event in this change, mirroring how VehicleLocationUpdated
-shipped before SerTicketTriggerHandler existed.
+shipped before SerTicketNotificationTriggerHandler existed.
 """
 
 from dataclasses import dataclass

@@ -33,6 +33,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/notifications", tags=["notification-preferences"])
 
+# Types whose enabled state is mutually exclusive with UserPreferences.auto_create_ticket
+# (see the notification-type-preferences and user-preferences specs). Each
+# maps to the auto_create_ticket value that locks it — i.e. attempting to
+# enable it while auto_create_ticket already equals this value is rejected.
+_LOCKED_WHEN_AUTO_CREATE_TICKET_IS: dict[str, bool] = {
+    "ser_zone_ticket_required": True,
+    "ser_ticket_created": False,
+    "ser_ticket_creation_failed": False,
+}
+
 
 def _effective_config(config_schema: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
@@ -108,8 +118,14 @@ def update_notification_preference(
     type_key) row.
 
     404 if `type_key` isn't in the notification_types catalog. 422 if
-    `config` fails that type's config_schema validation. The persisted
-    (not fallback-merged) config is returned, matching what was requested.
+    `config` fails that type's config_schema validation. 422 (no row
+    change) if `body.enabled` is true and `type_key` is currently locked by
+    the caller's `auto_create_ticket` state — `ser_zone_ticket_required` is
+    locked while `auto_create_ticket=true`; `ser_ticket_created` and
+    `ser_ticket_creation_failed` are locked while `auto_create_ticket=false`.
+    Disabling a locked type is always accepted regardless of lock state.
+    The persisted (not fallback-merged) config is returned, matching what
+    was requested.
 
     Logs the outcome on success (user id, type_key, enabled, config) as an
     audit trail for "I enabled it but got nothing" debugging.
@@ -124,6 +140,17 @@ def update_notification_preference(
         validate_notification_config(notification_type.config_schema, body.config)
     except InvalidNotificationConfigError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    locked_at_auto_create_ticket = _LOCKED_WHEN_AUTO_CREATE_TICKET_IS.get(type_key)
+    if body.enabled and locked_at_auto_create_ticket is not None:
+        user_preferences_repo = request.app.state.user_preferences_repo
+        preferences = user_preferences_repo.find_by_user_id(current_user.id)
+        auto_create_ticket = preferences.auto_create_ticket if preferences is not None else False
+        if auto_create_ticket is locked_at_auto_create_ticket:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{type_key}' cannot be enabled while auto_create_ticket is {auto_create_ticket!s}.",
+            )
 
     updated = repo.update(
         user_id=current_user.id,

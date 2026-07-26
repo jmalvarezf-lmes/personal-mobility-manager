@@ -8,7 +8,7 @@ import {
   type NotificationPreference,
   type NotificationType,
 } from "../api/notificationPreferences";
-import { getPreferences, updatePreferences } from "../api/preferences";
+import { getPreferences, PreferencesUpdateError, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
 import { listTimezoneOptions, type TimezoneOption } from "../utils/timezone";
 
@@ -38,6 +38,21 @@ function prefsEqual(a: NotificationPrefValue, b: NotificationPrefValue): boolean
 function labelForTimezone(value: string | null, options: TimezoneOption[]): string {
   if (!value) return "";
   return options.find((option) => option.value === value)?.label ?? "";
+}
+
+// Notification types whose enabled state is mutually exclusive with the
+// in-progress (not-yet-saved) auto_create_ticket value — see the
+// notification-type-preferences spec's lock table. `ser_zone_ticket_required`
+// is locked while auto_create_ticket is checked; the two new SER-ticket
+// event types are locked while it is unchecked.
+const _LOCKED_WHEN_AUTO_CREATE_TICKET_IS: Record<string, boolean> = {
+  ser_zone_ticket_required: true,
+  ser_ticket_created: false,
+  ser_ticket_creation_failed: false,
+};
+
+function isLockedByAutoCreateTicket(typeKey: string, autoCreateTicket: boolean): boolean {
+  return _LOCKED_WHEN_AUTO_CREATE_TICKET_IS[typeKey] === autoCreateTicket;
 }
 
 export default function PreferencesPage() {
@@ -225,7 +240,11 @@ export default function PreferencesPage() {
 
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("page.preferences.saveError"));
+      if (err instanceof PreferencesUpdateError && err.code) {
+        setError(t(`page.preferences.errors.${err.code}`, { defaultValue: err.message }));
+      } else {
+        setError(err instanceof Error ? err.message : t("page.preferences.saveError"));
+      }
     } finally {
       setSaving(false);
     }
@@ -438,6 +457,7 @@ export default function PreferencesPage() {
               </h2>
               {notificationTypes.map((type) => {
                 const pref = notificationPrefs[type.key] ?? { enabled: false, config: {} };
+                const locked = isLockedByAutoCreateTicket(type.key, autoCreateTicket);
                 return (
                   <div key={type.key} className="space-y-2 rounded border border-gray-200 p-3">
                     <div className="flex items-center gap-2">
@@ -445,11 +465,12 @@ export default function PreferencesPage() {
                         id={`notification-${type.key}-enabled`}
                         type="checkbox"
                         checked={pref.enabled}
+                        disabled={locked}
                         onChange={(e) => handleNotificationToggle(type.key, e.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300"
+                        className="h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <label
-                        className="text-sm font-medium text-gray-700"
+                        className={`text-sm font-medium ${locked ? "text-gray-400" : "text-gray-700"}`}
                         htmlFor={`notification-${type.key}-enabled`}
                       >
                         {t(`page.preferences.notifications.typeLabels.${type.key}`, {

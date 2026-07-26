@@ -5,7 +5,7 @@ Requires POSTGRES_DSN environment variable. Skipped automatically if absent.
 """
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -164,3 +164,102 @@ def test_save_with_none_provider_reference(pg_engine) -> None:
 
     assert row is not None
     assert row.provider_reference is None
+
+
+def _make_ticket(vehicle_id, user_id, end_date: datetime, created_at: datetime | None = None) -> ParkingTicket:
+    return ParkingTicket(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        user_id=user_id,
+        provider="elparking",
+        duration_minutes=60,
+        provider_reference="REF-001",
+        cost=1.2,
+        end_date=end_date,
+        created_at=created_at or datetime.now(UTC),
+    )
+
+
+def test_find_active_for_vehicle_returns_none_when_no_tickets(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+
+    assert repo.find_active_for_vehicle(vehicle_id, at=datetime.now(UTC)) is None
+
+
+def test_find_active_for_vehicle_returns_none_when_only_expired_ticket(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    repo.save(_make_ticket(vehicle_id, user_id, end_date=now - timedelta(minutes=5)))
+
+    assert repo.find_active_for_vehicle(vehicle_id, at=now) is None
+
+
+def test_find_active_for_vehicle_returns_ticket_still_active(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    ticket = _make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=30))
+    repo.save(ticket)
+
+    found = repo.find_active_for_vehicle(vehicle_id, at=now)
+
+    assert found is not None
+    assert found.id == ticket.id
+
+
+def test_find_active_for_vehicle_returns_most_recent_end_date(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    repo.save(_make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=10)))
+    latest = _make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=60))
+    repo.save(latest)
+
+    found = repo.find_active_for_vehicle(vehicle_id, at=now)
+
+    assert found is not None
+    assert found.id == latest.id
+
+
+def test_find_active_for_vehicle_is_scoped_to_the_given_vehicle(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    other_vehicle_id = uuid4()
+    user_id = uuid4()
+    other_user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    _insert_user_and_vehicle(pg_engine, other_user_id, other_vehicle_id)
+    now = datetime.now(UTC)
+    repo.save(_make_ticket(other_vehicle_id, other_user_id, end_date=now + timedelta(minutes=30)))
+
+    assert repo.find_active_for_vehicle(vehicle_id, at=now) is None

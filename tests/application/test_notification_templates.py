@@ -47,7 +47,9 @@ def test_supported_languages_contains_en_and_es() -> None:
 
 def test_ser_zone_ticket_required_template_renders_in_spanish() -> None:
     text = render("ser_zone_ticket_required", "es", plate="1234ABC", zone_number="163")
-    assert text == "Tu coche con matrícula 1234ABC está en la zona SER 163 — necesitas crear un tique de estacionamiento."
+    assert (
+        text == "Tu coche con matrícula 1234ABC está en la zona SER 163 — necesitas crear un tique de estacionamiento."
+    )
 
 
 def test_ser_zone_ticket_required_template_renders_in_english() -> None:
@@ -58,6 +60,55 @@ def test_ser_zone_ticket_required_template_renders_in_english() -> None:
 def test_ser_zone_ticket_required_template_falls_back_to_default_language() -> None:
     text = render("ser_zone_ticket_required", None, plate="1234ABC", zone_number="163")
     assert text == "Your car with plate 1234ABC is in SER zone 163 — you need to create a parking ticket."
+
+
+def test_ser_ticket_created_template_renders_zone_and_dates_in_english() -> None:
+    text = render(
+        "ser_ticket_created",
+        "en",
+        zone_number="163",
+        start_date="2026-07-26 10:00 UTC",
+        end_date="2026-07-26 12:00 UTC",
+    )
+    assert "163" in text
+    assert "2026-07-26 10:00 UTC" in text
+    assert "2026-07-26 12:00 UTC" in text
+
+
+def test_ser_ticket_created_template_falls_back_to_default_language() -> None:
+    text = render(
+        "ser_ticket_created",
+        None,
+        zone_number="163",
+        start_date="2026-07-26 10:00 UTC",
+        end_date="2026-07-26 12:00 UTC",
+    )
+    assert "163" in text
+    assert "2026-07-26 10:00 UTC" in text
+
+
+def test_ser_ticket_creation_failed_template_renders_zone_only_in_english() -> None:
+    text = render("ser_ticket_creation_failed", "en", zone_number="163", possibly_created=False)
+    assert "163" in text
+
+
+def test_ser_ticket_creation_failed_template_falls_back_to_default_language() -> None:
+    text = render("ser_ticket_creation_failed", None, zone_number="163", possibly_created=False)
+    assert "163" in text
+
+
+def test_ser_ticket_creation_failed_template_possibly_created_branch_differs_per_language() -> None:
+    """`possibly_created=True` must render a distinct message from the `False` branch, in every language."""
+    for language in SUPPORTED_LANGUAGES:
+        generic = render("ser_ticket_creation_failed", language, zone_number="163", possibly_created=False)
+        possibly_created = render("ser_ticket_creation_failed", language, zone_number="163", possibly_created=True)
+        assert generic != possibly_created
+        assert "163" in possibly_created
+
+
+def test_render_raises_when_a_required_kwarg_is_missing_for_ser_ticket_created() -> None:
+    with pytest.raises(UndefinedError):
+        render("ser_ticket_created", "en", zone_number="163")
 
 
 # ---------------------------------------------------------------------------

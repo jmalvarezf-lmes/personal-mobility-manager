@@ -20,18 +20,13 @@ of json.dumps() here fails fast without needing a live Postgres.
 import importlib.util
 from pathlib import Path
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "alembic"
-    / "versions"
-    / "p3q4r5s6t7u8_create_notification_types.py"
-)
+_VERSIONS_DIR = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+_MIGRATION_PATH = _VERSIONS_DIR / "p3q4r5s6t7u8_create_notification_types.py"
+_SER_TICKET_TYPES_MIGRATION_PATH = _VERSIONS_DIR / "911464896d6c_add_ser_ticket_creation_notification_types.py"
 
 
-def _load_migration_module():
-    spec = importlib.util.spec_from_file_location(
-        "create_notification_types_migration", _MIGRATION_PATH
-    )
+def _load_migration_module(path: Path = _MIGRATION_PATH, name: str = "create_notification_types_migration"):
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -47,6 +42,30 @@ def test_threshold_config_schema_seed_is_a_dict_not_a_json_string() -> None:
         "instead of a JSON object, which fails NotificationTypeResponse "
         "validation on every GET /notifications/types."
     )
-    assert module._THRESHOLD_CONFIG_SCHEMA == {
-        "threshold_m": {"type": "integer", "min": 1}
-    }
+    assert module._THRESHOLD_CONFIG_SCHEMA == {"threshold_m": {"type": "integer", "min": 1}}
+
+
+def test_catalog_has_exactly_four_rows_with_expected_config_schema() -> None:
+    """
+    Task 1.4: combining both catalog-seeding migrations must produce exactly
+    the four notification_types rows the notification-type-preferences spec
+    requires — location_moved / ser_zone_ticket_required with the threshold
+    config_schema, and the two new event-reaction types with an empty one.
+    """
+    original_module = _load_migration_module()
+    ser_ticket_module = _load_migration_module(
+        _SER_TICKET_TYPES_MIGRATION_PATH, name="add_ser_ticket_creation_notification_types_migration"
+    )
+
+    threshold_schema = original_module._THRESHOLD_CONFIG_SCHEMA
+    seeded_keys = {"location_moved", "ser_zone_ticket_required"}
+
+    new_rows = {row["key"]: row["config_schema"] for row in ser_ticket_module._SEEDED_TYPES}
+    assert set(new_rows) == {"ser_ticket_created", "ser_ticket_creation_failed"}
+
+    all_keys = seeded_keys | set(new_rows)
+    assert len(all_keys) == 4
+
+    assert threshold_schema == {"threshold_m": {"type": "integer", "min": 1}}
+    for key, schema in new_rows.items():
+        assert schema == {}, f"{key} must have an empty config_schema — it reacts to an event, not distance"

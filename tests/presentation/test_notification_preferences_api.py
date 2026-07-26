@@ -67,24 +67,30 @@ def _make_preference(
     )
 
 
-def _build_app(user_repo=None, notification_preferences_repo=None) -> FastAPI:
+def _build_app(user_repo=None, notification_preferences_repo=None, user_preferences_repo=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     if user_repo is not None:
         app.state.user_repo = user_repo
     if notification_preferences_repo is not None:
         app.state.notification_preferences_repo = notification_preferences_repo
+    if user_preferences_repo is not None:
+        app.state.user_preferences_repo = user_preferences_repo
     mock_validate_session = MagicMock()
     mock_validate_session.execute.return_value = True
     app.state.validate_session = mock_validate_session
     return app
 
 
-def _build_authed_app(notification_preferences_repo=None) -> tuple[FastAPI, str]:
+def _build_authed_app(notification_preferences_repo=None, user_preferences_repo=None) -> tuple[FastAPI, str]:
     user = _make_test_user()
     mock_user_repo = MagicMock()
     mock_user_repo.find_by_id.return_value = user
-    app = _build_app(user_repo=mock_user_repo, notification_preferences_repo=notification_preferences_repo)
+    app = _build_app(
+        user_repo=mock_user_repo,
+        notification_preferences_repo=notification_preferences_repo,
+        user_preferences_repo=user_preferences_repo,
+    )
     cookie = _make_session_cookie(user)
     return app, cookie
 
@@ -319,3 +325,110 @@ class TestUpdateNotificationPreference:
 
         assert response.status_code == 422
         repo.update.assert_not_called()
+
+    def _make_user_preferences_repo(self, auto_create_ticket: bool) -> MagicMock:
+        from mobility_manager.domain.entities.user_preferences import UserPreferences
+
+        user_preferences_repo = MagicMock()
+        user_preferences_repo.find_by_user_id.return_value = UserPreferences(
+            user_id=_OWNER_ID,
+            default_ticket_duration_minutes=60,
+            auto_create_ticket=auto_create_ticket,
+            preferred_notification_channel=None,
+            notification_language=None,
+            timezone=None,
+            updated_at=datetime.now(UTC),
+        )
+        return user_preferences_repo
+
+    def test_enabling_ser_zone_ticket_required_rejected_while_auto_create_ticket_is_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("ser_zone_ticket_required", "SER ticket required")]
+        user_preferences_repo = self._make_user_preferences_repo(auto_create_ticket=True)
+        app, cookie = _build_authed_app(notification_preferences_repo=repo, user_preferences_repo=user_preferences_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/notifications/preferences/ser_zone_ticket_required",
+            json={"enabled": True, "config": {}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        repo.update.assert_not_called()
+
+    def test_enabling_ser_ticket_created_rejected_while_auto_create_ticket_is_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("ser_ticket_created", "SER ticket created")]
+        user_preferences_repo = self._make_user_preferences_repo(auto_create_ticket=False)
+        app, cookie = _build_authed_app(notification_preferences_repo=repo, user_preferences_repo=user_preferences_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/notifications/preferences/ser_ticket_created",
+            json={"enabled": True, "config": {}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        repo.update.assert_not_called()
+
+    def test_enabling_ser_ticket_creation_failed_rejected_while_auto_create_ticket_is_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("ser_ticket_creation_failed", "SER ticket creation failed")]
+        user_preferences_repo = self._make_user_preferences_repo(auto_create_ticket=False)
+        app, cookie = _build_authed_app(notification_preferences_repo=repo, user_preferences_repo=user_preferences_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.put(
+            "/notifications/preferences/ser_ticket_creation_failed",
+            json={"enabled": True, "config": {}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 422
+        repo.update.assert_not_called()
+
+    def test_disabling_a_locked_type_is_always_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("ser_zone_ticket_required", "SER ticket required")]
+        repo.update.return_value = _make_preference("ser_zone_ticket_required", enabled=False, config={})
+        user_preferences_repo = self._make_user_preferences_repo(auto_create_ticket=True)
+        app, cookie = _build_authed_app(notification_preferences_repo=repo, user_preferences_repo=user_preferences_repo)
+        client = TestClient(app)
+
+        response = client.put(
+            "/notifications/preferences/ser_zone_ticket_required",
+            json={"enabled": False, "config": {}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200
+
+    def test_location_moved_is_never_locked_by_auto_create_ticket(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        repo = MagicMock()
+        repo.list_types.return_value = [_make_type("location_moved", "Vehicle moved")]
+        repo.update.return_value = _make_preference("location_moved", enabled=True, config={"threshold_m": 20})
+        # No user_preferences_repo configured at all — location_moved's lock
+        # check must never even consult it.
+        app, cookie = _build_authed_app(notification_preferences_repo=repo)
+        client = TestClient(app)
+
+        response = client.put(
+            "/notifications/preferences/location_moved",
+            json={"enabled": True, "config": {"threshold_m": 20}},
+            cookies={"session": cookie},
+        )
+
+        assert response.status_code == 200

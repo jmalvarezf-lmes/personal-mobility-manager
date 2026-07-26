@@ -13,6 +13,7 @@ from mobility_manager.config import (
     get_ambient_label_request_delay_seconds,
     get_ambient_label_retry_cooldown_hours,
     get_default_notification_movement_threshold_meters,
+    get_event_publisher_max_workers,
     get_session_cleanup_retention_days,
     resolve_effective_threshold,
 )
@@ -83,6 +84,20 @@ def test_resolve_effective_threshold_falls_back_to_env_default_when_absent(
 ) -> None:
     monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     assert resolve_effective_threshold({}) == 50.0
+
+
+class TestEventPublisherConfig:
+    def test_max_workers_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("EVENT_PUBLISHER_MAX_WORKERS", raising=False)
+        assert get_event_publisher_max_workers() == 4
+
+    def test_max_workers_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVENT_PUBLISHER_MAX_WORKERS", "8")
+        assert get_event_publisher_max_workers() == 8
+
+    def test_max_workers_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVENT_PUBLISHER_MAX_WORKERS", "not-a-number")
+        assert get_event_publisher_max_workers() == 4
 
 
 class TestAmbientLabelConfig:

@@ -30,11 +30,28 @@ design.md Context: a per-vehicle fact cannot be answered by a
 constructor-injected dependency alone). The enforcement-schedule check
 still runs first and short-circuits before the exemption repository is
 consulted at all, preserving the original cheapest-check-first ordering.
+
+`execute()` also grew a required `at: datetime` parameter (see
+add-ser-ticket-auto-creation's post-implementation fix 11.1): after the
+enforcement-schedule check and before the exemption check, this use case
+now short-circuits to `False` (not required) if the vehicle already has an
+active ParkingTicket at `at`, via the injected `ParkingTicketRepository`.
+This closes an idempotency gap where a fast-repeating VehicleLocationUpdated
+stream could otherwise trigger more than one real (paid) ticket creation for
+the same vehicle while a ticket it already holds is still valid. The check
+is deliberately vehicle-scoped, not zone-scoped — ParkingTicket does not
+store a zone number today, so a vehicle with any active ticket anywhere is
+treated as not requiring a new one; adding a zone column is out of scope for
+this fix.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from mobility_manager.domain.entities.ser_zone import SerZone
+from mobility_manager.domain.ports.parking_ticket_repository import (
+    ParkingTicketRepository,
+)
 from mobility_manager.domain.ports.ser_enforcement_schedule import SerEnforcementSchedule
 from mobility_manager.domain.ports.ser_exemption_zone_rule import SerExemptionZoneRule
 from mobility_manager.domain.ports.vehicle_ser_parking_exemption_repository import (
@@ -50,29 +67,36 @@ class DetermineSerTicketRequirement:
         enforcement_schedule: SerEnforcementSchedule,
         exemption_repo: VehicleSerParkingExemptionRepository,
         exemption_zone_rule: SerExemptionZoneRule,
+        ticket_repo: ParkingTicketRepository,
     ) -> None:
         self._enforcement_schedule = enforcement_schedule
         self._exemption_repo = exemption_repo
         self._exemption_zone_rule = exemption_zone_rule
+        self._ticket_repo = ticket_repo
 
-    def execute(self, zone: SerZone | None, vehicle_id: UUID) -> bool:
+    def execute(self, zone: SerZone | None, vehicle_id: UUID, at: datetime) -> bool:
         """
         Return whether a ticket is currently required for `vehicle_id` in `zone`.
 
         Returns False immediately if `zone` is None, without consulting any
         injected dependency. Otherwise, returns False if the injected
         enforcement-schedule dependency's `is_active_now(zone.city_code)`
-        returns False, without consulting the exemption repository or the
-        zone rule. Otherwise, looks up the vehicle's stored exemption; if it
-        does not match `(zone.city_code, zone.zone_number)`, returns True
-        without consulting the zone rule. Otherwise (a matching exemption
-        exists), returns False only if the injected `SerExemptionZoneRule`
+        returns False, without consulting the ticket repository, the
+        exemption repository, or the zone rule. Otherwise, returns False if
+        `vehicle_id` already has an active ParkingTicket at `at` (see module
+        docstring), without consulting the exemption repository or the zone
+        rule. Otherwise, looks up the vehicle's stored exemption; if it does
+        not match `(zone.city_code, zone.zone_number)`, returns True without
+        consulting the zone rule. Otherwise (a matching exemption exists),
+        returns False only if the injected `SerExemptionZoneRule`
         dependency's `is_zone_eligible(zone)` returns True. No
         home-proximity logic is evaluated yet — see module docstring.
         """
         if zone is None:
             return False
         if not self._enforcement_schedule.is_active_now(zone.city_code):
+            return False
+        if self._ticket_repo.find_active_for_vehicle(vehicle_id, at) is not None:
             return False
         exemption = self._exemption_repo.find_by_vehicle_id(vehicle_id)
         if exemption is None or (exemption.city_code, exemption.zone_number) != (

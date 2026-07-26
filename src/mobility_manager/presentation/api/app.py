@@ -148,6 +148,9 @@ from mobility_manager.infrastructure.parking_services.provider_registry import (
 from mobility_manager.infrastructure.parking_services.ser_exemption_zone_rules import (
     CitySerExemptionZoneRule,
 )
+from mobility_manager.infrastructure.parking_services.ser_label_exemption_rules import (
+    CitySerLabelExemptionRule,
+)
 from mobility_manager.infrastructure.repositories.postgres.ambient_label_icon_repo import (
     PostgresAmbientLabelIconRepository,
 )
@@ -441,6 +444,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     event_publisher = InMemoryEventPublisher(max_workers=get_event_publisher_max_workers())
     ser_enforcement_schedule = PostgresSerEnforcementSchedule(engine)
     ser_exemption_zone_rule = CitySerExemptionZoneRule()
+    # Independent of ser_exemption_zone_rule above: decides SER exemption from
+    # the vehicle's DGT ambient label (e.g. electric, label "0") rather than
+    # any stored manual exemption — see add-ser-label-exemption-rule
+    # design.md.
+    ser_label_exemption_rule = CitySerLabelExemptionRule()
     # Built here (ahead of its own use, and reused below by the SER ticket
     # provider block) since DetermineSerTicketRequirement now needs it
     # injected for its active-ticket idempotency short-circuit (see
@@ -451,6 +459,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         exemption_repo=vehicle_ser_parking_exemption_repo,
         exemption_zone_rule=ser_exemption_zone_rule,
         ticket_repo=parking_ticket_repo,
+        ambient_label_repo=vehicle_ambient_label_repo,
+        label_exemption_rule=ser_label_exemption_rule,
     )
     ser_ticket_notification_trigger_handler = SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,

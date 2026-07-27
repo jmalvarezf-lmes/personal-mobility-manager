@@ -34,7 +34,8 @@
       "title": "My Vehicles",
       "add": "Add Vehicle",
       "empty": "No vehicles registered yet.",
-      "loading": "Loading vehicles…"
+      "loading": "Loading vehicles…",
+      "mapTitle": "Last known location"
     },
     "map": {
       "loading": "Loading map data…"

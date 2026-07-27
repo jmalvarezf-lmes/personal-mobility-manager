@@ -111,6 +111,14 @@ Do not leave the `Makefile` stale. If a new tool is added, a flag changes, or a 
 
 ---
 
+## README consistency (MANDATORY)
+
+Any change that adds, changes, or removes user-facing behavior, API endpoints, supported integrations, or how the project is run or configured must check whether `README.md` needs updating, and update it in the same change/commit if so.
+
+Do not leave the `README.md` stale. If it drifts from what the code actually does, a new contributor or self-hoster ends up debugging against a document that lies to them.
+
+---
+
 ## OpenSpec: Git branch per change (MANDATORY)
 
 Every time a new OpenSpec change is created — whether via `/opsx:propose`, `/sdd-new`, or any other command that calls `openspec new change "<name>"` — immediately create and check out a git branch named `change/<name>` before writing any artifacts.

@@ -153,9 +153,6 @@ webhook (Telegram's `setWebhook` API) with a `secret_token` matching
 
 Everything else in `.env.example` is optional and degrades gracefully:
 
-- `TOYOTA_USERNAME` / `TOYOTA_PASSWORD` — leave unset and Toyota vehicle
-  polling simply isn't available; you can still register a generic
-  push-token device.
 - `ELPARKING_API_BASE_URL` — required only if you keep ElParking enabled
   (the default); without it, auto-ticket purchasing has nothing to call.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — leave empty and observability is fully
@@ -197,6 +194,97 @@ Note: this configurable tile URL only feeds the zones map
 (`ZoneMap.tsx`, via `MapPage.tsx`). The per-vehicle location maps
 (`VehicleMap.tsx`, `VehicleLocationHistoryModal.tsx`) currently hard-code the
 public OSM tile URL regardless of `OSM_TILE_URL`.
+
+## Environment variables
+
+Every variable the application reads, grouped by concern. "Default" is what
+applies when the variable is unset; "—" means there is none and the app
+either fails fast at startup or the feature stays inactive, as noted.
+
+**Database**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `POSTGRES_DSN` | — (required) | PostgreSQL connection string. App fails to start without it. |
+
+**Google OAuth & sessions**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — (required) | OAuth2 credentials from Google Cloud Console. |
+| `GOOGLE_REDIRECT_URI` | — (required) | Must match an Authorized Redirect URI registered in Google Cloud Console (see the three docker/Vite/direct-backend variants in `.env.example`). |
+| `JWT_SECRET` | — (required) | Signs the session JWT cookie. |
+| `SESSION_CLEANUP_RETENTION_DAYS` | `30` | How long a revoked/expired `sessions` row survives before the scheduled cleanup job purges it. |
+| `SESSION_CLEANUP_INTERVAL_HOURS` | `24` | How often that cleanup job runs. |
+
+**Vehicles & brand integrations**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ENABLED_BRANDS` | `generic` | Comma-separated vehicle brands to enable (e.g. `generic,toyota`). Unknown values are silently ignored. |
+| `TOYOTA_LOCALE` | `en_GB` (`.env.example` ships `es-es`) | Only pre-fills the locale field's default when adding a Toyota vehicle in the frontend. The value that's actually used per vehicle is whatever the user sets (and can edit later) on the vehicles page — that's what's stored and passed to `pytoyoda`, not this env var. |
+| `VEHICLE_POLL_INTERVAL_MINUTES` | `5` | How often the scheduler polls Toyota vehicles for a location update. |
+| `TOYOTA_USERNAME`, `TOYOTA_PASSWORD`, `DEFAULT_LICENSE_PLATE` | — | Present in `.env.example` but not read anywhere in the current codebase — effectively dead/reserved, not real tunables today. Toyota account credentials aren't a deployment secret at all: each user enters their own Toyota username/password when adding or editing a vehicle on the vehicles page, encrypted at rest with `ENCRYPTION_KEY`. |
+
+**Madrid SER zone data**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SER_ZONE_SHP_URL` | Madrid open-data SER zone shapefile | Source for SER curb-band polylines. |
+| `MADRID_CALLEJERO_URL` | Madrid open-data callejero CSV | Resolves zone number, street name, and district. |
+| `MADRID_BARRIOS_SHP_URL` | Madrid open-data barrios shapefile | Resolves each zone's presentation-only neighbourhood frontier polygon. |
+| `INGESTION_INTERVAL_HOURS` | `24` | How often the SER zone ingestion job re-fetches and re-parses the above sources. |
+| `SER_ZONE_CONTAINMENT_TOLERANCE_CM` | `50` | Buffer added to a zone polygon's boundary to absorb GPS positioning error when checking containment. |
+| `SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS` | `10` | Minimum movement since the last recorded location before a zone-transition check runs at all — filters out GPS jitter, distinct from the notification threshold below. |
+
+**SER ticket providers**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ENABLED_SER_PROVIDERS` | `elparking` | Comma-separated ticket-purchasing providers to enable. |
+| `ELPARKING_API_BASE_URL` | — (required if `elparking` enabled) | ElParking's real API base URL; no default exists to fall back to. |
+| `ELPARKING_APP_VERSION` | `26.2` | `ep-app-version` header value sent to ElParking's login API; expected to need bumping as their app versioning evolves. |
+| `ENCRYPTION_KEY` | — (required in practice) | Fernet key encrypting stored Toyota/ElParking credentials at rest. Required whenever `toyota` is in `ENABLED_BRANDS` or `elparking` is in `ENABLED_SER_PROVIDERS` — since ElParking is on by default, essentially every deployment needs this set. |
+
+**Notifications**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` / `TELEGRAM_BOT_USERNAME` | — (required) | The Telegram channel is constructed unconditionally at startup, so all three are required in every deployment regardless of whether you actually use Telegram. |
+| `DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS` | `50` | Fallback minimum-movement distance for a notification type, used when a user hasn't set their own override via `PUT /notifications/preferences/{type_key}`. |
+
+**Ambient (eco) label lookups**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AMBIENT_LABEL_POLL_INTERVAL_MINUTES` | `60` | How often the scheduler checks for vehicles needing a DGT label lookup. |
+| `AMBIENT_LABEL_RETRY_COOLDOWN_HOURS` | `24` | Cooldown before retrying an inconclusive (`not_found`/`error`) lookup. |
+| `AMBIENT_LABEL_REQUEST_DELAY_SECONDS` | `5` | Delay between consecutive DGT requests within one scheduler tick, to avoid hammering their site. |
+
+**Public holidays**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOLIDAY_CALENDAR_URL` | Google's public Spain holiday calendar (iCal) | Feed used to compute SER enforcement-schedule exemptions on public holidays. |
+| `HOLIDAY_REFRESH_INTERVAL_HOURS` | `4380` (6 months) | How often the holiday feed is re-fetched. |
+
+**Frontend / networking**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OSM_TILE_URL` | unset → public OSM tiles | See [Map tiles](#map-tiles) above. |
+| `CORS_ORIGINS` | empty | Comma-separated list of allowed CORS origins for the frontend. |
+
+**Operational**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`). |
+| `EVENT_PUBLISHER_MAX_WORKERS` | `4` | Thread pool size for the in-memory event publisher's async handler dispatch (e.g. handlers making outbound SER ticket provider HTTP calls). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset → observability fully inactive | Setting this is what activates OpenTelemetry: real tracing/metrics providers and auto-instrumentation only get wired up when it has a value. Zero overhead when unset. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | Auth header for the OTLP endpoint (e.g. Grafana Cloud's Basic Auth, base64-encoded), standard OTel env var — no translation layer. |
+| `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio` | Standard OTel sampler name. |
+| `OTEL_TRACES_SAMPLER_ARG` | `0.25` | Sampling ratio (0.0–1.0) for the above sampler. |
 
 ## Integrations implemented so far
 

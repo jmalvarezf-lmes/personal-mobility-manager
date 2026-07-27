@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: DetermineSerTicketRequirement use case
 The system SHALL implement a `DetermineSerTicketRequirement` application use case with `execute(zone: SerZone | None, vehicle_id: UUID, at: datetime) -> bool`, returning whether a ticket is currently required for the given vehicle located in `zone` at time `at`. The use case SHALL accept an injected enforcement-schedule dependency (see the `ser-enforcement-schedule` capability's `SerEnforcementSchedule`), an injected `ParkingTicketRepository` dependency, an injected `VehicleAmbientLabelRepository` dependency (see the `ambient-label` capability), an injected `SerLabelExemptionRule` dependency (see the `ser-label-exemption-rule` capability), an injected `VehicleSerParkingExemptionRepository` dependency (see the `vehicle-ser-parking-exemption` capability), and an injected `SerExemptionZoneRule` dependency (see the `ser-exemption-zone-rule` capability) via its constructor.
 

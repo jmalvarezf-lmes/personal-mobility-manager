@@ -409,6 +409,42 @@ def get_ser_zone_containment_tolerance_cm() -> int:
         return 50
 
 
+def get_ser_ticket_creation_zone_change_floor_meters() -> int:
+    """
+    Return the GPS-noise floor in meters from
+    SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS, or 10 if unset/invalid.
+
+    Precedes SerTicketCreationTriggerHandler's zone-transition gate (see
+    change-ser-auto-ticket-zone-gate design.md D2): movement below this floor
+    since the vehicle's previous recorded location is treated as GPS jitter,
+    not real movement, and skips both zone lookups entirely. This is a
+    technical/operational tuning knob, not a per-user preference — distinct
+    from the notification handler's user-configurable, much larger movement
+    threshold (see resolve_effective_threshold), which answers a different
+    question ("has the user moved enough to want a reminder").
+
+    The default was raised from 5 to 10 meters after a 4R review found the
+    original value assumed events arrive no faster than the 5-minute default
+    poll interval — an assumption that doesn't hold for
+    `POST /vehicles/{token}/location`, which is rate-limited to 60/minute
+    (up to ~1 event/second) independent of the poll interval. Ordinary GPS
+    jitter routinely exceeds 5m, so a vehicle near a zone boundary pushing at
+    that rate could register a zone-transition on nearly every event. 10
+    meters is still far tighter than the notification handler's 50m default,
+    while giving a larger buffer against jitter; the push endpoint also now
+    rate-limits per vehicle token to 1/minute (see the `vehicle-location-push`
+    capability) as a second, independent mitigation.
+
+    Mirrors get_ser_zone_containment_tolerance_cm()'s int-with-fallback
+    style.
+    """
+    raw = os.environ.get("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "10")
+    try:
+        return int(raw)
+    except ValueError:
+        return 10
+
+
 def get_session_cleanup_retention_days() -> int:
     """
     Return the session cleanup retention window in days from

@@ -297,8 +297,25 @@ def list_location_history(
     )
 
 
+def _vehicle_token_key(request: Request) -> str:
+    """
+    Rate-limit key: the vehicle's own token (path parameter), not the
+    caller's IP address.
+
+    Stacked alongside the existing per-remote-address limit on
+    push_vehicle_location (see change-ser-auto-ticket-zone-gate 4R review
+    fix #2 / design.md D2's "Revised after 4R review"): a single vehicle
+    token pushing locations faster than 1/minute could otherwise retrigger
+    SerTicketCreationTriggerHandler's zone-transition gate far more often
+    than the GPS-noise floor alone was designed to tolerate, regardless of
+    which IP address the pushes come from.
+    """
+    return str(request.path_params["token"])
+
+
 @router.post("/{token}/location", status_code=204)
 @limiter.limit("60/minute")
+@limiter.limit("1/minute", key_func=_vehicle_token_key)
 def push_vehicle_location(
     request: Request,
     token: str,
@@ -309,6 +326,11 @@ def push_vehicle_location(
 
     Token ownership is the sole authorization mechanism — no auth header required.
     Returns 204 No Content on success.
+
+    Rate-limited two ways, independently: 60/minute per remote address
+    (abuse guard across tokens) and 1/minute per vehicle token (bounds how
+    often a single vehicle can retrigger the zone-transition gate — see
+    `_vehicle_token_key`).
     """
     config_repo = request.app.state.vehicle_config_repo
 

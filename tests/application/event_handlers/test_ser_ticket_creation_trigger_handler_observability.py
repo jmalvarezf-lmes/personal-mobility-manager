@@ -60,11 +60,6 @@ class _FakeUserPreferencesRepo:
         )
 
 
-class _FakeNotificationPreferencesRepo:
-    def find_by_user_id_and_type(self, user_id: UUID, type_key: str):
-        return None
-
-
 class _FakeUserSerProviderConfigRepo:
     def list_connected_providers(self, user_id: UUID) -> list[str]:
         return []  # no provider connected -> creation-failed path, no exception raised
@@ -123,7 +118,6 @@ def _make_handler(vehicle_repo, user_id, find_containing_ser_zone) -> SerTicketC
         vehicle_repo=vehicle_repo,  # type: ignore[arg-type]
         vehicle_location_repo=_FakeVehicleLocationRepo(),  # type: ignore[arg-type]
         user_preferences_repo=_FakeUserPreferencesRepo(user_id),  # type: ignore[arg-type]
-        notification_preferences_repo=_FakeNotificationPreferencesRepo(),  # type: ignore[arg-type]
         user_ser_provider_config_repo=_FakeUserSerProviderConfigRepo(),  # type: ignore[arg-type]
         find_containing_ser_zone=find_containing_ser_zone,  # type: ignore[arg-type]
         determine_ser_ticket_requirement=_FakeDetermineSerTicketRequirement(),  # type: ignore[arg-type]
@@ -134,9 +128,7 @@ def _make_handler(vehicle_repo, user_id, find_containing_ser_zone) -> SerTicketC
 
 def test_successful_handle_produces_a_span_with_no_error(
     otel_span_exporter: InMemorySpanExporter,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     vehicle = _make_vehicle(vehicle_id, user_id)
     handler = _make_handler(_FakeVehicleRepo(vehicle), user_id, _FakeFindContainingSerZone())
@@ -151,9 +143,7 @@ def test_successful_handle_produces_a_span_with_no_error(
 
 def test_failed_zone_lookup_marks_span_as_error_without_raising(
     otel_span_exporter: InMemorySpanExporter,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     vehicle = _make_vehicle(vehicle_id, user_id)
     handler = _make_handler(_FakeVehicleRepo(vehicle), user_id, _FakeFindContainingSerZone(raises=True))

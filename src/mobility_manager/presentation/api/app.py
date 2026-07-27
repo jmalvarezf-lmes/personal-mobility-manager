@@ -593,7 +593,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         vehicle_repo=vehicle_repo,
         vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
-        notification_preferences_repo=notification_preferences_repo,
         user_ser_provider_config_repo=user_ser_provider_config_repo,
         find_containing_ser_zone=find_containing_uc,
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,

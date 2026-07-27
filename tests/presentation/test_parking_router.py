@@ -63,6 +63,8 @@ def _make_ticket(vehicle_id: UUID, duration_minutes: int) -> ParkingTicket:
         cost=1.5,
         end_date=datetime.now(UTC),
         created_at=datetime.now(UTC),
+        city_code="madrid",
+        zone_number="163",
     )
 
 

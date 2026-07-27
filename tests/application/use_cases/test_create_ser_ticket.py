@@ -71,6 +71,8 @@ class FakeSerTicketProvider(SerTicketProviderPort):
             cost=1.5,
             end_date=datetime.now(UTC),
             created_at=datetime.now(UTC),
+            city_code="madrid",
+            zone_number="163",
         )
 
     def logout(self, session: SerProviderSession) -> None:

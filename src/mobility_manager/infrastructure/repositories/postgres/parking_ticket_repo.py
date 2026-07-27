@@ -37,32 +37,34 @@ class PostgresParkingTicketRepository(ParkingTicketRepository):
                     cost=ticket.cost,
                     end_date=ticket.end_date,
                     created_at=ticket.created_at,
+                    city_code=ticket.city_code,
+                    zone_number=ticket.zone_number,
                 )
             )
 
-    def find_active_for_vehicle(self, vehicle_id: UUID, at: datetime) -> ParkingTicket | None:
-        """Return the vehicle's most recent ParkingTicket still active at `at`, or None."""
+    def find_all_active_for_vehicle(self, vehicle_id: UUID, at: datetime) -> list[ParkingTicket]:
+        """Return every one of the vehicle's ParkingTicket rows still active at `at`."""
         with self._engine.connect() as conn:
-            row = conn.execute(
-                select(parking_tickets_table)
-                .where(
+            rows = conn.execute(
+                select(parking_tickets_table).where(
                     parking_tickets_table.c.vehicle_id == vehicle_id,
                     parking_tickets_table.c.end_date > at,
                 )
-                .order_by(parking_tickets_table.c.end_date.desc())
-                .limit(1)
-            ).fetchone()
+            ).fetchall()
 
-        if row is None:
-            return None
-        return ParkingTicket(
-            id=row.id,
-            vehicle_id=row.vehicle_id,
-            user_id=row.user_id,
-            provider=row.provider,
-            duration_minutes=row.duration_minutes,
-            provider_reference=row.provider_reference,
-            cost=float(row.cost),
-            end_date=row.end_date,
-            created_at=row.created_at,
-        )
+        return [
+            ParkingTicket(
+                id=row.id,
+                vehicle_id=row.vehicle_id,
+                user_id=row.user_id,
+                provider=row.provider,
+                duration_minutes=row.duration_minutes,
+                provider_reference=row.provider_reference,
+                cost=float(row.cost),
+                end_date=row.end_date,
+                created_at=row.created_at,
+                city_code=row.city_code,
+                zone_number=row.zone_number,
+            )
+            for row in rows
+        ]

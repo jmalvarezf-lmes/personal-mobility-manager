@@ -2,10 +2,11 @@
 Unit tests for SerTicketCreationTriggerHandler.
 
 Covers every scenario in the ser-ticket-auto-creation spec: ticket created
-when required and the movement threshold is met, no-op when
-auto_create_ticket is disabled, movement-threshold skip, no-zone/exemption
-skip, missing-vehicle skip, and each mapped failure reason (mocked ports,
-no real DB).
+when required and the vehicle changed SER zone, no-op when
+auto_create_ticket is disabled, GPS-noise-floor skip, same-zone skip,
+zone-transition-out-of-all-zones skip, no-zone/exemption skip,
+zone-changed-away-from-an-existing-ticket's-zone still creates, missing-
+vehicle skip, and each mapped failure reason (mocked ports, no real DB).
 """
 
 from datetime import UTC, datetime
@@ -19,9 +20,6 @@ from mobility_manager.application.event_handlers.ser_ticket_creation_trigger_han
 )
 from mobility_manager.domain.entities.parking_ticket import ParkingTicket
 from mobility_manager.domain.entities.ser_zone import SerZone
-from mobility_manager.domain.entities.user_notification_preference import (
-    UserNotificationPreference,
-)
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
@@ -43,12 +41,11 @@ from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.location import GeoLocation
 
 _FAR_LAT, _FAR_LNG = 40.4168, -3.7038
-_MOVED_LAT, _MOVED_LNG = 40.4258, -3.7038  # ~1km north of _FAR_*
-_NEAR_LAT, _NEAR_LNG = 40.4169, -3.7037  # ~15m from _FAR_*, well under 50m
+_MOVED_LAT, _MOVED_LNG = 40.4258, -3.7038  # ~999m north of _FAR_*, well past the noise floor
+_VERY_NEAR_LAT, _VERY_NEAR_LNG = 40.41681, -3.7038  # ~1.1m from _FAR_*, under the 5m floor these tests set
+_NEAR_LAT, _NEAR_LNG = 40.4169, -3.7037  # ~14m from _FAR_*, above the 5m floor these tests set
 
 _SQUARE = Polygon([(440584, 4474459), (440604, 4474459), (440604, 4474479), (440584, 4474479)])
-
-_TYPE_KEY = "ser_zone_ticket_required"
 
 
 class FakeVehicleRepo:
@@ -89,23 +86,6 @@ class FakeUserPreferencesRepo:
         return self.preferences.get(user_id)
 
 
-class FakeNotificationPreferencesRepo:
-    def __init__(self) -> None:
-        self._rows: dict[tuple[UUID, str], UserNotificationPreference] = {}
-
-    def set(self, user_id: UUID, type_key: str, enabled: bool, config: dict[str, Any] | None = None) -> None:
-        self._rows[(user_id, type_key)] = UserNotificationPreference(
-            user_id=user_id,
-            type_key=type_key,
-            enabled=enabled,
-            config=config or {},
-            updated_at=datetime.now(UTC),
-        )
-
-    def find_by_user_id_and_type(self, user_id: UUID, type_key: str) -> UserNotificationPreference | None:
-        return self._rows.get((user_id, type_key))
-
-
 class FakeUserSerProviderConfigRepo:
     def __init__(self) -> None:
         self.connected: dict[UUID, list[str]] = {}
@@ -118,12 +98,26 @@ class FakeUserSerProviderConfigRepo:
 
 
 class FakeFindContainingSerZone:
+    """
+    Fake FindContainingSerZone.
+
+    `zone` is the default answer returned for every call — convenient for
+    "both lookups resolve to the same zone" scenarios, since the handler now
+    calls this twice per event (once for the previous location, once for the
+    event's own coordinates) whenever a previous location exists. `zone_queue`
+    lets a test give distinct, ordered answers per call (e.g. "previous zone
+    A, then current zone B") when the two lookups must differ.
+    """
+
     def __init__(self) -> None:
         self.zone: SerZone | None = None
+        self.zone_queue: list[SerZone | None] = []
         self.calls: list[GeoLocation] = []
 
     def execute(self, location: GeoLocation) -> SerZone | None:
         self.calls.append(location)
+        if self.zone_queue:
+            return self.zone_queue.pop(0)
         return self.zone
 
 
@@ -193,6 +187,8 @@ def _make_ticket(vehicle_id: UUID, user_id: UUID) -> ParkingTicket:
         cost=1.5,
         end_date=datetime(2026, 7, 26, 12, 0, tzinfo=UTC),
         created_at=datetime(2026, 7, 26, 10, 0, tzinfo=UTC),
+        city_code="madrid",
+        zone_number="163",
     )
 
 
@@ -207,12 +203,23 @@ def _make_event(vehicle_id: UUID, lat: float, lng: float, now: datetime) -> Vehi
     )
 
 
+def _make_previous_location(vehicle_id: UUID, lat: float, lng: float, now: datetime) -> VehicleLocation:
+    return VehicleLocation(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        latitude=lat,
+        longitude=lng,
+        recorded_at=now,
+        received_at=now,
+        source="push",
+    )
+
+
 class _Fixture:
     def __init__(self) -> None:
         self.vehicle_repo = FakeVehicleRepo()
         self.location_repo = FakeVehicleLocationRepo()
         self.preferences_repo = FakeUserPreferencesRepo()
-        self.notification_preferences_repo = FakeNotificationPreferencesRepo()
         self.provider_config_repo = FakeUserSerProviderConfigRepo()
         self.find_containing = FakeFindContainingSerZone()
         self.determine_requirement = FakeDetermineSerTicketRequirement(required=True)
@@ -224,7 +231,6 @@ class _Fixture:
             vehicle_repo=self.vehicle_repo,  # type: ignore[arg-type]
             vehicle_location_repo=self.location_repo,  # type: ignore[arg-type]
             user_preferences_repo=self.preferences_repo,  # type: ignore[arg-type]
-            notification_preferences_repo=self.notification_preferences_repo,  # type: ignore[arg-type]
             user_ser_provider_config_repo=self.provider_config_repo,  # type: ignore[arg-type]
             find_containing_ser_zone=self.find_containing,  # type: ignore[arg-type]
             determine_ser_ticket_requirement=self.determine_requirement,  # type: ignore[arg-type]
@@ -233,8 +239,8 @@ class _Fixture:
         )
 
 
-def test_ticket_created_when_required_and_threshold_met(monkeypatch) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
+def test_ticket_created_when_required_and_no_previous_location() -> None:
+    """First-ever recorded location: no previous zone to compare against, always proceeds."""
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
@@ -259,6 +265,25 @@ def test_ticket_created_when_required_and_threshold_met(monkeypatch) -> None:
     assert published.end_date == fx.create_ser_ticket.ticket.end_date
 
 
+def test_ticket_created_when_vehicle_changed_ser_zone() -> None:
+    """Movement past the noise floor into a different, known zone proceeds to ticket creation."""
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.preferences_repo.set(user_id, auto_create_ticket=True, default_ticket_duration_minutes=90)
+    fx.provider_config_repo.set_connected(user_id, ["elparking"])
+    fx.location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    fx.find_containing.zone_queue = [_make_ser_zone(zone_number="163"), _make_ser_zone(zone_number="200")]
+    fx.create_ser_ticket.ticket = _make_ticket(vehicle_id, user_id)
+    handler = fx.build()
+
+    handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+
+    assert len(fx.create_ser_ticket.calls) == 1
+    assert len(fx.event_publisher.published) == 1
+    assert isinstance(fx.event_publisher.published[0], SerTicketCreated)
+
+
 def test_no_creation_when_auto_create_ticket_disabled() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
@@ -273,26 +298,56 @@ def test_no_creation_when_auto_create_ticket_disabled() -> None:
     assert fx.event_publisher.published == []
 
 
-def test_movement_below_threshold_skips_zone_check(monkeypatch) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
+def test_movement_below_gps_noise_floor_skips_both_zone_lookups(monkeypatch) -> None:
+    monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "5")
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
     fx.preferences_repo.set(user_id, auto_create_ticket=True)
-    fx.location_repo.previous = VehicleLocation(
-        id=uuid4(),
-        vehicle_id=vehicle_id,
-        latitude=_FAR_LAT,
-        longitude=_FAR_LNG,
-        recorded_at=now,
-        received_at=now,
-        source="push",
-    )
+    fx.location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    handler = fx.build()
+
+    handler.handle(_make_event(vehicle_id, _VERY_NEAR_LAT, _VERY_NEAR_LNG, now))
+
+    assert fx.find_containing.calls == []
+    assert fx.determine_requirement.calls == []
+    assert fx.create_ser_ticket.calls == []
+    assert fx.event_publisher.published == []
+
+
+def test_movement_past_floor_but_same_zone_skips_creation(monkeypatch) -> None:
+    monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "5")
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.preferences_repo.set(user_id, auto_create_ticket=True)
+    fx.location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    fx.find_containing.zone = _make_ser_zone(zone_number="163")  # same zone for both lookups
     handler = fx.build()
 
     handler.handle(_make_event(vehicle_id, _NEAR_LAT, _NEAR_LNG, now))
 
-    assert fx.find_containing.calls == []
+    assert len(fx.find_containing.calls) == 2
+    assert fx.determine_requirement.calls == []
+    assert fx.create_ser_ticket.calls == []
+    assert fx.event_publisher.published == []
+
+
+def test_transitioning_out_of_all_ser_zones_skips_creation(monkeypatch) -> None:
+    monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "5")
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.preferences_repo.set(user_id, auto_create_ticket=True)
+    fx.location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    fx.find_containing.zone_queue = [_make_ser_zone(zone_number="163"), None]
+    fx.determine_requirement.required = False  # zone=None short-circuits to False
+    handler = fx.build()
+
+    handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+
+    assert len(fx.determine_requirement.calls) == 1
+    assert fx.determine_requirement.calls[0][0] is None
     assert fx.create_ser_ticket.calls == []
     assert fx.event_publisher.published == []
 
@@ -324,6 +379,33 @@ def test_matching_exemption_suppresses_ticket_creation() -> None:
     handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
 
     assert fx.create_ser_ticket.calls == []
+
+
+def test_zone_changed_away_from_existing_tickets_zone_still_creates_ticket(monkeypatch) -> None:
+    """
+    Mirrors the ser-ticket-requirement capability's zone-aware short-circuit:
+    from the handler's perspective, DetermineSerTicketRequirement no longer
+    short-circuits on an active ticket for a *different* zone, so a genuine
+    zone transition into zone B (which requires a ticket) must still create
+    one — regardless of any ticket the vehicle already holds for zone A.
+    """
+    monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "5")
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.preferences_repo.set(user_id, auto_create_ticket=True, default_ticket_duration_minutes=90)
+    fx.provider_config_repo.set_connected(user_id, ["elparking"])
+    fx.location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+    fx.find_containing.zone_queue = [_make_ser_zone(zone_number="163"), _make_ser_zone(zone_number="200")]
+    fx.determine_requirement.required = True  # zone B requires a ticket, not short-circuited by zone A's ticket
+    fx.create_ser_ticket.ticket = _make_ticket(vehicle_id, user_id)
+    handler = fx.build()
+
+    handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+
+    assert len(fx.create_ser_ticket.calls) == 1
+    assert len(fx.event_publisher.published) == 1
+    assert isinstance(fx.event_publisher.published[0], SerTicketCreated)
 
 
 def test_no_creation_when_ticket_required_but_zone_is_none() -> None:
@@ -361,7 +443,6 @@ def test_missing_vehicle_skipped_without_error() -> None:
 
 
 def test_ticket_created_records_created_outcome_metric(monkeypatch) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     recorded: list[str] = []
     monkeypatch.setattr(
         "mobility_manager.application.event_handlers.ser_ticket_creation_trigger_handler.record_ser_ticket_auto_creation",
@@ -382,7 +463,6 @@ def test_ticket_created_records_created_outcome_metric(monkeypatch) -> None:
 
 
 def test_ticket_creation_failure_records_failed_outcome_metric(monkeypatch) -> None:
-    monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     recorded: list[str] = []
     monkeypatch.setattr(
         "mobility_manager.application.event_handlers.ser_ticket_creation_trigger_handler.record_ser_ticket_auto_creation",

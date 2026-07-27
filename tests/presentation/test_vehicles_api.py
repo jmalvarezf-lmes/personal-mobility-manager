@@ -605,6 +605,48 @@ class TestPushVehicleLocation:
 
         assert response.status_code == 422
 
+    def test_second_push_for_same_token_within_a_minute_returns_429(self) -> None:
+        """
+        Task 9.7 (4R review fix #2): the new per-vehicle-token 1/minute limit,
+        stacked alongside the existing per-remote-address 60/minute limit.
+        """
+        token = str(uuid4())
+        config_repo = MagicMock()
+        config_repo.find_vehicle_by_token.return_value = uuid4()
+        record_uc = MagicMock()
+
+        limiter.reset()
+        try:
+            client = TestClient(_build_app(record_uc=record_uc, config_repo=config_repo))
+
+            first = client.post(f"/vehicles/{token}/location", json=self._make_push_body())
+            second = client.post(f"/vehicles/{token}/location", json=self._make_push_body())
+
+            assert first.status_code == 204
+            assert second.status_code == 429
+        finally:
+            limiter.reset()
+
+    def test_push_for_a_different_token_within_the_same_window_is_unaffected(self) -> None:
+        """Task 9.7: the per-token limit tracks each token's own count separately."""
+        token_a = str(uuid4())
+        token_b = str(uuid4())
+        config_repo = MagicMock()
+        config_repo.find_vehicle_by_token.return_value = uuid4()
+        record_uc = MagicMock()
+
+        limiter.reset()
+        try:
+            client = TestClient(_build_app(record_uc=record_uc, config_repo=config_repo))
+
+            response_a = client.post(f"/vehicles/{token_a}/location", json=self._make_push_body())
+            response_b = client.post(f"/vehicles/{token_b}/location", json=self._make_push_body())
+
+            assert response_a.status_code == 204
+            assert response_b.status_code == 204
+        finally:
+            limiter.reset()
+
 
 # ---------------------------------------------------------------------------
 # GET /vehicles/{vehicle_id}/location — Task 16.11 (now requires auth + ownership)

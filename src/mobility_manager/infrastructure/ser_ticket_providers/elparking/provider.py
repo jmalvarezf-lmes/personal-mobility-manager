@@ -169,6 +169,8 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             cost=cost,
             end_date=end_date,
             created_at=datetime.now(UTC),
+            city_code=ser_zone.city_code,
+            zone_number=ser_zone.zone_number,
         )
 
     def _build_ticket_request_body(

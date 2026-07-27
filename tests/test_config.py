@@ -14,6 +14,7 @@ from mobility_manager.config import (
     get_ambient_label_retry_cooldown_hours,
     get_default_notification_movement_threshold_meters,
     get_event_publisher_max_workers,
+    get_ser_ticket_creation_zone_change_floor_meters,
     get_session_cleanup_retention_days,
     resolve_effective_threshold,
 )
@@ -136,6 +137,20 @@ class TestAmbientLabelConfig:
     def test_request_delay_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("AMBIENT_LABEL_REQUEST_DELAY_SECONDS", "not-a-number")
         assert get_ambient_label_request_delay_seconds() == 5
+
+
+class TestSerTicketCreationZoneChangeFloorMeters:
+    def test_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", raising=False)
+        assert get_ser_ticket_creation_zone_change_floor_meters() == 10
+
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "20")
+        assert get_ser_ticket_creation_zone_change_floor_meters() == 20
+
+    def test_falls_back_on_parse_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SER_TICKET_CREATION_ZONE_CHANGE_FLOOR_METERS", "not-a-number")
+        assert get_ser_ticket_creation_zone_change_floor_meters() == 10
 
 
 class TestSessionCleanupRetentionDays:

@@ -60,7 +60,9 @@ def pg_engine():
                     provider_reference TEXT,
                     cost NUMERIC NOT NULL,
                     end_date TIMESTAMPTZ NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL
+                    created_at TIMESTAMPTZ NOT NULL,
+                    city_code TEXT,
+                    zone_number TEXT
                 )
                 """
             )
@@ -113,6 +115,8 @@ def test_save_persists_all_fields(pg_engine) -> None:
         cost=1.2,
         end_date=end_date,
         created_at=created_at,
+        city_code="madrid",
+        zone_number="163",
     )
     repo.save(ticket)
 
@@ -130,6 +134,8 @@ def test_save_persists_all_fields(pg_engine) -> None:
     assert row.provider_reference == "REF-001"
     assert float(row.cost) == 1.2
     assert row.end_date == end_date
+    assert row.city_code == "madrid"
+    assert row.zone_number == "163"
 
 
 def test_save_with_none_provider_reference(pg_engine) -> None:
@@ -153,6 +159,8 @@ def test_save_with_none_provider_reference(pg_engine) -> None:
         cost=0.6,
         end_date=datetime.now(UTC),
         created_at=datetime.now(UTC),
+        city_code="madrid",
+        zone_number="163",
     )
     repo.save(ticket)
 
@@ -166,6 +174,44 @@ def test_save_with_none_provider_reference(pg_engine) -> None:
     assert row.provider_reference is None
 
 
+def test_save_with_none_zone_fields_round_trips_as_none_legacy_row(pg_engine) -> None:
+    """
+    Simulates a legacy pre-migration row: city_code/zone_number both None.
+
+    Covers the D5 fail-safe's data-layer precondition — the repository must
+    round-trip a None zone unchanged, not coerce it to any other value.
+    """
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    user_id = uuid4()
+    vehicle_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+
+    ticket_id = uuid4()
+    ticket = ParkingTicket(
+        id=ticket_id,
+        vehicle_id=vehicle_id,
+        user_id=user_id,
+        provider="madrid_ser_app",
+        duration_minutes=60,
+        provider_reference="REF-002",
+        cost=0.6,
+        end_date=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        city_code=None,
+        zone_number=None,
+    )
+    repo.save(ticket)
+
+    found = repo.find_all_active_for_vehicle(vehicle_id, at=datetime.now(UTC) - timedelta(minutes=1))
+    assert len(found) == 1
+    assert found[0].city_code is None
+    assert found[0].zone_number is None
+
+
 def _make_ticket(vehicle_id, user_id, end_date: datetime, created_at: datetime | None = None) -> ParkingTicket:
     return ParkingTicket(
         id=uuid4(),
@@ -177,10 +223,12 @@ def _make_ticket(vehicle_id, user_id, end_date: datetime, created_at: datetime |
         cost=1.2,
         end_date=end_date,
         created_at=created_at or datetime.now(UTC),
+        city_code="madrid",
+        zone_number="163",
     )
 
 
-def test_find_active_for_vehicle_returns_none_when_no_tickets(pg_engine) -> None:
+def test_find_all_active_for_vehicle_returns_empty_list_when_no_tickets(pg_engine) -> None:
     from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
         PostgresParkingTicketRepository,
     )
@@ -190,10 +238,10 @@ def test_find_active_for_vehicle_returns_none_when_no_tickets(pg_engine) -> None
     user_id = uuid4()
     _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
 
-    assert repo.find_active_for_vehicle(vehicle_id, at=datetime.now(UTC)) is None
+    assert repo.find_all_active_for_vehicle(vehicle_id, at=datetime.now(UTC)) == []
 
 
-def test_find_active_for_vehicle_returns_none_when_only_expired_ticket(pg_engine) -> None:
+def test_find_all_active_for_vehicle_returns_empty_list_when_only_expired_ticket(pg_engine) -> None:
     from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
         PostgresParkingTicketRepository,
     )
@@ -205,10 +253,10 @@ def test_find_active_for_vehicle_returns_none_when_only_expired_ticket(pg_engine
     now = datetime.now(UTC)
     repo.save(_make_ticket(vehicle_id, user_id, end_date=now - timedelta(minutes=5)))
 
-    assert repo.find_active_for_vehicle(vehicle_id, at=now) is None
+    assert repo.find_all_active_for_vehicle(vehicle_id, at=now) == []
 
 
-def test_find_active_for_vehicle_returns_ticket_still_active(pg_engine) -> None:
+def test_find_all_active_for_vehicle_returns_ticket_still_active(pg_engine) -> None:
     from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
         PostgresParkingTicketRepository,
     )
@@ -221,13 +269,18 @@ def test_find_active_for_vehicle_returns_ticket_still_active(pg_engine) -> None:
     ticket = _make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=30))
     repo.save(ticket)
 
-    found = repo.find_active_for_vehicle(vehicle_id, at=now)
+    found = repo.find_all_active_for_vehicle(vehicle_id, at=now)
 
-    assert found is not None
-    assert found.id == ticket.id
+    assert len(found) == 1
+    assert found[0].id == ticket.id
 
 
-def test_find_active_for_vehicle_returns_most_recent_end_date(pg_engine) -> None:
+def test_find_all_active_for_vehicle_returns_all_active_tickets(pg_engine) -> None:
+    """
+    Task 9.5 (4R review fix #1): two simultaneously-active tickets for the
+    same vehicle in different zones must both be returned, not just the one
+    with the latest end_date — the corrected list-based contract.
+    """
     from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
         PostgresParkingTicketRepository,
     )
@@ -237,17 +290,29 @@ def test_find_active_for_vehicle_returns_most_recent_end_date(pg_engine) -> None
     user_id = uuid4()
     _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
     now = datetime.now(UTC)
-    repo.save(_make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=10)))
-    latest = _make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=60))
-    repo.save(latest)
+    earlier_zone_a = _make_ticket(vehicle_id, user_id, end_date=now + timedelta(minutes=10))
+    repo.save(earlier_zone_a)
+    later_zone_b = ParkingTicket(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        user_id=user_id,
+        provider="elparking",
+        duration_minutes=60,
+        provider_reference="REF-002",
+        cost=1.2,
+        end_date=now + timedelta(minutes=60),
+        created_at=now,
+        city_code="madrid",
+        zone_number="200",
+    )
+    repo.save(later_zone_b)
 
-    found = repo.find_active_for_vehicle(vehicle_id, at=now)
+    found = repo.find_all_active_for_vehicle(vehicle_id, at=now)
 
-    assert found is not None
-    assert found.id == latest.id
+    assert {t.id for t in found} == {earlier_zone_a.id, later_zone_b.id}
 
 
-def test_find_active_for_vehicle_is_scoped_to_the_given_vehicle(pg_engine) -> None:
+def test_find_all_active_for_vehicle_is_scoped_to_the_given_vehicle(pg_engine) -> None:
     from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
         PostgresParkingTicketRepository,
     )
@@ -262,4 +327,4 @@ def test_find_active_for_vehicle_is_scoped_to_the_given_vehicle(pg_engine) -> No
     now = datetime.now(UTC)
     repo.save(_make_ticket(other_vehicle_id, other_user_id, end_date=now + timedelta(minutes=30)))
 
-    assert repo.find_active_for_vehicle(vehicle_id, at=now) is None
+    assert repo.find_all_active_for_vehicle(vehicle_id, at=now) == []

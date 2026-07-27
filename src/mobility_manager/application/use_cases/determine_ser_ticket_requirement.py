@@ -38,11 +38,40 @@ now short-circuits to `False` (not required) if the vehicle already has an
 active ParkingTicket at `at`, via the injected `ParkingTicketRepository`.
 This closes an idempotency gap where a fast-repeating VehicleLocationUpdated
 stream could otherwise trigger more than one real (paid) ticket creation for
-the same vehicle while a ticket it already holds is still valid. The check
-is deliberately vehicle-scoped, not zone-scoped — ParkingTicket does not
-store a zone number today, so a vehicle with any active ticket anywhere is
-treated as not requiring a new one; adding a zone column is out of scope for
-this fix.
+the same vehicle while a ticket it already holds is still valid.
+
+This active-ticket short-circuit is zone-aware (see
+change-ser-auto-ticket-zone-gate design.md D5): a `ParkingTicket` now carries
+the `(city_code, zone_number)` of the zone it was created for. It calls
+`ParkingTicketRepository.find_all_active_for_vehicle(vehicle_id, at)`, which
+returns *every* one of the vehicle's tickets still active at `at`, not just a
+single one — a vehicle can legitimately hold more than one concurrently-
+active ticket, one per SER zone it has entered while a previous zone's
+ticket has not yet expired (e.g. zone A -> zone B while A's ticket is still
+valid -> back to zone A while both are still valid). It short-circuits to
+`False` immediately if **any** ticket in that list either has `(city_code,
+zone_number) == (None, None)` (a legacy ticket persisted before these fields
+existed — its real zone can't be recovered, so it is treated, fail-safe, as
+covering any zone; better to under-create than risk a duplicate paid
+ticket) or matches `(zone.city_code, zone.zone_number)` (already covered by
+that specific ticket). If no ticket in the list satisfies either condition
+(including when the list is empty), the active-ticket check does NOT
+short-circuit — it falls through to the ambient-label/exemption chain below
+exactly as if the vehicle had no active tickets at all.
+
+A post-implementation 4R review found that comparing the current zone
+against only a single, most-recent-by-`end_date` ticket (the original
+`find_active_for_vehicle` contract) was unsafe: this change is precisely
+what makes it possible for a vehicle to hold multiple concurrently-active
+tickets in different zones for the first time (previously any active ticket
+blocked all creation, so at most one could ever be active — that invariant
+made the single-row query safe, and this change deliberately breaks it). A
+vehicle cycling zone A -> zone B -> zone A while both tickets are still
+valid would have the zone-A check compare against ticket B (typically the
+one with the later `end_date`, since it was created after A with a similar
+duration) — the mismatch would fail to short-circuit and create a
+duplicate, real, paid third ticket for zone A even though ticket A was still
+valid. Checking every active ticket, not just one, closes this gap.
 
 This use case gained a second, independent exemption path (see
 add-ser-label-exemption-rule design.md): after the active-ticket
@@ -107,10 +136,19 @@ class DetermineSerTicketRequirement:
         enforcement-schedule dependency's `is_active_now(zone.city_code)`
         returns False, without consulting the ticket repository, the
         ambient-label repository, the label-exemption rule, the exemption
-        repository, or the zone rule. Otherwise, returns False if
-        `vehicle_id` already has an active ParkingTicket at `at` (see module
-        docstring), without consulting the ambient-label repository, the
-        label-exemption rule, the exemption repository, or the zone rule.
+        repository, or the zone rule.
+
+        Otherwise, fetches every one of `vehicle_id`'s active ParkingTickets
+        at `at` (see module docstring) and applies the zone-aware
+        short-circuit: returns False immediately if any of them has
+        `(city_code, zone_number) == (None, None)` (legacy, fail-safe) or
+        matches `(zone.city_code, zone.zone_number)` (already covered),
+        without consulting the ambient-label repository, the label-exemption
+        rule, the exemption repository, or the zone rule. If none of the
+        vehicle's active tickets satisfies either condition (including when
+        there are none), this check does not return and falls through to
+        the ambient-label check below exactly as if the vehicle had no
+        active tickets at all.
 
         Otherwise, looks up the vehicle's ambient label. If it resolves to
         `AmbientLabelStatus.FOUND` and the injected `SerLabelExemptionRule`
@@ -131,8 +169,12 @@ class DetermineSerTicketRequirement:
             return False
         if not self._enforcement_schedule.is_active_now(zone.city_code):
             return False
-        if self._ticket_repo.find_active_for_vehicle(vehicle_id, at) is not None:
-            return False
+
+        active_tickets = self._ticket_repo.find_all_active_for_vehicle(vehicle_id, at)
+        for active_ticket in active_tickets:
+            ticket_zone = (active_ticket.city_code, active_ticket.zone_number)
+            if ticket_zone == (None, None) or ticket_zone == (zone.city_code, zone.zone_number):
+                return False
 
         ambient_label = self._ambient_label_repo.get_by_vehicle_id(vehicle_id)
         if (

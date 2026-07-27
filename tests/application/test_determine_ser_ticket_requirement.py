@@ -67,13 +67,13 @@ class _FakeSerExemptionZoneRule:
 class _FakeParkingTicketRepository:
     """Minimal fake ParkingTicket repository returning a fixed answer."""
 
-    def __init__(self, active_ticket: ParkingTicket | None = None) -> None:
-        self._active_ticket = active_ticket
+    def __init__(self, active_tickets: list[ParkingTicket] | None = None) -> None:
+        self._active_tickets = active_tickets if active_tickets is not None else []
         self.calls: list[tuple[UUID, datetime]] = []
 
-    def find_active_for_vehicle(self, vehicle_id: UUID, at: datetime) -> ParkingTicket | None:
+    def find_all_active_for_vehicle(self, vehicle_id: UUID, at: datetime) -> list[ParkingTicket]:
         self.calls.append((vehicle_id, at))
-        return self._active_ticket
+        return self._active_tickets
 
 
 class _FakeVehicleAmbientLabelRepository:
@@ -139,7 +139,9 @@ def _make_exemption(vehicle_id: UUID, city_code: str = "madrid", zone_number: st
     )
 
 
-def _make_ticket(vehicle_id: UUID) -> ParkingTicket:
+def _make_ticket(
+    vehicle_id: UUID, city_code: str | None = "madrid", zone_number: str | None = "163"
+) -> ParkingTicket:
     return ParkingTicket(
         id=uuid4(),
         vehicle_id=vehicle_id,
@@ -150,6 +152,8 @@ def _make_ticket(vehicle_id: UUID) -> ParkingTicket:
         cost=1.5,
         end_date=_NOW,
         created_at=_NOW,
+        city_code=city_code,
+        zone_number=zone_number,
     )
 
 
@@ -159,7 +163,7 @@ def test_execute_returns_true_when_zone_is_not_none_and_enforcement_active_no_ex
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -179,7 +183,7 @@ def test_execute_returns_false_when_zone_is_not_none_and_enforcement_inactive() 
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -193,7 +197,7 @@ def test_execute_returns_false_when_zone_is_none() -> None:
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -207,7 +211,7 @@ def test_execute_does_not_consult_dependencies_when_zone_is_none() -> None:
     fake_schedule = _FakeSerEnforcementSchedule(active=True)
     fake_exemption_repo = _FakeVehicleSerParkingExemptionRepository(exemption=None)
     fake_zone_rule = _FakeSerExemptionZoneRule()
-    fake_ticket_repo = _FakeParkingTicketRepository(active_ticket=None)
+    fake_ticket_repo = _FakeParkingTicketRepository(active_tickets=None)
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=fake_schedule,
         exemption_repo=fake_exemption_repo,
@@ -233,7 +237,7 @@ def test_execute_does_not_consult_exemption_repo_when_enforcement_inactive() -> 
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=fake_exemption_repo,
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -246,7 +250,7 @@ def test_execute_does_not_consult_exemption_repo_when_enforcement_inactive() -> 
 def test_execute_does_not_consult_ticket_repo_when_enforcement_inactive() -> None:
     """Enforcement-inactive must short-circuit before the ticket repository is consulted."""
     vehicle_id = uuid4()
-    fake_ticket_repo = _FakeParkingTicketRepository(active_ticket=None)
+    fake_ticket_repo = _FakeParkingTicketRepository(active_tickets=None)
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
@@ -269,7 +273,7 @@ def test_execute_delegates_to_enforcement_schedule_with_zone_city_code_when_zone
         enforcement_schedule=fake_schedule,
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -282,7 +286,7 @@ def test_execute_delegates_to_enforcement_schedule_with_zone_city_code_when_zone
 def test_execute_returns_false_when_active_ticket_exists() -> None:
     """An already-active ParkingTicket short-circuits to False (idempotency guard, fix 11.1)."""
     vehicle_id = uuid4()
-    fake_ticket_repo = _FakeParkingTicketRepository(active_ticket=_make_ticket(vehicle_id))
+    fake_ticket_repo = _FakeParkingTicketRepository(active_tickets=[_make_ticket(vehicle_id)])
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
@@ -299,7 +303,7 @@ def test_execute_does_not_consult_exemption_repo_or_zone_rule_when_active_ticket
     vehicle_id = uuid4()
     fake_exemption_repo = _FakeVehicleSerParkingExemptionRepository(exemption=None)
     fake_zone_rule = _FakeSerExemptionZoneRule()
-    fake_ticket_repo = _FakeParkingTicketRepository(active_ticket=_make_ticket(vehicle_id))
+    fake_ticket_repo = _FakeParkingTicketRepository(active_tickets=[_make_ticket(vehicle_id)])
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
@@ -317,7 +321,7 @@ def test_execute_does_not_consult_exemption_repo_or_zone_rule_when_active_ticket
 
 def test_execute_consults_ticket_repo_with_vehicle_id_and_at() -> None:
     vehicle_id = uuid4()
-    fake_ticket_repo = _FakeParkingTicketRepository(active_ticket=None)
+    fake_ticket_repo = _FakeParkingTicketRepository(active_tickets=None)
     use_case = DetermineSerTicketRequirement(
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
@@ -340,7 +344,7 @@ def test_execute_proceeds_as_before_when_no_active_ticket() -> None:
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
         exemption_zone_rule=_FakeSerExemptionZoneRule(eligible=True),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -358,7 +362,7 @@ def test_execute_returns_false_when_vehicle_has_matching_exemption() -> None:
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
         exemption_zone_rule=_FakeSerExemptionZoneRule(eligible=True),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -376,7 +380,7 @@ def test_execute_returns_true_when_vehicle_has_matching_exemption_but_zone_rule_
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
         exemption_zone_rule=_FakeSerExemptionZoneRule(eligible=False),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -393,7 +397,7 @@ def test_execute_returns_true_when_vehicle_exemption_is_for_a_different_zone() -
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -410,7 +414,7 @@ def test_execute_does_not_consult_zone_rule_when_exemption_does_not_match() -> N
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=exemption),
         exemption_zone_rule=fake_zone_rule,
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -427,7 +431,7 @@ def test_execute_looks_up_exemption_by_vehicle_id() -> None:
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -444,7 +448,7 @@ def test_execute_returns_false_when_ambient_label_is_confirmed_electric_and_exem
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(
             ambient_label=_make_ambient_label(vehicle_id, label=AmbientLabel.ZERO, status=AmbientLabelStatus.FOUND)
         ),
@@ -463,7 +467,7 @@ def test_execute_does_not_consult_exemption_repo_or_zone_rule_when_label_is_exem
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
         exemption_zone_rule=fake_zone_rule,
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(
             ambient_label=_make_ambient_label(vehicle_id, label=AmbientLabel.ZERO, status=AmbientLabelStatus.FOUND)
         ),
@@ -483,7 +487,7 @@ def test_execute_delegates_to_label_exemption_rule_with_zone_city_code_and_label
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(
             ambient_label=_make_ambient_label(vehicle_id, label=AmbientLabel.ZERO, status=AmbientLabelStatus.FOUND)
         ),
@@ -503,7 +507,7 @@ def test_execute_falls_through_to_manual_exemption_when_label_is_not_electric() 
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(
             ambient_label=_make_ambient_label(vehicle_id, label=AmbientLabel.C, status=AmbientLabelStatus.FOUND)
         ),
@@ -533,7 +537,7 @@ def test_execute_falls_through_to_manual_exemption_when_label_lookup_is_unresolv
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=fake_exemption_repo,
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=ambient_label),
         label_exemption_rule=fake_label_exemption_rule,
     )
@@ -550,7 +554,7 @@ def test_execute_consults_ambient_label_repo_with_vehicle_id() -> None:
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=fake_ambient_label_repo,
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -560,6 +564,86 @@ def test_execute_consults_ambient_label_repo_with_vehicle_id() -> None:
     assert fake_ambient_label_repo.calls == [vehicle_id]
 
 
+def test_execute_falls_through_when_active_ticket_is_for_a_different_known_zone() -> None:
+    """A different, known zone must NOT short-circuit — falls through to the ambient-label/exemption chain."""
+    vehicle_id = uuid4()
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[_make_ticket(vehicle_id, city_code="madrid", zone_number="200")]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    zone = _make_ser_zone(zone_number="163")
+
+    assert use_case.execute(zone, vehicle_id, at=_NOW) is True
+
+
+def test_execute_consults_ambient_label_repo_when_active_ticket_is_for_a_different_known_zone() -> None:
+    vehicle_id = uuid4()
+    fake_ambient_label_repo = _FakeVehicleAmbientLabelRepository(ambient_label=None)
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[_make_ticket(vehicle_id, city_code="madrid", zone_number="200")]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=fake_ambient_label_repo,
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    use_case.execute(_make_ser_zone(zone_number="163"), vehicle_id, at=_NOW)
+
+    assert fake_ambient_label_repo.calls == [vehicle_id]
+
+
+def test_execute_returns_false_when_active_ticket_is_legacy_none_zone() -> None:
+    """A legacy ticket with (None, None) zone still short-circuits unconditionally (fail-safe)."""
+    vehicle_id = uuid4()
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[_make_ticket(vehicle_id, city_code=None, zone_number=None)]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    zone = _make_ser_zone(zone_number="163")
+
+    assert use_case.execute(zone, vehicle_id, at=_NOW) is False
+
+
+def test_execute_does_not_consult_ambient_label_repo_when_active_ticket_is_legacy_none_zone() -> None:
+    vehicle_id = uuid4()
+    fake_ambient_label_repo = _FakeVehicleAmbientLabelRepository(ambient_label=None)
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[_make_ticket(vehicle_id, city_code=None, zone_number=None)]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=fake_ambient_label_repo,
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    use_case.execute(_make_ser_zone(zone_number="163"), vehicle_id, at=_NOW)
+
+    assert fake_ambient_label_repo.calls == []
+
+
 def test_execute_does_not_consult_ambient_label_repo_when_active_ticket_exists() -> None:
     vehicle_id = uuid4()
     fake_ambient_label_repo = _FakeVehicleAmbientLabelRepository(ambient_label=None)
@@ -567,7 +651,7 @@ def test_execute_does_not_consult_ambient_label_repo_when_active_ticket_exists()
         enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=_make_ticket(vehicle_id)),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=[_make_ticket(vehicle_id)]),
         ambient_label_repo=fake_ambient_label_repo,
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -584,7 +668,7 @@ def test_execute_does_not_consult_ambient_label_repo_when_enforcement_inactive()
         enforcement_schedule=_FakeSerEnforcementSchedule(active=False),
         exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
         exemption_zone_rule=_FakeSerExemptionZoneRule(),
-        ticket_repo=_FakeParkingTicketRepository(active_ticket=None),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=None),
         ambient_label_repo=fake_ambient_label_repo,
         label_exemption_rule=_FakeSerLabelExemptionRule(),
     )
@@ -592,3 +676,82 @@ def test_execute_does_not_consult_ambient_label_repo_when_enforcement_inactive()
     use_case.execute(_make_ser_zone(), vehicle_id, at=_NOW)
 
     assert fake_ambient_label_repo.calls == []
+
+
+def test_execute_returns_false_when_one_of_two_concurrent_active_tickets_matches_the_zone() -> None:
+    """
+    Task 9.4(a) (4R review fix #1): a vehicle holding two concurrently-active
+    tickets for different zones must still short-circuit via whichever one
+    matches the zone being checked, not just the most-recent-by-end_date one
+    — the original single-ticket design got this wrong (see design.md D5).
+    """
+    vehicle_id = uuid4()
+    matching_ticket = _make_ticket(vehicle_id, city_code="madrid", zone_number="163")
+    later_different_zone_ticket = ParkingTicket(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        user_id=uuid4(),
+        provider="elparking",
+        duration_minutes=60,
+        provider_reference="ref-456",
+        cost=1.5,
+        end_date=_NOW,
+        created_at=_NOW,
+        city_code="madrid",
+        zone_number="200",
+    )
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[later_different_zone_ticket, matching_ticket]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    zone = _make_ser_zone(zone_number="163")
+
+    assert use_case.execute(zone, vehicle_id, at=_NOW) is False
+
+
+def test_execute_falls_through_when_active_tickets_list_is_empty() -> None:
+    """Task 9.4(b): an empty active-tickets list falls through, same as no ticket at all."""
+    vehicle_id = uuid4()
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=_FakeParkingTicketRepository(active_tickets=[]),
+        ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    assert use_case.execute(_make_ser_zone(), vehicle_id, at=_NOW) is True
+
+
+def test_execute_short_circuits_when_legacy_none_zone_ticket_is_present_alongside_others() -> None:
+    """
+    Task 9.4(c): a list containing a legacy (None, None) ticket short-circuits
+    unconditionally, regardless of any other active tickets also present.
+    """
+    vehicle_id = uuid4()
+    legacy_ticket = _make_ticket(vehicle_id, city_code=None, zone_number=None)
+    different_zone_ticket = _make_ticket(vehicle_id, city_code="madrid", zone_number="200")
+    fake_ticket_repo = _FakeParkingTicketRepository(
+        active_tickets=[different_zone_ticket, legacy_ticket]
+    )
+    use_case = DetermineSerTicketRequirement(
+        enforcement_schedule=_FakeSerEnforcementSchedule(active=True),
+        exemption_repo=_FakeVehicleSerParkingExemptionRepository(exemption=None),
+        exemption_zone_rule=_FakeSerExemptionZoneRule(),
+        ticket_repo=fake_ticket_repo,
+        ambient_label_repo=_FakeVehicleAmbientLabelRepository(ambient_label=None),
+        label_exemption_rule=_FakeSerLabelExemptionRule(),
+    )
+
+    zone = _make_ser_zone(zone_number="163")
+
+    assert use_case.execute(zone, vehicle_id, at=_NOW) is False

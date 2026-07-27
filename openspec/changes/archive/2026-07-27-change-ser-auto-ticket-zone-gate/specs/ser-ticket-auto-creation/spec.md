@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: SerTicketCreationTriggerHandler creates a SER ticket when required and auto-creation is enabled
 When a `VehicleLocationUpdated` event is published, `SerTicketCreationTriggerHandler` SHALL:
 1. Look up the `Vehicle` for `event.vehicle_id`. If no such vehicle exists, it SHALL skip silently (no ticket creation, no error).
@@ -52,50 +54,3 @@ The entire handler body SHALL be wrapped in a broad try/except so a failure here
 - **WHEN** `CreateSerTicket.execute` raises any exception (e.g. `SerProviderSessionNotFoundError`, `SerZoneNotFoundError`, `SerProviderVehicleNotFoundError`, `SerProviderApiError`)
 - **THEN** `SerTicketCreationFailed` is published with a closed-vocabulary `reason`
 - **THEN** the raw exception message is not included on the published event
-
----
-
-### Requirement: SerTicketCreated and SerTicketCreationFailed are domain events published only by the auto-creation trigger
-The system SHALL define `SerTicketCreated` (fields: `vehicle_id`, `user_id`, `zone_number`, `start_date`, `end_date`) and `SerTicketCreationFailed` (fields: `vehicle_id`, `user_id`, `zone_number`, `reason`) as frozen dataclass domain events. `SerTicketCreated.start_date` SHALL be the created `ParkingTicket`'s `created_at` value — the moment the provider confirmed the ticket's creation, treated as the start of its validity window. Both events SHALL be published exclusively by `SerTicketCreationTriggerHandler`. `CreateSerTicket` itself SHALL NOT publish either event, so the manual `POST /parking/ser-tickets` flow is unaffected by this change.
-
-#### Scenario: Manual ticket creation does not publish either event
-- **WHEN** a ticket is created via `POST /parking/ser-tickets` (not triggered by `VehicleLocationUpdated`)
-- **THEN** neither `SerTicketCreated` nor `SerTicketCreationFailed` is published
-
----
-
-### Requirement: SerTicketNotificationTriggerHandler notifies the owner when an automatic ticket is created
-When `SerTicketCreated` is published, `SerTicketNotificationTriggerHandler` SHALL look up the owner's `ser_ticket_created` notification preference; if the row is missing or `enabled=false`, it SHALL skip silently. Otherwise, it SHALL convert both `event.start_date` and `event.end_date` into the owner's `UserPreferences.timezone` (falling back to UTC when unset or not a recognized IANA zone) via `format_local_datetime`, render the localized message stating a SER ticket for the event's zone number is valid from the formatted `start_date` to the formatted `end_date`, and call `SendNotification.execute`.
-
-#### Scenario: Enabled preference triggers the created notification with both dates
-- **WHEN** `SerTicketCreated` is published and the owner's `ser_ticket_created` preference is enabled
-- **THEN** `SendNotification.execute` is called with a message stating a SER ticket for the zone is valid from the ticket's (localized) `start_date` to its (localized) `end_date`
-
-#### Scenario: Disabled preference skips the notification
-- **WHEN** `SerTicketCreated` is published and the owner's `ser_ticket_created` preference is missing or disabled
-- **THEN** `SendNotification.execute` is not called
-
-#### Scenario: Message is localized to the owner's notification language
-- **WHEN** a ticket-created notification is triggered for an owner whose `notification_language` is `"es"`
-- **THEN** the message text is rendered in Spanish
-
-#### Scenario: Dates are formatted in the owner's configured timezone
-- **WHEN** a ticket-created notification is triggered for an owner whose `timezone` is `"Europe/Madrid"` and `event.start_date`/`event.end_date` are UTC datetimes
-- **THEN** both dates in the rendered message reflect `Europe/Madrid` local time, not UTC
-
-#### Scenario: Dates fall back to UTC when no timezone is set
-- **WHEN** a ticket-created notification is triggered for an owner with no `timezone` set
-- **THEN** both dates in the rendered message are formatted in UTC
-
----
-
-### Requirement: SerTicketNotificationTriggerHandler notifies the owner when automatic ticket creation fails
-When `SerTicketCreationFailed` is published, `SerTicketNotificationTriggerHandler` SHALL look up the owner's `ser_ticket_creation_failed` notification preference; if the row is missing or `enabled=false`, it SHALL skip silently. Otherwise, it SHALL render one generic localized message stating the automatic SER ticket for the event's zone number could not be created and must be created manually — the message SHALL NOT include the event's `reason` field or any other technical or exception detail — and call `SendNotification.execute`.
-
-#### Scenario: Enabled preference triggers the failure notification
-- **WHEN** `SerTicketCreationFailed` is published and the owner's `ser_ticket_creation_failed` preference is enabled
-- **THEN** `SendNotification.execute` is called with a generic message that does not contain the event's `reason` value or any exception text
-
-#### Scenario: Disabled preference skips the notification
-- **WHEN** `SerTicketCreationFailed` is published and the owner's `ser_ticket_creation_failed` preference is missing or disabled
-- **THEN** `SendNotification.execute` is not called

@@ -209,6 +209,8 @@ parking_tickets_table = Table(
     Column("cost", Numeric, nullable=False),
     Column("end_date", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("city_code", Text, nullable=True),
+    Column("zone_number", Text, nullable=True),
 )
 
 ser_ticket_provider_zone_mappings_table = Table(

@@ -267,6 +267,8 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
     assert ticket.duration_minutes == 60
     assert ticket.cost == 2.5
     assert ticket.end_date == datetime.fromisoformat("2026-07-23T14:00:00+00:00")
+    assert ticket.city_code == ser_zone.city_code
+    assert ticket.zone_number == ser_zone.zone_number
     assert ticket.provider_reference == "ticket-99"
 
 

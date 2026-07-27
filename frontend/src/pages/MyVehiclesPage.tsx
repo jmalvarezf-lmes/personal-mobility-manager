@@ -87,8 +87,13 @@ export default function MyVehiclesPage() {
         )}
 
         {vehicles.length > 0 && (
-          <div className="mb-6 h-64 overflow-hidden rounded border border-gray-200">
-            <VehicleMap vehicles={vehicles} />
+          <div className="mb-6">
+            <h2 className="mb-2 text-lg font-semibold text-gray-800">
+              {t("page.myVehicles.mapTitle")}
+            </h2>
+            <div className="h-64 overflow-hidden rounded border border-gray-200">
+              <VehicleMap vehicles={vehicles} />
+            </div>
           </div>
         )}
 

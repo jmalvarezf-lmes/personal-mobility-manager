@@ -34,7 +34,8 @@
       "title": "Mis vehículos",
       "add": "Añadir vehículo",
       "empty": "Aún no hay vehículos registrados.",
-      "loading": "Cargando vehículos…"
+      "loading": "Cargando vehículos…",
+      "mapTitle": "Última ubicación conocida"
     },
     "map": {
       "loading": "Cargando datos del mapa…"

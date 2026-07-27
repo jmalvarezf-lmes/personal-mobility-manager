@@ -149,7 +149,6 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             id_wallet=id_wallet,
             elparking_zone_id=elparking_zone.id,
             elparking_rate_id=elparking_rate.id,
-            duration_minutes=duration_minutes,
             location=location,
             step=step,
             steps_response=steps_response,
@@ -179,7 +178,6 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         id_wallet: int,
         elparking_zone_id: str,
         elparking_rate_id: str,
-        duration_minutes: int,
         location: GeoLocation,
         step: dict[str, Any],
         steps_response: dict[str, Any],
@@ -200,9 +198,14 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         "type" and the duration field name were also wrong against the live
         API (per direct user correction): "type" is mandatory but must be
         the integer 0 for a normal ticket, not the string "TYPE_NORMAL" this
-        used to send; and the duration field is "stay_duration", not
-        "duration_minutes" (that name is this codebase's own internal
-        parameter name, kept as-is; only the outgoing JSON key changed).
+        used to send; and the duration field is "stay_duration".
+
+        "stay_duration" must be the selected step's own "minute" value, not
+        the originally requested duration. ElParking's steps are irregular,
+        so `_select_step` picks the nearest available step rather than an
+        exact match — echoing back the originally requested duration while
+        paying the nearest step's `fare_qty` is an inconsistent request that
+        ElParking's API can reject.
 
         Also per direct user correction: "start_date" must be a Unix
         timestamp in whole seconds, not an ISO 8601 string — "user_latitude"/
@@ -211,11 +214,12 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         `wallet.id` from GET /v1/users/me/vehicles) must be included.
 
         Raises:
-            SerProviderApiError: `step` is missing the "fare_qty" key (a
-                malformed/unexpected-shape `get_steps()` response).
+            SerProviderApiError: `step` is missing the "fare_qty" or "minute"
+                key (a malformed/unexpected-shape `get_steps()` response).
         """
         try:
             fare_qty = step["fare_qty"]
+            stay_duration = step["minute"]
         except (KeyError, TypeError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking pricing step has an unexpected shape: {exc}") from exc
 
@@ -229,7 +233,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             # against the live API).
             "type": 0,
             "start_date": int(datetime.now(UTC).timestamp()),
-            "stay_duration": duration_minutes,
+            "stay_duration": stay_duration,
             "latitude": location.lat,
             "longitude": location.lng,
             "user_latitude": location.lat,

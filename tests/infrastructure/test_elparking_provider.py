@@ -728,6 +728,9 @@ def test_create_ticket_uses_nearest_step_when_exact_duration_unavailable(
 
     # fare_qty comes from the selected (nearest) step, proving 30-minute was picked.
     assert client.create_ticket_calls[0]["fare_qty"] == 0.10
+    # stay_duration must be the selected step's own minute, not the raw requested duration —
+    # otherwise the request pays for 30 minutes while claiming 35, which ElParking can reject.
+    assert client.create_ticket_calls[0]["stay_duration"] == 30
     # step_request is always the whole steps_response, regardless of which step matched.
     assert client.create_ticket_calls[0]["step_request"] == client.get_steps_return
 
@@ -773,6 +776,7 @@ def test_create_ticket_nearest_step_breaks_ties_toward_earlier_entry(
     provider.create_ticket(session, vehicle, duration_minutes=35, location=location)
 
     assert client.create_ticket_calls[0]["fare_qty"] == 0.10
+    assert client.create_ticket_calls[0]["stay_duration"] == 30
 
 
 def test_create_ticket_malformed_ticket_response_missing_total_qty_raises_provider_api_error(

@@ -144,7 +144,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         if step is None:
             raise SerProviderApiError(f"No ElParking pricing step found for duration_minutes={duration_minutes}")
 
-        body = self._build_ticket_request_body(
+        body, start_date = self._build_ticket_request_body(
             id_vehicle=id_vehicle,
             id_wallet=id_wallet,
             elparking_zone_id=elparking_zone.id,
@@ -167,6 +167,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             provider_reference=provider_reference,
             cost=cost,
             end_date=end_date,
+            start_date=start_date,
             created_at=datetime.now(UTC),
             city_code=ser_zone.city_code,
             zone_number=ser_zone.zone_number,
@@ -181,9 +182,19 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         location: GeoLocation,
         step: dict[str, Any],
         steps_response: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], datetime]:
         """
-        Build the POST /v1/ser-tickets request body.
+        Build the POST /v1/ser-tickets request body, plus the parsed start_date.
+
+        Returns the request body together with the whole steps_response's own
+        top-level "start_time" parsed into a datetime — the same value sent as
+        the request's "start_date" — so the caller can persist it as the
+        ParkingTicket's real start date instead of relying on created_at
+        (wall-clock time of our own record, not the parking session).
+        "start_time" lives at the top level of the GET /v1/ser-steps response,
+        not inside each per-minute `step` entry — each step only carries its
+        own "time" (start_time + minute*60, i.e. that step's own end time, not
+        a start).
 
         "step_request" is the *entire* GET /v1/ser-steps response body
         (`steps_response`), forwarded verbatim — design.md is explicit that
@@ -213,8 +224,15 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         the same values — and "id_wallet" (the matched vehicle's nested
         `wallet.id` from GET /v1/users/me/vehicles) must be included.
 
+        "start_date" is `steps_response`'s own top-level "start_time" — not
+        wall-clock "now". The whole pricing response (fare/duration options)
+        was computed for that specific start time, so echoing back anything
+        else would send an inconsistent request, the same class of bug
+        "stay_duration" already had to avoid above.
+
         Raises:
             SerProviderApiError: `step` is missing the "fare_qty" or "minute"
+                key, or `steps_response` is missing the top-level "start_time"
                 key (a malformed/unexpected-shape `get_steps()` response).
         """
         try:
@@ -223,7 +241,14 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         except (KeyError, TypeError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking pricing step has an unexpected shape: {exc}") from exc
 
-        return {
+        try:
+            start_time = steps_response["start_time"]
+        except (KeyError, TypeError) as exc:
+            raise SerProviderApiError(f"ElParking steps response has an unexpected shape: {exc}") from exc
+
+        start_date = datetime.fromtimestamp(int(start_time), tz=UTC)
+
+        body = {
             "id_vehicle": id_vehicle,
             "id_wallet": id_wallet,
             "id_ser_zone": elparking_zone_id,
@@ -232,7 +257,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             # string "TYPE_NORMAL" this used to send (per user correction
             # against the live API).
             "type": 0,
-            "start_date": int(datetime.now(UTC).timestamp()),
+            "start_date": start_time,
             "stay_duration": stay_duration,
             "latitude": location.lat,
             "longitude": location.lng,
@@ -241,6 +266,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
             "fare_qty": fare_qty,
             "step_request": steps_response,
         }
+        return body, start_date
 
     def _parse_ticket_response(self, response: dict[str, Any]) -> tuple[float, datetime, str | None]:
         """

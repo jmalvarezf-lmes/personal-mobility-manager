@@ -1670,9 +1670,11 @@ def _make_ser_ticket(
     city_code: str | None = "madrid",
     latitude: float | None = 40.4168,
     longitude: float | None = -3.7038,
+    start_date: datetime | None = None,
 ):
     from mobility_manager.domain.entities.parking_ticket import ParkingTicket
 
+    created_at = datetime.now(UTC)
     return ParkingTicket(
         id=uuid4(),
         vehicle_id=vehicle_id or uuid4(),
@@ -1681,13 +1683,17 @@ def _make_ser_ticket(
         duration_minutes=60,
         provider_reference="REF-001",
         cost=1.2,
-        end_date=datetime.now(UTC) + timedelta(hours=1),
-        created_at=datetime.now(UTC),
+        end_date=created_at + timedelta(hours=1),
+        created_at=created_at,
         city_code=city_code,
         zone_number="163",
         latitude=latitude,
         longitude=longitude,
         auto_created=auto_created,
+        # Every ticket ElParkingSerTicketProvider creates always has a real
+        # start_date — default here to a distinct value (not created_at) so
+        # tests can tell the two apart if they ever compare them.
+        start_date=start_date or (created_at - timedelta(hours=1)),
     )
 
 
@@ -1736,6 +1742,28 @@ class TestListSerTickets:
         assert len(data["items"]) == 5
         assert data["has_more"] is True
         mock_uc.execute.assert_called_once_with(vehicle_id, limit=5, offset=0)
+
+    def test_start_date_uses_ticket_start_date_not_created_at(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        real_start = datetime(2026, 7, 20, 9, 30, tzinfo=UTC)
+        tickets = [_make_ser_ticket(vehicle_id=vehicle_id, start_date=real_start)]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo, city_repo=_make_city_repo()
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert datetime.fromisoformat(response.json()["items"][0]["start_date"]) == real_start
+        assert datetime.fromisoformat(response.json()["items"][0]["start_date"]) != tickets[0].created_at
 
     def test_mixed_auto_created_and_manual_tickets_both_returned(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)

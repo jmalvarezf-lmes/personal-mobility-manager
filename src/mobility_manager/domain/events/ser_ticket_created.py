@@ -7,12 +7,11 @@ automatic ticket creation. CreateSerTicket itself never publishes this event,
 so the manual POST /parking/ser-tickets flow is unaffected by this change —
 see ser-ticket-auto-creation spec.md.
 
-`start_date` is the created ParkingTicket's `created_at` value — the moment
-the provider confirmed the ticket's creation, treated as the start of its
-validity window (see design.md decision 5 for why this reuses `created_at`
-instead of a new persisted column). `end_date` is the ticket's own
-`end_date`. Both are UTC-aware datetimes; SerTicketNotificationTriggerHandler
-converts them into the owner's timezone before rendering a notification.
+`start_date` is the created ParkingTicket's own `start_date` — the real
+parking start time reported by the provider, not `created_at` (the moment
+our own record was written). `end_date` is the ticket's own `end_date`. Both
+are UTC-aware datetimes; SerTicketNotificationTriggerHandler converts them
+into the owner's timezone before rendering a notification.
 """
 
 from dataclasses import dataclass

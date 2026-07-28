@@ -65,7 +65,8 @@ def pg_engine():
                     zone_number TEXT,
                     latitude DOUBLE PRECISION,
                     longitude DOUBLE PRECISION,
-                    auto_created BOOLEAN
+                    auto_created BOOLEAN,
+                    start_date TIMESTAMPTZ
                 )
                 """
             )
@@ -108,6 +109,7 @@ def test_save_persists_all_fields(pg_engine) -> None:
     ticket_id = uuid4()
     created_at = datetime.now(UTC)
     end_date = datetime.now(UTC)
+    start_date = datetime.now(UTC) - timedelta(hours=1)
     ticket = ParkingTicket(
         id=ticket_id,
         vehicle_id=vehicle_id,
@@ -123,6 +125,7 @@ def test_save_persists_all_fields(pg_engine) -> None:
         latitude=40.4,
         longitude=-3.7,
         auto_created=True,
+        start_date=start_date,
     )
     repo.save(ticket)
 
@@ -145,6 +148,7 @@ def test_save_persists_all_fields(pg_engine) -> None:
     assert row.latitude == pytest.approx(40.4)
     assert row.longitude == pytest.approx(-3.7)
     assert row.auto_created is True
+    assert row.start_date == start_date
 
 
 def test_save_with_none_provider_reference(pg_engine) -> None:

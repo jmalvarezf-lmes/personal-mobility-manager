@@ -26,6 +26,15 @@ call sites in concrete SerTicketProviderPort implementations (which don't
 know about creation provenance) keep constructing valid entities;
 CreateSerTicket.execute is the single place that fills them in with real
 values before persisting, for every ticket created going forward.
+
+start_date is the real parking start time, distinct from created_at (the
+moment our own record was written). ElParkingSerTicketProvider populates it
+from the steps_response's own top-level "start_time" — the moment the whole
+pricing response (fare/duration options) was computed for, not wall-clock
+time. Defaults to None only because ElParking is currently the only
+concrete SerTicketProviderPort implementation and some call sites (tests,
+other providers) construct a ParkingTicket without it; every ticket
+ElParkingSerTicketProvider creates always has a real value.
 """
 
 from dataclasses import dataclass
@@ -51,3 +60,4 @@ class ParkingTicket:
     latitude: float | None = None
     longitude: float | None = None
     auto_created: bool | None = None
+    start_date: datetime | None = None

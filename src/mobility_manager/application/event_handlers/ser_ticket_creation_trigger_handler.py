@@ -283,12 +283,16 @@ class SerTicketCreationTriggerHandler:
             return
 
         record_ser_ticket_auto_creation(outcome="created")
+        # ElParkingSerTicketProvider — the only concrete provider — always
+        # sets start_date or raises; a successfully created ticket never
+        # reaches here without one.
+        assert ticket.start_date is not None
         self._event_publisher.publish(
             SerTicketCreated(
                 vehicle_id=vehicle_id,
                 user_id=user_id,
                 zone_number=zone_number,
-                start_date=ticket.created_at,
+                start_date=ticket.start_date,
                 end_date=ticket.end_date,
             )
         )

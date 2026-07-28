@@ -336,7 +336,7 @@ def list_ser_tickets(
                 id=item.id,
                 latitude=item.latitude,
                 longitude=item.longitude,
-                start_date=item.created_at,
+                start_date=item.start_date,
                 end_date=item.end_date,
                 city_code=item.city_code,
                 city_name=city_names.get(item.city_code),

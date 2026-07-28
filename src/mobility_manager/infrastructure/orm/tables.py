@@ -214,6 +214,7 @@ parking_tickets_table = Table(
     Column("latitude", Float, nullable=True),
     Column("longitude", Float, nullable=True),
     Column("auto_created", Boolean, nullable=True),
+    Column("start_date", DateTime(timezone=True), nullable=True),
 )
 
 ser_ticket_provider_zone_mappings_table = Table(

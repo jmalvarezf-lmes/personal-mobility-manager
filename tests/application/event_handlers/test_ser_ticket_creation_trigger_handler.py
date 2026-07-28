@@ -189,6 +189,9 @@ def _make_ticket(vehicle_id: UUID, user_id: UUID) -> ParkingTicket:
         created_at=datetime(2026, 7, 26, 10, 0, tzinfo=UTC),
         city_code="madrid",
         zone_number="163",
+        # Distinct from created_at — proves SerTicketCreated uses the real
+        # start_date, not the moment our own record was written.
+        start_date=datetime(2026, 7, 26, 9, 0, tzinfo=UTC),
     )
 
 
@@ -262,7 +265,7 @@ def test_ticket_created_when_required_and_no_previous_location() -> None:
     published = fx.event_publisher.published[0]
     assert isinstance(published, SerTicketCreated)
     assert published.zone_number == "163"
-    assert published.start_date == fx.create_ser_ticket.ticket.created_at
+    assert published.start_date == fx.create_ser_ticket.ticket.start_date
     assert published.end_date == fx.create_ser_ticket.ticket.end_date
 
 

@@ -42,6 +42,7 @@ class PostgresParkingTicketRepository(ParkingTicketRepository):
                     latitude=ticket.latitude,
                     longitude=ticket.longitude,
                     auto_created=ticket.auto_created,
+                    start_date=ticket.start_date,
                 )
             )
 
@@ -115,4 +116,5 @@ class PostgresParkingTicketRepository(ParkingTicketRepository):
             latitude=row.latitude,  # type: ignore[attr-defined]
             longitude=row.longitude,  # type: ignore[attr-defined]
             auto_created=row.auto_created,  # type: ignore[attr-defined]
+            start_date=row.start_date,  # type: ignore[attr-defined]
         )

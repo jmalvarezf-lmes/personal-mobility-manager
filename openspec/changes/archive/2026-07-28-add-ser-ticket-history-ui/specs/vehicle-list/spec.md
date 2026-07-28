@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: GET /vehicles returns all vehicles for the authenticated user
 The system SHALL expose `GET /vehicles` requiring a valid JWT session cookie. The response SHALL be a JSON array of vehicle objects, each including the vehicle's metadata and its latest known location (if any). Each object SHALL include `vehicle_id`, `brand`, `display_name`, `vin`, `license_plate`, a `location` field (null if no location recorded), and a `has_ser_tickets` boolean. Unauthenticated requests SHALL be rejected with HTTP 401.
 
@@ -28,27 +30,7 @@ The system SHALL expose `GET /vehicles` requiring a valid JWT session cookie. Th
 
 ---
 
-### Requirement: Vehicle list response includes latest location inline
-Each item in the `GET /vehicles` response SHALL include a `location` field. If the vehicle has at least one recorded location, `location` SHALL be an object with `latitude`, `longitude`, and `recorded_at`. If no location has been recorded, `location` SHALL be `null`.
-
-#### Scenario: Vehicle with location history
-- **WHEN** a vehicle has one or more location records
-- **THEN** the `location` field in the list response contains the most recent fix
-
-#### Scenario: Vehicle with no location history
-- **WHEN** a vehicle has no location records
-- **THEN** the `location` field in the list response is `null`
-
----
-
-### Requirement: Vehicle repository exposes list-by-user query
-The `VehicleRepository` port SHALL define `get_all_by_user_id(user_id: UUID) -> list[Vehicle]`. The PostgreSQL implementation SHALL execute a `SELECT` filtered by `vehicles.user_id`.
-
-#### Scenario: Repository returns only matching user's vehicles
-- **WHEN** `get_all_by_user_id(user_a_id)` is called
-- **THEN** the returned list contains only vehicles whose `user_id` equals `user_a_id`
-
----
+## ADDED Requirements
 
 ### Requirement: Vehicle list response includes a SER-tickets-exist flag
 Each item in the `GET /vehicles` response SHALL include a `has_ser_tickets` boolean field. It SHALL be `true` if and only if at least one `ParkingTicket` exists for that vehicle, regardless of its `auto_created` value, computed via an existence check (not a full ticket fetch) so the list endpoint does not incur a per-vehicle N+1 query cost.

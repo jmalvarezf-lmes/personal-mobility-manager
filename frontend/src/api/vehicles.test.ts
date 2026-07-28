@@ -5,6 +5,7 @@ import {
   createVehicle,
   deleteVehicle,
   getSerParkingExemption,
+  getSerTicketHistory,
   getVehicle,
   getVehicleLocationHistory,
   listVehicles,
@@ -182,6 +183,40 @@ describe("vehicles api", () => {
 
       await expect(getVehicleLocationHistory("1")).rejects.toThrow(
         "Failed to get vehicle location history: 500",
+      );
+    });
+  });
+
+  describe("getSerTicketHistory", () => {
+    it("builds the limit/offset query string with defaults", async () => {
+      const page = { items: [], has_more: false };
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(page));
+
+      const result = await getSerTicketHistory("1");
+
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/vehicles/1/ser-tickets?limit=5&offset=0",
+        { credentials: "include" },
+      );
+      expect(result).toEqual(page);
+    });
+
+    it("builds the limit/offset query string with explicit values", async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse({ items: [], has_more: false }));
+
+      await getSerTicketHistory("1", { limit: 20, offset: 40 });
+
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/vehicles/1/ser-tickets?limit=20&offset=40",
+        { credentials: "include" },
+      );
+    });
+
+    it("throws on a non-OK response", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+
+      await expect(getSerTicketHistory("1")).rejects.toThrow(
+        "Failed to get SER ticket history: 500",
       );
     });
   });

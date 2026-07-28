@@ -9,6 +9,7 @@ via POST /parking/ser-tickets.
 """
 
 import logging
+from dataclasses import replace
 from uuid import UUID
 
 from mobility_manager.application.use_cases.get_latest_vehicle_location import (
@@ -65,6 +66,7 @@ class CreateSerTicket:
         provider: str,
         duration_minutes: int,
         location: GeoLocation | None = None,
+        auto_created: bool = False,
     ) -> ParkingTicket:
         """
         Create and persist a SER parking ticket.
@@ -77,6 +79,11 @@ class CreateSerTicket:
             location: An explicit location override. When omitted, the
                 vehicle's latest known location is resolved via
                 GetLatestVehicleLocation before calling the provider.
+            auto_created: Whether this ticket was created automatically by
+                SerTicketCreationTriggerHandler (True) or via the manual
+                POST /parking/ser-tickets endpoint (False, the default — see
+                add-ser-ticket-history-ui design.md D2). Persisted verbatim
+                onto the returned ParkingTicket's `auto_created` field.
 
         Returns:
             The persisted ParkingTicket.
@@ -131,6 +138,18 @@ class CreateSerTicket:
                 VehicleNotPresentInSerTicketProvider(vehicle_id=vehicle_id, user_id=user_id, provider=provider)
             )
             raise
+
+        # The provider itself never sets latitude/longitude/auto_created (it
+        # doesn't know about creation provenance) — this is the single place
+        # that fills them in with real values before persisting, for every
+        # ticket created going forward (see add-ser-ticket-history-ui
+        # design.md D3).
+        ticket = replace(
+            ticket,
+            latitude=resolved_location.lat,
+            longitude=resolved_location.lng,
+            auto_created=auto_created,
+        )
 
         try:
             self._ticket_repo.save(ticket)

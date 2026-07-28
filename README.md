@@ -104,9 +104,10 @@ retention window so the table doesn't grow unbounded.
 
 The API is mounted under `/api` (nginx proxies it to the backend service).
 Resource groups: auth (Google OAuth login/callback/session), vehicles (CRUD,
-latest location, location history, the public push-ingest endpoint for
-generic devices, per-vehicle SER exemptions), parking (nearest SER zone
-lookup, ticket creation), zones (GeoJSON zone data for the map, a
+latest location, location history, SER ticket history, the public
+push-ingest endpoint for generic devices, per-vehicle SER exemptions),
+parking (nearest SER zone lookup, ticket creation), zones (GeoJSON zone data
+for the map, a
 lightweight zone-options list), cities, config (runtime frontend config),
 preferences and notification-preferences, notifications (Telegram linking
 and webhook), ser-ticket-providers (connect/list/disconnect a

@@ -9,9 +9,16 @@ interface VehicleCardProps {
   onEdit: (detail: VehicleDetail) => void;
   onDeleted: (vehicleId: string) => void;
   onViewHistory: (vehicle: VehicleListItem) => void;
+  onViewSerTickets: (vehicle: VehicleListItem) => void;
 }
 
-export default function VehicleCard({ vehicle, onEdit, onDeleted, onViewHistory }: VehicleCardProps) {
+export default function VehicleCard({
+  vehicle,
+  onEdit,
+  onDeleted,
+  onViewHistory,
+  onViewSerTickets,
+}: VehicleCardProps) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -89,11 +96,15 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted, onViewHistory 
 
       <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-600">
         {vehicle.location ? (
-          <>
-            <p>
-              {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
-              {vehicle.location.longitude.toFixed(5)}
-            </p>
+          <p>
+            {t("vehicle.location")}: {vehicle.location.latitude.toFixed(5)},{" "}
+            {vehicle.location.longitude.toFixed(5)}
+          </p>
+        ) : (
+          <p className="italic text-gray-400">{t("vehicle.noLocation")}</p>
+        )}
+        <div className="flex shrink-0 gap-2">
+          {vehicle.location && (
             <button
               type="button"
               onClick={() => onViewHistory(vehicle)}
@@ -101,10 +112,17 @@ export default function VehicleCard({ vehicle, onEdit, onDeleted, onViewHistory 
             >
               {t("vehicle.viewHistory")}
             </button>
-          </>
-        ) : (
-          <p className="italic text-gray-400">{t("vehicle.noLocation")}</p>
-        )}
+          )}
+          {vehicle.has_ser_tickets && (
+            <button
+              type="button"
+              onClick={() => onViewSerTickets(vehicle)}
+              className="shrink-0 rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
+            >
+              {t("vehicle.viewSerTickets")}
+            </button>
+          )}
+        </div>
       </div>
 
       {deleteError && (

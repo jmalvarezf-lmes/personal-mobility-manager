@@ -77,6 +77,8 @@ def _build_app(
     vehicle_repo=None,
     ambient_label_repo=None,
     list_history_uc=None,
+    list_ser_tickets_uc=None,
+    city_repo=None,
 ) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
@@ -105,6 +107,10 @@ def _build_app(
         app.state.vehicle_ambient_label_repo = ambient_label_repo
     if list_history_uc is not None:
         app.state.list_vehicle_location_history = list_history_uc
+    if list_ser_tickets_uc is not None:
+        app.state.list_ser_tickets = list_ser_tickets_uc
+    if city_repo is not None:
+        app.state.city_repo = city_repo
     mock_validate_session = MagicMock()
     mock_validate_session.execute.return_value = True
     app.state.validate_session = mock_validate_session
@@ -937,6 +943,38 @@ class TestListVehicles:
 
         assert response.json()[0]["ambient_label"] is None
 
+    def test_vehicle_with_auto_created_ticket_reports_has_ser_tickets_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [
+            VehicleWithLocation(vehicle=vehicle, location=None, has_ser_tickets=True)
+        ]
+        app, cookie = _build_authed_app(list_uc=mock_list_uc)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.json()[0]["has_ser_tickets"] is True
+
+    def test_vehicle_with_no_tickets_reports_has_ser_tickets_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        vehicle = _make_full_vehicle(vehicle_id=vehicle_id, owner_id=_OWNER_ID)
+        mock_list_uc = MagicMock()
+        mock_list_uc.execute.return_value = [
+            VehicleWithLocation(vehicle=vehicle, location=None, has_ser_tickets=False)
+        ]
+        app, cookie = _build_authed_app(list_uc=mock_list_uc)
+        client = TestClient(app)
+
+        response = client.get("/vehicles", cookies={"session": cookie})
+
+        assert response.json()[0]["has_ser_tickets"] is False
+
 
 # ---------------------------------------------------------------------------
 # GET /vehicles/{vehicle_id} — Task 7.6
@@ -1619,3 +1657,255 @@ class TestListLocationHistory:
         data = response.json()
         assert data["items"] == []
         assert data["has_more"] is False
+
+
+# ---------------------------------------------------------------------------
+# GET /vehicles/{vehicle_id}/ser-tickets — paginated SER ticket history
+# ---------------------------------------------------------------------------
+
+
+def _make_ser_ticket(
+    vehicle_id: UUID | None = None,
+    auto_created: bool | None = True,
+    city_code: str | None = "madrid",
+    latitude: float | None = 40.4168,
+    longitude: float | None = -3.7038,
+):
+    from mobility_manager.domain.entities.parking_ticket import ParkingTicket
+
+    return ParkingTicket(
+        id=uuid4(),
+        vehicle_id=vehicle_id or uuid4(),
+        user_id=_OWNER_ID,
+        provider="elparking",
+        duration_minutes=60,
+        provider_reference="REF-001",
+        cost=1.2,
+        end_date=datetime.now(UTC) + timedelta(hours=1),
+        created_at=datetime.now(UTC),
+        city_code=city_code,
+        zone_number="163",
+        latitude=latitude,
+        longitude=longitude,
+        auto_created=auto_created,
+    )
+
+
+def _make_city_repo(cities: dict[str, str] | None = None) -> MagicMock:
+    from mobility_manager.domain.entities.city import City
+
+    repo = MagicMock()
+    repo.list_all.return_value = [City(code=code, name=name) for code, name in (cities or {"madrid": "Madrid"}).items()]
+    return repo
+
+
+class TestListSerTickets:
+    def test_unauthenticated_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = None
+        client = TestClient(
+            _build_app(user_repo=mock_repo),
+            raise_server_exceptions=False,
+        )
+
+        response = client.get(f"/vehicles/{uuid4()}/ser-tickets")
+
+        assert response.status_code == 401
+
+    def test_owner_gets_200_with_items_and_has_more(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        tickets = [_make_ser_ticket(vehicle_id=vehicle_id) for _ in range(5)]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, True)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo, city_repo=_make_city_repo()
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets?limit=5&offset=0", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 5
+        assert data["has_more"] is True
+        mock_uc.execute.assert_called_once_with(vehicle_id, limit=5, offset=0)
+
+    def test_mixed_auto_created_and_manual_tickets_both_returned(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        tickets = [
+            _make_ser_ticket(vehicle_id=vehicle_id, auto_created=True),
+            _make_ser_ticket(vehicle_id=vehicle_id, auto_created=False),
+        ]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo, city_repo=_make_city_repo()
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        data = response.json()
+        assert {item["auto_created"] for item in data["items"]} == {True, False}
+
+    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        other_owner_id = uuid4()
+
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, other_owner_id)
+
+        app, cookie = _build_authed_app(list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert response.status_code == 403
+        mock_uc.execute.assert_not_called()
+
+    def test_unknown_vehicle_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = None
+
+        app, cookie = _build_authed_app(list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{uuid4()}/ser-tickets", cookies={"session": cookie})
+
+        assert response.status_code == 404
+        mock_uc.execute.assert_not_called()
+
+    def test_zero_tickets_returns_200_with_empty_items(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = ([], False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo, city_repo=_make_city_repo()
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == []
+        assert data["has_more"] is False
+
+    def test_limit_above_max_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets?limit=51", cookies={"session": cookie})
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_negative_offset_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        mock_uc = MagicMock()
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets?offset=-1", cookies={"session": cookie})
+
+        assert response.status_code == 422
+        mock_uc.execute.assert_not_called()
+
+    def test_known_city_code_resolves_city_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        tickets = [_make_ser_ticket(vehicle_id=vehicle_id, city_code="madrid")]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc,
+            vehicle_repo=mock_vehicle_repo,
+            city_repo=_make_city_repo({"madrid": "Madrid"}),
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert response.json()["items"][0]["city_name"] == "Madrid"
+
+    def test_null_city_code_has_null_city_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        tickets = [_make_ser_ticket(vehicle_id=vehicle_id, city_code=None)]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc, vehicle_repo=mock_vehicle_repo, city_repo=_make_city_repo()
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert response.json()["items"][0]["city_code"] is None
+        assert response.json()["items"][0]["city_name"] is None
+
+    def test_unmatched_city_code_has_null_city_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        tickets = [_make_ser_ticket(vehicle_id=vehicle_id, city_code="unknown-city")]
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = (tickets, False)
+
+        mock_vehicle_repo = MagicMock()
+        mock_vehicle_repo.get_by_id.return_value = _make_owned_vehicle(vehicle_id, _OWNER_ID)
+
+        app, cookie = _build_authed_app(
+            list_ser_tickets_uc=mock_uc,
+            vehicle_repo=mock_vehicle_repo,
+            city_repo=_make_city_repo({"madrid": "Madrid"}),
+        )
+        client = TestClient(app)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-tickets", cookies={"session": cookie})
+
+        assert response.json()["items"][0]["city_code"] == "unknown-city"
+        assert response.json()["items"][0]["city_name"] is None

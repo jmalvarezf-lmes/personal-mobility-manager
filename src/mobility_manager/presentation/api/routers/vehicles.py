@@ -5,6 +5,7 @@ Endpoints:
   POST   /vehicles                                — register a new vehicle
   GET    /vehicles/{vehicle_id}/location           — latest known location
   GET    /vehicles/{vehicle_id}/locations          — paginated location history
+  GET    /vehicles/{vehicle_id}/ser-tickets        — paginated SER ticket history
   POST   /vehicles/{token}/location                — push ingest from generic device
   GET    /vehicles/{vehicle_id}/ser-parking-exemptions    — view exemption
   POST   /vehicles/{vehicle_id}/ser-parking-exemptions    — set/replace exemption
@@ -45,6 +46,8 @@ from mobility_manager.presentation.api.schemas import (
     GenericConfigResponse,
     PushLocationRequest,
     RegisterVehicleRequest,
+    SerTicketHistoryResponse,
+    SerTicketListItemResponse,
     SetVehicleSerParkingExemptionRequest,
     ToyotaConfigResponse,
     UpdateVehicleRequest,
@@ -100,6 +103,7 @@ def list_vehicles(
                 license_plate=item.vehicle.license_plate,
                 location=location_summary,
                 ambient_label=_resolve_ambient_label(item.vehicle.id, ambient_label_repo),
+                has_ser_tickets=item.has_ser_tickets,
             )
         )
     return items
@@ -290,6 +294,54 @@ def list_location_history(
                 recorded_at=item.recorded_at,
                 received_at=item.received_at,
                 source=item.source,
+            )
+            for item in items
+        ],
+        has_more=has_more,
+    )
+
+
+@router.get("/{vehicle_id}/ser-tickets", response_model=SerTicketHistoryResponse)
+@limiter.limit("120/minute")
+def list_ser_tickets(
+    request: Request,
+    # Unused directly, but required — see the identical note on update_vehicle
+    # above / limiter.py's headers_enabled note.
+    response: Response,
+    vehicle_id: UUID,
+    limit: int = Query(default=5, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+) -> SerTicketHistoryResponse:
+    """
+    Return a page of the given vehicle's SER tickets, newest first.
+
+    Returns every ticket regardless of `auto_created` — each item carries
+    its own `auto_created` value so the client can label it (see
+    add-ser-ticket-history-ui design.md D4).
+    """
+    use_case = request.app.state.list_ser_tickets
+    city_repo = request.app.state.city_repo
+
+    items, has_more = use_case.execute(vehicle_id, limit=limit, offset=offset)
+
+    # One list_all() call per request (not per ticket) — cheap for the
+    # small cities catalog, and keeps city-name resolution server-side (see
+    # design.md D5) without a per-ticket lookup query.
+    city_names = {city.code: city.name for city in city_repo.list_all()}
+
+    return SerTicketHistoryResponse(
+        items=[
+            SerTicketListItemResponse(
+                id=item.id,
+                latitude=item.latitude,
+                longitude=item.longitude,
+                start_date=item.created_at,
+                end_date=item.end_date,
+                city_code=item.city_code,
+                city_name=city_names.get(item.city_code),
+                zone_number=item.zone_number,
+                auto_created=item.auto_created,
             )
             for item in items
         ],

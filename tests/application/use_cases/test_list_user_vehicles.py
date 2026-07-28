@@ -83,21 +83,30 @@ class InMemoryLocationRepo:
         return self.locations.get(vehicle_id)
 
 
-def _make_use_case() -> tuple[ListUserVehicles, InMemoryVehicleRepo, InMemoryLocationRepo]:
+class InMemoryParkingTicketRepo:
+    def __init__(self) -> None:
+        self.vehicle_ids_with_tickets: set[UUID] = set()
+
+    def has_any_for_vehicle(self, vehicle_id: UUID) -> bool:
+        return vehicle_id in self.vehicle_ids_with_tickets
+
+
+def _make_use_case() -> tuple[ListUserVehicles, InMemoryVehicleRepo, InMemoryLocationRepo, InMemoryParkingTicketRepo]:
     v_repo = InMemoryVehicleRepo()
     l_repo = InMemoryLocationRepo()
-    uc = ListUserVehicles(vehicle_repo=v_repo, location_repo=l_repo)
-    return uc, v_repo, l_repo
+    t_repo = InMemoryParkingTicketRepo()
+    uc = ListUserVehicles(vehicle_repo=v_repo, location_repo=l_repo, ticket_repo=t_repo)
+    return uc, v_repo, l_repo, t_repo
 
 
 class TestListUserVehicles:
     def test_empty_list_when_no_vehicles(self) -> None:
-        uc, _, _ = _make_use_case()
+        uc, _, _, _ = _make_use_case()
         result = uc.execute(_USER_A)
         assert result == []
 
     def test_returns_vehicles_for_user(self) -> None:
-        uc, v_repo, _ = _make_use_case()
+        uc, v_repo, _, _ = _make_use_case()
         v1 = _make_vehicle(_USER_A)
         v2 = _make_vehicle(_USER_A)
         v_repo.save(v1)
@@ -108,7 +117,7 @@ class TestListUserVehicles:
         assert all(isinstance(r, VehicleWithLocation) for r in result)
 
     def test_vehicle_without_location_has_none(self) -> None:
-        uc, v_repo, _ = _make_use_case()
+        uc, v_repo, _, _ = _make_use_case()
         v = _make_vehicle(_USER_A)
         v_repo.save(v)
 
@@ -118,7 +127,7 @@ class TestListUserVehicles:
         assert result[0].location is None
 
     def test_vehicle_with_location_populated(self) -> None:
-        uc, v_repo, l_repo = _make_use_case()
+        uc, v_repo, l_repo, _ = _make_use_case()
         v = _make_vehicle(_USER_A)
         v_repo.save(v)
         loc = _make_location(v.id)
@@ -128,7 +137,7 @@ class TestListUserVehicles:
         assert result[0].location == loc
 
     def test_user_isolation(self) -> None:
-        uc, v_repo, _ = _make_use_case()
+        uc, v_repo, _, _ = _make_use_case()
         v_a = _make_vehicle(_USER_A)
         v_b = _make_vehicle(_USER_B)
         v_repo.save(v_a)
@@ -141,3 +150,20 @@ class TestListUserVehicles:
         result_b = uc.execute(_USER_B)
         assert len(result_b) == 1
         assert result_b[0].vehicle.user_id == _USER_B
+
+    def test_vehicle_with_auto_created_ticket_has_ser_tickets_true(self) -> None:
+        uc, v_repo, _, t_repo = _make_use_case()
+        v = _make_vehicle(_USER_A)
+        v_repo.save(v)
+        t_repo.vehicle_ids_with_tickets.add(v.id)
+
+        result = uc.execute(_USER_A)
+        assert result[0].has_ser_tickets is True
+
+    def test_vehicle_with_no_tickets_has_ser_tickets_false(self) -> None:
+        uc, v_repo, _, _ = _make_use_case()
+        v = _make_vehicle(_USER_A)
+        v_repo.save(v)
+
+        result = uc.execute(_USER_A)
+        assert result[0].has_ser_tickets is False

@@ -262,6 +262,7 @@ class SerTicketCreationTriggerHandler:
                 provider=connected_providers[0],
                 duration_minutes=duration_minutes,
                 location=GeoLocation(lat=event.latitude, lng=event.longitude),
+                auto_created=True,
             )
         except Exception as exc:
             logger.exception(

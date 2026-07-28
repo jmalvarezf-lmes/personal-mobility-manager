@@ -40,3 +40,31 @@ class ParkingTicketRepository(ABC):
         zone in question.
         """
         ...
+
+    @abstractmethod
+    def list_by_vehicle(self, vehicle_id: UUID, limit: int, offset: int) -> tuple[list[ParkingTicket], bool]:
+        """
+        Return a page of `vehicle_id`'s ParkingTicket rows, newest first.
+
+        Returns up to `limit` rows starting at `offset`, ordered by
+        `created_at` descending, regardless of `auto_created` — every ticket
+        for the vehicle is included, not just auto-created ones. Paired with
+        a boolean indicating whether further rows exist beyond this page,
+        mirroring `VehicleLocationRepository.list_history` (see
+        add-ser-ticket-history-ui design.md D4). Does not alter `save`'s
+        existing behavior.
+        """
+        ...
+
+    @abstractmethod
+    def has_any_for_vehicle(self, vehicle_id: UUID) -> bool:
+        """
+        Return whether at least one ParkingTicket row exists for `vehicle_id`,
+        regardless of `auto_created`.
+
+        Implemented as a cheap existence check (not a full row fetch), so
+        `GET /vehicles` can gate its `has_ser_tickets` field without an
+        N+1 full-ticket-fetch cost per vehicle (see
+        add-ser-ticket-history-ui design.md D6).
+        """
+        ...

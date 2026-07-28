@@ -216,6 +216,34 @@ class VehicleLocationHistoryResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# SER ticket list schemas (GET /vehicles/{id}/ser-tickets)
+# ---------------------------------------------------------------------------
+
+
+class SerTicketListItemResponse(BaseModel):
+    """A single SER ticket in a vehicle's paginated ticket history."""
+
+    id: UUID
+    latitude: float | None
+    longitude: float | None
+    start_date: datetime
+    end_date: datetime
+    city_code: str | None
+    city_name: str | None
+    zone_number: str | None
+    # True (auto-created), False (manual), or None (pre-existing row —
+    # unknown provenance). See add-ser-ticket-history-ui design.md D1/D8.
+    auto_created: bool | None
+
+
+class SerTicketHistoryResponse(BaseModel):
+    """A page of a vehicle's SER tickets, newest first."""
+
+    items: list[SerTicketListItemResponse]
+    has_more: bool
+
+
+# ---------------------------------------------------------------------------
 # Vehicle list / detail schemas (GET /vehicles, GET /vehicles/{id})
 # ---------------------------------------------------------------------------
 
@@ -241,6 +269,10 @@ class VehicleListItem(BaseModel):
     # no confident result exists yet (no lookup attempted, or the last
     # attempt was not_found/error — see ambient-label spec.md).
     ambient_label: str | None = None
+    # True if the vehicle has at least one ParkingTicket row, regardless of
+    # `auto_created` — gates the "View SER tickets" button (see
+    # add-ser-ticket-history-ui design.md D6).
+    has_ser_tickets: bool = False
 
 
 class ToyotaConfigResponse(BaseModel):

@@ -1,5 +1,6 @@
 import type {
   SerParkingExemption,
+  SerTicketHistoryPage,
   VehicleDetail,
   VehicleListItem,
   VehicleLocationHistoryPage,
@@ -82,6 +83,26 @@ export async function getVehicleLocationHistory(
     );
   }
   return (await response.json()) as VehicleLocationHistoryPage;
+}
+
+export async function getSerTicketHistory(
+  vehicleId: string,
+  { limit = 5, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<SerTicketHistoryPage> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetch(
+    `/api/vehicles/${vehicleId}/ser-tickets?${params.toString()}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to get SER ticket history: ${response.status}`,
+    );
+  }
+  return (await response.json()) as SerTicketHistoryPage;
 }
 
 export async function getSerParkingExemption(

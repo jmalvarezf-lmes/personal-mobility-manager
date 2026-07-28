@@ -257,6 +257,7 @@ def test_ticket_created_when_required_and_no_previous_location() -> None:
     assert call["provider"] == "elparking"
     assert call["duration_minutes"] == 90
     assert call["location"] == GeoLocation(lat=_MOVED_LAT, lng=_MOVED_LNG)
+    assert call["auto_created"] is True
     assert len(fx.event_publisher.published) == 1
     published = fx.event_publisher.published[0]
     assert isinstance(published, SerTicketCreated)
@@ -280,6 +281,7 @@ def test_ticket_created_when_vehicle_changed_ser_zone() -> None:
     handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
 
     assert len(fx.create_ser_ticket.calls) == 1
+    assert fx.create_ser_ticket.calls[0]["auto_created"] is True
     assert len(fx.event_publisher.published) == 1
     assert isinstance(fx.event_publisher.published[0], SerTicketCreated)
 

@@ -164,6 +164,22 @@
       "loadingMore": "Loading more…",
       "empty": "No location history for this vehicle.",
       "error": "Couldn't load location history. Please try again."
+    },
+    "serTickets": {
+      "title": "SER tickets — {{name}}",
+      "loading": "Loading…",
+      "loadMore": "Load more",
+      "loadingMore": "Loading more…",
+      "empty": "No SER tickets for this vehicle.",
+      "error": "Couldn't load SER ticket history. Please try again.",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "city": "City",
+      "zone": "Zone",
+      "unknownCity": "Unknown city",
+      "provenanceAuto": "Automatic",
+      "provenanceManual": "Manual",
+      "provenanceUnknown": "Unknown"
     }
   },
   "vehicle": {
@@ -175,6 +191,7 @@
     "location": "Location",
     "noLocation": "No location data",
     "viewHistory": "View history",
+    "viewSerTickets": "View SER tickets",
     "licensePlate": "License Plate",
     "noLicensePlate": "No license plate",
     "ambientLabel": "Ambient label",

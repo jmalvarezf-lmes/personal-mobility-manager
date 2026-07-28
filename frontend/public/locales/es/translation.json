@@ -164,6 +164,22 @@
       "loadingMore": "Cargando más…",
       "empty": "Este vehículo no tiene historial de ubicaciones.",
       "error": "No se pudo cargar el historial de ubicaciones. Inténtalo de nuevo."
+    },
+    "serTickets": {
+      "title": "Tickets SER — {{name}}",
+      "loading": "Cargando…",
+      "loadMore": "Cargar más",
+      "loadingMore": "Cargando más…",
+      "empty": "Este vehículo no tiene tickets SER.",
+      "error": "No se pudo cargar el historial de tickets SER. Inténtalo de nuevo.",
+      "startDate": "Fecha de inicio",
+      "endDate": "Fecha de fin",
+      "city": "Ciudad",
+      "zone": "Zona",
+      "unknownCity": "Ciudad desconocida",
+      "provenanceAuto": "Automático",
+      "provenanceManual": "Manual",
+      "provenanceUnknown": "Desconocido"
     }
   },
   "vehicle": {
@@ -175,6 +191,7 @@
     "location": "Ubicación",
     "noLocation": "Sin datos de ubicación",
     "viewHistory": "Ver historial",
+    "viewSerTickets": "Ver tickets SER",
     "licensePlate": "Matrícula",
     "noLicensePlate": "Sin matrícula",
     "ambientLabel": "Etiqueta ambiental",

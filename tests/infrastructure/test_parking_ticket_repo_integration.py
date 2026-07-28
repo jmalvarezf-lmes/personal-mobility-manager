@@ -62,7 +62,10 @@ def pg_engine():
                     end_date TIMESTAMPTZ NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL,
                     city_code TEXT,
-                    zone_number TEXT
+                    zone_number TEXT,
+                    latitude DOUBLE PRECISION,
+                    longitude DOUBLE PRECISION,
+                    auto_created BOOLEAN
                 )
                 """
             )
@@ -117,6 +120,9 @@ def test_save_persists_all_fields(pg_engine) -> None:
         created_at=created_at,
         city_code="madrid",
         zone_number="163",
+        latitude=40.4,
+        longitude=-3.7,
+        auto_created=True,
     )
     repo.save(ticket)
 
@@ -136,6 +142,9 @@ def test_save_persists_all_fields(pg_engine) -> None:
     assert row.end_date == end_date
     assert row.city_code == "madrid"
     assert row.zone_number == "163"
+    assert row.latitude == pytest.approx(40.4)
+    assert row.longitude == pytest.approx(-3.7)
+    assert row.auto_created is True
 
 
 def test_save_with_none_provider_reference(pg_engine) -> None:
@@ -203,6 +212,9 @@ def test_save_with_none_zone_fields_round_trips_as_none_legacy_row(pg_engine) ->
         created_at=datetime.now(UTC),
         city_code=None,
         zone_number=None,
+        latitude=None,
+        longitude=None,
+        auto_created=None,
     )
     repo.save(ticket)
 
@@ -210,6 +222,9 @@ def test_save_with_none_zone_fields_round_trips_as_none_legacy_row(pg_engine) ->
     assert len(found) == 1
     assert found[0].city_code is None
     assert found[0].zone_number is None
+    assert found[0].latitude is None
+    assert found[0].longitude is None
+    assert found[0].auto_created is None
 
 
 def _make_ticket(vehicle_id, user_id, end_date: datetime, created_at: datetime | None = None) -> ParkingTicket:
@@ -328,3 +343,187 @@ def test_find_all_active_for_vehicle_is_scoped_to_the_given_vehicle(pg_engine) -
     repo.save(_make_ticket(other_vehicle_id, other_user_id, end_date=now + timedelta(minutes=30)))
 
     assert repo.find_all_active_for_vehicle(vehicle_id, at=now) == []
+
+
+# ---------------------------------------------------------------------------
+# list_by_vehicle (task 4.4)
+# ---------------------------------------------------------------------------
+
+
+def _make_ticket_with_provenance(
+    vehicle_id, user_id, created_at: datetime, auto_created: bool | None
+) -> ParkingTicket:
+    return ParkingTicket(
+        id=uuid4(),
+        vehicle_id=vehicle_id,
+        user_id=user_id,
+        provider="elparking",
+        duration_minutes=60,
+        provider_reference="REF-001",
+        cost=1.2,
+        end_date=created_at + timedelta(hours=1),
+        created_at=created_at,
+        city_code="madrid",
+        zone_number="163",
+        latitude=40.4,
+        longitude=-3.7,
+        auto_created=auto_created,
+    )
+
+
+def test_list_by_vehicle_returns_every_ticket_regardless_of_auto_created(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    for i in range(3):
+        repo.save(_make_ticket_with_provenance(vehicle_id, user_id, now + timedelta(minutes=i), auto_created=True))
+    for i in range(2):
+        repo.save(
+            _make_ticket_with_provenance(vehicle_id, user_id, now + timedelta(minutes=10 + i), auto_created=False)
+        )
+
+    items, has_more = repo.list_by_vehicle(vehicle_id, limit=10, offset=0)
+
+    assert len(items) == 5
+    assert has_more is False
+    assert {t.auto_created for t in items} == {True, False}
+
+
+def test_list_by_vehicle_returns_newest_first_page(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    tickets = [
+        _make_ticket_with_provenance(vehicle_id, user_id, now + timedelta(minutes=i), auto_created=True)
+        for i in range(10)
+    ]
+    for ticket in tickets:
+        repo.save(ticket)
+
+    items, has_more = repo.list_by_vehicle(vehicle_id, limit=5, offset=0)
+
+    assert has_more is True
+    assert [t.id for t in items] == [t.id for t in reversed(tickets[5:10])]
+
+
+def test_list_by_vehicle_reports_no_further_pages(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    for i in range(3):
+        repo.save(_make_ticket_with_provenance(vehicle_id, user_id, now + timedelta(minutes=i), auto_created=True))
+
+    items, has_more = repo.list_by_vehicle(vehicle_id, limit=5, offset=0)
+
+    assert len(items) == 3
+    assert has_more is False
+
+
+def test_list_by_vehicle_out_of_range_offset_returns_empty(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    now = datetime.now(UTC)
+    repo.save(_make_ticket_with_provenance(vehicle_id, user_id, now, auto_created=True))
+
+    items, has_more = repo.list_by_vehicle(vehicle_id, limit=5, offset=100)
+
+    assert items == []
+    assert has_more is False
+
+
+def test_list_by_vehicle_paginates_deterministically_with_identical_created_at(pg_engine) -> None:
+    """
+    Task 14.1: `created_at` DESC alone is not a stable sort key when two
+    tickets share the same value — without the secondary `id ASC` tiebreaker,
+    consecutive paged queries could return an overlapping or skipped row at
+    the page boundary. Paging through with `limit=1` twice must return two
+    distinct ticket ids.
+    """
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    same_created_at = datetime.now(UTC)
+    repo.save(_make_ticket_with_provenance(vehicle_id, user_id, same_created_at, auto_created=True))
+    repo.save(_make_ticket_with_provenance(vehicle_id, user_id, same_created_at, auto_created=False))
+
+    page_0, _ = repo.list_by_vehicle(vehicle_id, limit=1, offset=0)
+    page_1, _ = repo.list_by_vehicle(vehicle_id, limit=1, offset=1)
+
+    assert len(page_0) == 1
+    assert len(page_1) == 1
+    assert page_0[0].id != page_1[0].id
+
+
+# ---------------------------------------------------------------------------
+# has_any_for_vehicle (task 6.1)
+# ---------------------------------------------------------------------------
+
+
+def test_has_any_for_vehicle_false_when_no_tickets(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+
+    assert repo.has_any_for_vehicle(vehicle_id) is False
+
+
+def test_has_any_for_vehicle_true_with_only_manual_tickets(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    repo.save(_make_ticket_with_provenance(vehicle_id, user_id, datetime.now(UTC), auto_created=False))
+
+    assert repo.has_any_for_vehicle(vehicle_id) is True
+
+
+def test_has_any_for_vehicle_true_with_auto_created_ticket(pg_engine) -> None:
+    from mobility_manager.infrastructure.repositories.postgres.parking_ticket_repo import (
+        PostgresParkingTicketRepository,
+    )
+
+    repo = PostgresParkingTicketRepository(pg_engine)
+    vehicle_id = uuid4()
+    user_id = uuid4()
+    _insert_user_and_vehicle(pg_engine, user_id, vehicle_id)
+    repo.save(_make_ticket_with_provenance(vehicle_id, user_id, datetime.now(UTC), auto_created=True))
+
+    assert repo.has_any_for_vehicle(vehicle_id) is True

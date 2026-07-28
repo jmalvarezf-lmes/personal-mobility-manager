@@ -9,6 +9,9 @@ from uuid import UUID
 
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+from mobility_manager.domain.ports.parking_ticket_repository import (
+    ParkingTicketRepository,
+)
 from mobility_manager.domain.ports.vehicle_location_repository import (
     VehicleLocationRepository,
 )
@@ -21,6 +24,10 @@ class VehicleWithLocation:
 
     vehicle: Vehicle
     location: VehicleLocation | None
+    # True if the vehicle has at least one ParkingTicket row, regardless of
+    # `auto_created` — gates the "View SER tickets" button (see
+    # add-ser-ticket-history-ui design.md D6).
+    has_ser_tickets: bool = False
 
 
 class ListUserVehicles:
@@ -34,9 +41,11 @@ class ListUserVehicles:
         self,
         vehicle_repo: VehicleRepository,
         location_repo: VehicleLocationRepository,
+        ticket_repo: ParkingTicketRepository,
     ) -> None:
         self._vehicle_repo = vehicle_repo
         self._location_repo = location_repo
+        self._ticket_repo = ticket_repo
 
     def execute(self, user_id: UUID) -> list[VehicleWithLocation]:
         """
@@ -49,4 +58,11 @@ class ListUserVehicles:
             List of VehicleWithLocation ordered by vehicle creation (DB default).
         """
         vehicles = self._vehicle_repo.get_all_by_user_id(user_id)
-        return [VehicleWithLocation(vehicle=v, location=self._location_repo.get_latest(v.id)) for v in vehicles]
+        return [
+            VehicleWithLocation(
+                vehicle=v,
+                location=self._location_repo.get_latest(v.id),
+                has_ser_tickets=self._ticket_repo.has_any_for_vehicle(v.id),
+            )
+            for v in vehicles
+        ]

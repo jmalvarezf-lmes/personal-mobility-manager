@@ -7,6 +7,7 @@ import Nav from "../components/Nav";
 import VehicleCard from "../components/VehicleCard";
 import VehicleLocationHistoryModal from "../components/VehicleLocationHistoryModal";
 import VehicleMap from "../components/VehicleMap";
+import VehicleSerTicketHistoryModal from "../components/VehicleSerTicketHistoryModal";
 import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
 
 export default function MyVehiclesPage() {
@@ -17,6 +18,7 @@ export default function MyVehiclesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editVehicle, setEditVehicle] = useState<VehicleDetail | null>(null);
   const [historyVehicle, setHistoryVehicle] = useState<VehicleListItem | null>(null);
+  const [serTicketsVehicle, setSerTicketsVehicle] = useState<VehicleListItem | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -35,7 +37,12 @@ export default function MyVehiclesPage() {
   function handleCreated(vehicle: VehicleListItem) {
     setVehicles((prev) => [
       ...prev,
-      { ...vehicle, location: vehicle.location ?? null, ambient_label: vehicle.ambient_label ?? null },
+      {
+        ...vehicle,
+        location: vehicle.location ?? null,
+        ambient_label: vehicle.ambient_label ?? null,
+        has_ser_tickets: vehicle.has_ser_tickets ?? false,
+      },
     ]);
   }
 
@@ -109,6 +116,7 @@ export default function MyVehiclesPage() {
               onEdit={(detail) => setEditVehicle(detail)}
               onDeleted={handleDeleted}
               onViewHistory={(vehicle) => setHistoryVehicle(vehicle)}
+              onViewSerTickets={(vehicle) => setSerTicketsVehicle(vehicle)}
             />
           ))}
         </div>
@@ -133,6 +141,13 @@ export default function MyVehiclesPage() {
         <VehicleLocationHistoryModal
           vehicle={historyVehicle}
           onClose={() => setHistoryVehicle(null)}
+        />
+      )}
+
+      {serTicketsVehicle && (
+        <VehicleSerTicketHistoryModal
+          vehicle={serTicketsVehicle}
+          onClose={() => setSerTicketsVehicle(null)}
         />
       )}
     </div>

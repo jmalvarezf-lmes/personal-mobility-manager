@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CircleMarker,
@@ -11,13 +11,10 @@ import {
   TileLayer,
   useMap,
 } from "react-leaflet";
-import { getPreferences } from "../api/preferences";
 import { getVehicleLocationHistory } from "../api/vehicles";
 import type { VehicleListItem, VehicleLocation } from "../types/vehicle";
-import { formatInTimezone, resolveDisplayTimezone } from "../utils/timezone";
-
-const OSM_FALLBACK = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const PAGE_SIZE = 5;
+import { formatInTimezone } from "../utils/timezone";
+import HistoryModal, { OSM_FALLBACK } from "./HistoryModal";
 
 // Same car-style DivIcon used for "current location" on the shared
 // VehicleMap, reused here for visual continuity on the newest pin.
@@ -78,150 +75,51 @@ export default function VehicleLocationHistoryModal({
   onClose,
 }: VehicleLocationHistoryModalProps) {
   const { t } = useTranslation();
-  // newest-first, matching API response order — see the reversal comment
-  // below at the point the polyline/map order is derived from this array.
-  const [locations, setLocations] = useState<VehicleLocation[]>([]);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The user's saved timezone preference, if any — fetched once and merged
-  // into the resolution cascade below. Left null if the fetch fails, which
-  // simply falls through to the browser-detected/UTC fallback.
-  const [savedTimezone, setSavedTimezone] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getPreferences()
-      .then((prefs) => {
-        if (!cancelled) setSavedTimezone(prefs.timezone);
-      })
-      .catch(() => {
-        // Fall back to browser detection / UTC — see resolveDisplayTimezone.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Resolved once per render from the saved preference; formatInTimezone
-  // itself computes each row's abbreviation per that row's own date, so
-  // this value is just the zone name, not a cached formatted string.
-  const displayTimezone = useMemo(() => resolveDisplayTimezone(savedTimezone), [savedTimezone]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getVehicleLocationHistory(vehicle.vehicle_id, { limit: PAGE_SIZE, offset: 0 })
-      .then((page) => {
-        if (cancelled) return;
-        setLocations(page.items);
-        setHasMore(page.has_more);
-        setOffset(page.items.length);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(
-          err instanceof Error ? err.message : t("modal.locationHistory.error"),
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // Reload from scratch whenever a fresh modal instance mounts for this
-    // vehicle — closing and reopening discards any previously loaded pages
-    // (see vehicle-location-history-ui spec: "Reopening starts fresh").
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicle.vehicle_id]);
-
-  async function handleLoadMore() {
-    setLoadingMore(true);
-    setError(null);
-    try {
-      const page = await getVehicleLocationHistory(vehicle.vehicle_id, {
-        limit: PAGE_SIZE,
-        offset,
-      });
-      setLocations((prev) => [...prev, ...page.items]);
-      setHasMore(page.has_more);
-      setOffset((prev) => prev + page.items.length);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("modal.locationHistory.error"),
-      );
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  // The API returns locations newest-first (same order used by the list
-  // below), but the polyline must be drawn oldest -> newest so the route
-  // reads chronologically on the map. This reversed copy is ONLY for the
-  // map/polyline — the list below intentionally keeps the original
-  // newest-first order. Easy to get backwards, hence this comment.
-  const chronological = [...locations].reverse();
-  const positions: [number, number][] = chronological.map((loc) => [
-    loc.latitude,
-    loc.longitude,
-  ]);
-
-  // One directional arrow per segment between chronologically consecutive
-  // points, placed at the segment midpoint and rotated to point from the
-  // older point toward the newer one. Empty when there's only one point
-  // (no segments), matching the polyline's own single-point behaviour.
-  const segmentArrows = positions.slice(1).map((p2, i) => {
-    const p1 = positions[i];
-    return {
-      key: `${p1[0]},${p1[1]}-${p2[0]},${p2[1]}`,
-      midpoint: [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number],
-      bearing: bearingDegrees(p1, p2),
-    };
-  });
-
-  const isEmpty = !loading && locations.length === 0 && !error;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("modal.locationHistory.title", { name: vehicle.display_name })}
-      className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40"
+    <HistoryModal<VehicleLocation>
+      title={t("modal.locationHistory.title", { name: vehicle.display_name })}
+      onClose={onClose}
+      vehicleId={vehicle.vehicle_id}
+      fetchPage={getVehicleLocationHistory}
+      contentClassName="flex flex-1 flex-col gap-4 overflow-hidden"
+      messages={{
+        loading: t("modal.locationHistory.loading"),
+        loadingMore: t("modal.locationHistory.loadingMore"),
+        loadMore: t("modal.locationHistory.loadMore"),
+        empty: t("modal.locationHistory.empty"),
+        error: t("modal.locationHistory.error"),
+      }}
     >
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded bg-white p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {t("modal.locationHistory.title", { name: vehicle.display_name })}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
+      {({ items: locations, displayTimezone }) => {
+        // The API returns locations newest-first (same order used by the
+        // list below), but the polyline must be drawn oldest -> newest so
+        // the route reads chronologically on the map. This reversed copy is
+        // ONLY for the map/polyline — the list below intentionally keeps
+        // the original newest-first order. Easy to get backwards, hence
+        // this comment.
+        const chronological = [...locations].reverse();
+        const positions: [number, number][] = chronological.map((loc) => [
+          loc.latitude,
+          loc.longitude,
+        ]);
 
-        {error && (
-          <p role="alert" className="mb-3 text-sm text-red-600">
-            {error}
-          </p>
-        )}
+        // One directional arrow per segment between chronologically
+        // consecutive points, placed at the segment midpoint and rotated to
+        // point from the older point toward the newer one. Empty when
+        // there's only one point (no segments), matching the polyline's own
+        // single-point behaviour.
+        const segmentArrows = positions.slice(1).map((p2, i) => {
+          const p1 = positions[i];
+          return {
+            key: `${p1[0]},${p1[1]}-${p2[0]},${p2[1]}`,
+            midpoint: [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number],
+            bearing: bearingDegrees(p1, p2),
+          };
+        });
 
-        {loading && (
-          <p className="text-sm text-gray-500">{t("modal.locationHistory.loading")}</p>
-        )}
-
-        {isEmpty && (
-          <p className="text-sm italic text-gray-400">
-            {t("modal.locationHistory.empty")}
-          </p>
-        )}
-
-        {!loading && locations.length > 0 && (
-          <div className="flex flex-1 flex-col gap-4 overflow-hidden">
+        return (
+          <>
             <div className="h-56 shrink-0 overflow-hidden rounded border border-gray-200">
               <MapContainer center={positions[0]} zoom={13} className="h-full w-full">
                 <TileLayer
@@ -274,22 +172,9 @@ export default function VehicleLocationHistoryModal({
                 </div>
               ))}
             </div>
-
-            {hasMore && (
-              <button
-                type="button"
-                onClick={() => void handleLoadMore()}
-                disabled={loadingMore}
-                className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200 disabled:opacity-50"
-              >
-                {loadingMore
-                  ? t("modal.locationHistory.loadingMore")
-                  : t("modal.locationHistory.loadMore")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+          </>
+        );
+      }}
+    </HistoryModal>
   );
 }

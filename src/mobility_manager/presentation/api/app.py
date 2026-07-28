@@ -70,6 +70,7 @@ from mobility_manager.application.use_cases.list_notification_channels import (
 from mobility_manager.application.use_cases.list_ser_ticket_provider_connections import (
     ListSerTicketProviderConnections,
 )
+from mobility_manager.application.use_cases.list_ser_tickets import ListSerTickets
 from mobility_manager.application.use_cases.list_user_vehicles import ListUserVehicles
 from mobility_manager.application.use_cases.list_vehicle_location_history import (
     ListVehicleLocationHistory,
@@ -497,8 +498,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     record_uc = RecordVehicleLocation(location_repo=vehicle_location_repo, event_publisher=event_publisher)
     get_latest_uc = GetLatestVehicleLocation(location_repo=vehicle_location_repo)
     list_location_history_uc = ListVehicleLocationHistory(location_repo=vehicle_location_repo)
+    list_ser_tickets_uc = ListSerTickets(ticket_repo=parking_ticket_repo)
 
-    list_uc = ListUserVehicles(vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo)
+    list_uc = ListUserVehicles(
+        vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo, ticket_repo=parking_ticket_repo
+    )
     delete_uc = DeleteVehicle(vehicle_repo=vehicle_repo)
     update_uc = UpdateVehicle(vehicle_repo=vehicle_repo, config_repo=vehicle_config_repo)
 
@@ -506,6 +510,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.record_vehicle_location = record_uc
     app.state.get_latest_vehicle_location = get_latest_uc
     app.state.list_vehicle_location_history = list_location_history_uc
+    app.state.list_ser_tickets = list_ser_tickets_uc
     app.state.list_user_vehicles = list_uc
     app.state.delete_vehicle = delete_uc
     app.state.update_vehicle = update_uc

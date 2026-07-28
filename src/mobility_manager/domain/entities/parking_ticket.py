@@ -14,6 +14,18 @@ those legacy rows keep both fields `None` rather than being backfilled.
 DetermineSerTicketRequirement treats a `(None, None)` ticket as a fail-safe
 that unconditionally suppresses new ticket creation for that vehicle (see
 design.md D5).
+
+latitude/longitude/auto_created follow the same "None only for pre-existing
+rows" precedent (see add-ser-ticket-history-ui design.md D1): latitude and
+longitude are populated with the coordinates of the GeoLocation used to
+create the ticket, and auto_created is True when created by
+SerTicketCreationTriggerHandler or False when created via the manual
+POST /parking/ser-tickets endpoint — the only two ticket-creation paths.
+All three fields default to None only so that existing ParkingTicket(...)
+call sites in concrete SerTicketProviderPort implementations (which don't
+know about creation provenance) keep constructing valid entities;
+CreateSerTicket.execute is the single place that fills them in with real
+values before persisting, for every ticket created going forward.
 """
 
 from dataclasses import dataclass
@@ -36,3 +48,6 @@ class ParkingTicket:
     created_at: datetime
     city_code: str | None
     zone_number: str | None
+    latitude: float | None = None
+    longitude: float | None = None
+    auto_created: bool | None = None

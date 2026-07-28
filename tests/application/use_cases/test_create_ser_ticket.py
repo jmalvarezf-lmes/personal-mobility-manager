@@ -172,6 +172,9 @@ def test_successful_ticket_creation_with_explicit_location_persists_and_returns_
     assert result.vehicle_id == vehicle.id
     assert result.duration_minutes == 90
     assert get_latest.calls == []
+    assert result.latitude == location.lat
+    assert result.longitude == location.lng
+    assert result.auto_created is False
 
 
 def test_successful_ticket_creation_falls_back_to_latest_known_location() -> None:
@@ -192,12 +195,35 @@ def test_successful_ticket_creation_falls_back_to_latest_known_location() -> Non
     session = SerProviderSession(data={"token": "abc"})
     config_repo.add(_OWNER, "madrid_ser_app", session)
 
-    uc.execute(user_id=_OWNER, vehicle_id=vehicle.id, provider="madrid_ser_app", duration_minutes=90)
+    result = uc.execute(user_id=_OWNER, vehicle_id=vehicle.id, provider="madrid_ser_app", duration_minutes=90)
 
     assert get_latest.calls == [vehicle.id]
     called_location = provider.create_ticket_calls[0][3]
     assert called_location.lat == latest_location.latitude
     assert called_location.lng == latest_location.longitude
+    assert result.latitude == latest_location.latitude
+    assert result.longitude == latest_location.longitude
+
+
+def test_explicit_auto_created_true_is_persisted_unchanged() -> None:
+    uc, vehicle_repo, config_repo, ticket_repo, provider, _event_publisher, _get_latest = _make_use_case()
+    vehicle = _make_vehicle(_OWNER)
+    vehicle_repo.add(vehicle)
+    session = SerProviderSession(data={"token": "abc"})
+    config_repo.add(_OWNER, "madrid_ser_app", session)
+    location = GeoLocation(lat=40.4, lng=-3.7)
+
+    result = uc.execute(
+        user_id=_OWNER,
+        vehicle_id=vehicle.id,
+        provider="madrid_ser_app",
+        duration_minutes=90,
+        location=location,
+        auto_created=True,
+    )
+
+    assert result.auto_created is True
+    assert ticket_repo.saved == [result]
 
 
 def test_vehicle_not_owned_by_user_raises_vehicle_not_found() -> None:

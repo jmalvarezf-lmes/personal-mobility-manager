@@ -225,7 +225,6 @@ either fails fast at startup or the feature stays inactive, as noted.
 | `ENABLED_BRANDS` | `generic` | Comma-separated vehicle brands to enable (e.g. `generic,toyota`). Unknown values are silently ignored. |
 | `TOYOTA_LOCALE` | `en_GB` (`.env.example` ships `es-es`) | Only pre-fills the locale field's default when adding a Toyota vehicle in the frontend. The value that's actually used per vehicle is whatever the user sets (and can edit later) on the vehicles page — that's what's stored and passed to `pytoyoda`, not this env var. |
 | `VEHICLE_POLL_INTERVAL_MINUTES` | `5` | How often the scheduler polls Toyota vehicles for a location update. |
-| `TOYOTA_USERNAME`, `TOYOTA_PASSWORD`, `DEFAULT_LICENSE_PLATE` | — | Present in `.env.example` but not read anywhere in the current codebase — effectively dead/reserved, not real tunables today. Toyota account credentials aren't a deployment secret at all: each user enters their own Toyota username/password when adding or editing a vehicle on the vehicles page, encrypted at rest with `ENCRYPTION_KEY`. |
 
 **Madrid SER zone data**
 

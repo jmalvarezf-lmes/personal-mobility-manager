@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { connect } from "../api/serTicketProviders";
+import Button from "./ui/Button";
+import Input from "./ui/Input";
 
 interface ConnectSerProviderModalProps {
   provider: string;
@@ -52,13 +54,12 @@ export default function ConnectSerProviderModal({
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="ser-provider-email">
               {t("common.email")}
             </label>
-            <input
+            <Input
               id="ser-provider-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -66,13 +67,12 @@ export default function ConnectSerProviderModal({
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="ser-provider-password">
               {t("common.password")}
             </label>
-            <input
+            <Input
               id="ser-provider-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -83,20 +83,12 @@ export default function ConnectSerProviderModal({
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
-            >
+            <Button type="button" variant="secondary" onClick={onClose}>
               {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={submitting}>
               {submitting ? t("modal.connectSerProvider.connecting") : t("modal.connectSerProvider.connect")}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

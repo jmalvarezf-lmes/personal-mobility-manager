@@ -11,6 +11,8 @@ import { fetchZoneOptions } from "../api/zones";
 import type { City } from "../types/city";
 import type { GenericConfig, ToyotaConfig, VehicleDetail } from "../types/vehicle";
 import type { ZoneOption } from "../types/zone";
+import Button from "./ui/Button";
+import Input, { inputClasses } from "./ui/Input";
 
 function isToyotaConfig(config: ToyotaConfig | GenericConfig): config is ToyotaConfig {
   return "username" in config;
@@ -174,13 +176,12 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-display-name">
               {t("common.displayName")}
             </label>
-            <input
+            <Input
               id="edit-display-name"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -189,14 +190,13 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               {t("vehicle.licensePlate")}{" "}
               <span className="text-xs text-gray-400">{t("modal.editVehicle.keepBlank")}</span>
             </label>
-            <input
+            <Input
               id="edit-license-plate"
               type="text"
               value={licenseplate}
               onChange={(e) => setLicenseplate(e.target.value)}
               maxLength={20}
               placeholder={t("vehicle.noLicensePlate")}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -211,26 +211,24 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-username">
                   {t("common.username")}
                 </label>
-                <input
+                <Input
                   id="edit-username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="edit-locale">
                   {t("common.locale")}
                 </label>
-                <input
+                <Input
                   id="edit-locale"
                   type="text"
                   value={locale}
                   onChange={(e) => setLocale(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -238,12 +236,11 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
                   {t("modal.editVehicle.newPassword")}{" "}
                   <span className="text-xs text-gray-400">{t("modal.editVehicle.keepBlank")}</span>
                 </label>
-                <input
+                <Input
                   id="edit-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
             </>
@@ -268,7 +265,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
                   id="exemption-city"
                   value={exemptionCity}
                   onChange={(e) => handleExemptionCityChange(e.target.value)}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className={inputClasses}
                 >
                   <option value="">{t("modal.editVehicle.serExemption.selectCity")}</option>
                   {cities.map((city) => (
@@ -287,7 +284,7 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
                   value={exemptionLoading ? "" : exemptionZone}
                   onChange={(e) => setExemptionZone(e.target.value)}
                   disabled={!exemptionCity || exemptionLoading || zoneOptions.length === 0}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+                  className={inputClasses}
                 >
                   <option value="">
                     {exemptionLoading
@@ -306,33 +303,26 @@ export default function EditVehicleModal({ vehicle, onClose, onUpdated }: EditVe
               </div>
 
               <div className="flex gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={handleClearExemption}
                   disabled={submitting || (!exemptionCity && !exemptionZone)}
-                  className="rounded bg-gray-100 px-3 py-1.5 text-xs hover:bg-gray-200 disabled:opacity-50"
                 >
                   {t("modal.editVehicle.serExemption.clear")}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
-            >
+            <Button type="button" variant="secondary" onClick={onClose}>
               {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={submitting}>
               {submitting ? t("modal.editVehicle.saving") : t("modal.editVehicle.save")}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

@@ -23,7 +23,35 @@
   },
   "page": {
     "landing": {
-      "title": "Personal Mobility Manager"
+      "hero": {
+        "headline": "Rastrea, aparca y recibe notificaciones — toda tu movilidad, en un solo lugar",
+        "subtitle": "Personal Mobility Manager controla tus vehículos, automatiza los tickets de zona SER y te avisa en cuanto algo requiere tu atención."
+      },
+      "features": {
+        "title": "Todo lo que tu vehículo necesita, automatizado",
+        "track": {
+          "title": "Rastrea",
+          "description": "Consulta la última ubicación conocida de tus vehículos y su historial completo en un mapa en vivo."
+        },
+        "park": {
+          "title": "Aparca",
+          "description": "Los tickets de zona SER se crean automáticamente, para que nunca te pases del tiempo de aparcamiento."
+        },
+        "notify": {
+          "title": "Notifica",
+          "description": "Recibe avisos por tu canal preferido cuando un ticket esté a punto de caducar o necesite tu atención."
+        }
+      },
+      "citiesCta": {
+        "title": "¿Ya está disponible en tu ciudad?",
+        "subtitle": "Consulta las ciudades que ya soportamos en el mapa de zonas en vivo.",
+        "cta": "Ver ciudades soportadas"
+      },
+      "openSource": {
+        "title": "¿Quieres alojar tu propia instancia?",
+        "subtitle": "Personal Mobility Manager es de código abierto. Consulta el código para ver cómo funciona o despliega tu propia instancia.",
+        "cta": "Ver el código en GitHub"
+      }
     },
     "apiDocs": {
       "title": "Documentación API",

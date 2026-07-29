@@ -4,6 +4,8 @@ import { logout } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 import i18n from "../i18n";
 import { useTranslation } from "react-i18next";
+import Button from "./ui/Button";
+import logoMark from "../assets/logo-mark.png";
 
 export default function Nav() {
   const { user, setUser } = useAuth();
@@ -52,24 +54,29 @@ export default function Nav() {
 
   return (
     <nav className="relative z-[1100] flex items-center justify-between bg-white px-6 py-3 shadow">
-      <span className="text-lg font-semibold text-gray-800">
+      <Link
+        to="/"
+        className="flex shrink-0 items-center gap-2 whitespace-nowrap text-lg font-semibold text-gray-800"
+      >
+        <img src={logoMark} alt="" className="h-8 w-8" />
         {t("nav.title")}
-      </span>
+      </Link>
       <div className="flex items-center gap-4">
-        <Link to="/map" className="text-blue-600 hover:underline">
+        <Link to="/map" className="whitespace-nowrap text-blue-600 hover:underline">
           {t("nav.map")}
         </Link>
-        <Link to="/api-docs" className="text-blue-600 hover:underline">
+        <Link to="/api-docs" className="whitespace-nowrap text-blue-600 hover:underline">
           {t("nav.apiDocs")}
         </Link>
         {user ? (
           <div ref={menuRef} className="relative">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               aria-haspopup="true"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((open) => !open)}
-              className="flex items-center gap-1 rounded bg-gray-100 px-3 py-1 text-sm text-gray-700 hover:bg-gray-200"
+              className="gap-1"
             >
               {user.email}
               <svg
@@ -84,7 +91,7 @@ export default function Nav() {
                   clipRule="evenodd"
                 />
               </svg>
-            </button>
+            </Button>
             {menuOpen && (
               <div
                 role="menu"
@@ -135,18 +142,15 @@ export default function Nav() {
             )}
           </div>
         ) : (
-          <a
-            href="/api/auth/google/login"
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
-          >
+          <Button as="a" href="/api/auth/google/login" variant="primary" size="sm">
             {t("nav.loginGoogle")}
-          </a>
+          </Button>
         )}
         <select
           aria-label={t("nav.language")}
           value={i18n.language.split("-")[0]}
           onChange={handleLanguageChange}
-          className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+          className="rounded border border-gray-300 py-1 pl-2 pr-6 text-sm"
         >
           <option value="en">EN</option>
           <option value="es">ES</option>

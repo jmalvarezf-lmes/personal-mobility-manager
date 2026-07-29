@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { disconnectChannel } from "../../api/notifications";
+import Button from "../ui/Button";
+import Card from "../ui/Card";
 
 interface NotificationChannelRowProps {
   channel: string;
@@ -40,9 +42,9 @@ export default function NotificationChannelRow({
   }
 
   return (
-    <div
+    <Card
       data-testid="notification-channel-row"
-      className="flex flex-col gap-2 rounded border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
     >
       <div>
         <h3 className="text-lg font-semibold text-gray-800">{displayName}</h3>
@@ -62,23 +64,15 @@ export default function NotificationChannelRow({
 
       <div>
         {connected ? (
-          <button
-            onClick={() => void handleDisconnect()}
-            disabled={disconnecting}
-            className="rounded bg-red-100 px-3 py-1 text-sm text-red-700 hover:bg-red-200 disabled:opacity-50"
-          >
+          <Button variant="danger" size="sm" onClick={() => void handleDisconnect()} disabled={disconnecting}>
             {t("page.notificationChannels.disconnect")}
-          </button>
+          </Button>
         ) : (
-          <button
-            onClick={() => onConnect(channel)}
-            disabled={!supported}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
-          >
+          <Button size="sm" onClick={() => onConnect(channel)} disabled={!supported}>
             {t("page.notificationChannels.connect")}
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

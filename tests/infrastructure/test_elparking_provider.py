@@ -236,7 +236,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
     client.create_ticket_return = {
         "id": "ticket-99",
         "total_qty": {"amount": 2.5},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -268,7 +268,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
     assert ticket.user_id == vehicle.user_id
     assert ticket.duration_minutes == 60
     assert ticket.cost == 2.5
-    assert ticket.end_date == datetime.fromisoformat("2026-07-23T14:00:00+00:00")
+    assert ticket.end_date == datetime.fromtimestamp(1784815200, tz=UTC)
     assert ticket.start_date == datetime.fromtimestamp(1784000000, tz=UTC)
     assert ticket.city_code == ser_zone.city_code
     assert ticket.zone_number == ser_zone.zone_number
@@ -352,7 +352,7 @@ def test_create_ticket_disambiguates_duplicate_zone_number_by_polygon(monkeypatc
     client.create_ticket_return = {
         "id": "ticket-1",
         "total_qty": {"amount": 1.0},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -389,7 +389,7 @@ def test_create_ticket_cache_hit_skips_town_zone_fetch(monkeypatch: pytest.Monke
     client.create_ticket_return = {
         "id": "ticket-1",
         "total_qty": {"amount": 1.0},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -427,7 +427,7 @@ def test_create_ticket_cache_miss_fetches_and_saves_mapping(monkeypatch: pytest.
     client.create_ticket_return = {
         "id": "ticket-1",
         "total_qty": {"amount": 1.0},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -759,7 +759,7 @@ def test_create_ticket_uses_nearest_step_when_exact_duration_unavailable(
     client.create_ticket_return = {
         "id": "ticket-1",
         "total_qty": {"amount": 0.10},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -810,7 +810,7 @@ def test_create_ticket_nearest_step_breaks_ties_toward_earlier_entry(
     client.create_ticket_return = {
         "id": "ticket-1",
         "total_qty": {"amount": 0.10},
-        "end_date": "2026-07-23T14:00:00+00:00",
+        "end_date": 1784815200,
     }
 
     session = SerProviderSession(data={"access_token": "fake-token"})
@@ -846,7 +846,7 @@ def test_create_ticket_malformed_ticket_response_missing_total_qty_raises_provid
     client.list_vehicles_return = [{"id": 1, "number_plate": vehicle.license_plate, "wallet": {"id": 999}}]
     client.get_steps_return = {"start_time": 1784000000, "steps": [{"minute": 60, "fare_qty": 1.0}]}
     # Missing "total_qty" entirely — malformed response shape.
-    client.create_ticket_return = {"id": "ticket-1", "end_date": "2026-07-23T14:00:00+00:00"}
+    client.create_ticket_return = {"id": "ticket-1", "end_date": 1784815200}
 
     session = SerProviderSession(data={"access_token": "fake-token"})
 

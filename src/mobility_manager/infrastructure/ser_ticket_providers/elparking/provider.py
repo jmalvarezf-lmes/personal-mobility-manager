@@ -279,7 +279,11 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         ticket-creation response isn't itself sampled yet, but this money-object
         convention is consistent everywhere else in ElParking's API (including
         the vehicle wallet's `qty` field), so it's applied here too.
-        "end_date"/"id" remain unverified assumptions (see design.md 10.3).
+        "end_date" is a Unix timestamp (int), not an ISO 8601 string — confirmed
+        against a real ticket-creation response after a production parse
+        failure (`fromisoformat` raised `TypeError` because the value was an
+        int). Same convention as `start_time` in `_build_ticket_request_body`.
+        "id" remains an unverified assumption (see design.md 10.3).
 
         Raises:
             SerProviderApiError: The response is missing/malformed for
@@ -287,7 +291,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         """
         try:
             cost = float(response["total_qty"]["amount"])
-            end_date = datetime.fromisoformat(response["end_date"])
+            end_date = datetime.fromtimestamp(int(response["end_date"]), tz=UTC)
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             raise SerProviderApiError(f"ElParking ticket creation returned an unexpected response body: {exc}") from exc
 

@@ -23,7 +23,35 @@
   },
   "page": {
     "landing": {
-      "title": "Personal Mobility Manager"
+      "hero": {
+        "headline": "Track, park, and get notified — all your mobility, one place",
+        "subtitle": "Personal Mobility Manager keeps tabs on your vehicles, automates SER parking tickets, and lets you know the moment something needs your attention."
+      },
+      "features": {
+        "title": "Everything your ride needs, automated",
+        "track": {
+          "title": "Track",
+          "description": "See your vehicles' last known location and full location history on a live map."
+        },
+        "park": {
+          "title": "Park",
+          "description": "SER zone parking tickets are created automatically, so you never overstay a spot."
+        },
+        "notify": {
+          "title": "Notify",
+          "description": "Get alerts through your preferred channel when a ticket is about to expire or needs attention."
+        }
+      },
+      "citiesCta": {
+        "title": "Already live in your city?",
+        "subtitle": "See the cities we already support on the live parking zone map.",
+        "cta": "See supported cities"
+      },
+      "openSource": {
+        "title": "Want to host your own?",
+        "subtitle": "Personal Mobility Manager is open source. Check out the code to see how it works or run your own instance.",
+        "cta": "View source on GitHub"
+      }
     },
     "apiDocs": {
       "title": "API Docs",

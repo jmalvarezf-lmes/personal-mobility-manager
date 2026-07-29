@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { deleteVehicle, getVehicle } from "../api/vehicles";
 import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem } from "../types/vehicle";
 import AmbientLabelIcon from "./AmbientLabelIcon";
+import Button from "./ui/Button";
+import Card from "./ui/Card";
 
 interface VehicleCardProps {
   vehicle: VehicleListItem;
@@ -54,7 +56,7 @@ export default function VehicleCard({
   const genericConfig = detail?.brand === "generic" ? (detail.config as GenericConfig) : null;
 
   return (
-    <div data-testid="vehicle-card" className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+    <Card data-testid="vehicle-card">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-800">{vehicle.display_name}</h3>
         <div className="flex items-center gap-2">
@@ -105,22 +107,19 @@ export default function VehicleCard({
         )}
         <div className="flex shrink-0 gap-2">
           {vehicle.location && (
-            <button
-              type="button"
-              onClick={() => onViewHistory(vehicle)}
-              className="shrink-0 rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
-            >
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => onViewHistory(vehicle)}>
               {t("vehicle.viewHistory")}
-            </button>
+            </Button>
           )}
           {vehicle.has_ser_tickets && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
               onClick={() => onViewSerTickets(vehicle)}
-              className="shrink-0 rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
             >
               {t("vehicle.viewSerTickets")}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -132,19 +131,13 @@ export default function VehicleCard({
       )}
 
       <div className="mt-3 flex gap-2">
-        <button
-          onClick={() => void handleEdit()}
-          className="rounded bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200"
-        >
+        <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
           {t("vehicle.edit")}
-        </button>
-        <button
-          onClick={() => void handleDelete()}
-          className="rounded bg-red-100 px-3 py-1 text-sm text-red-700 hover:bg-red-200"
-        >
+        </Button>
+        <Button variant="danger" size="sm" onClick={() => void handleDelete()}>
           {t("vehicle.delete")}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

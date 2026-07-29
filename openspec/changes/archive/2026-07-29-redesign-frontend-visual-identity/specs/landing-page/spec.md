@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Landing page is the app entry point at /
 The system SHALL serve a landing page at `/` that explains the product: a hero section with a headline and supporting copy plus a login call to action, and a feature section highlighting the product's three core capabilities (vehicle tracking, SER zone ticket automation, notifications), alongside the navigation menu. The page is accessible to unauthenticated and authenticated users alike. It SHALL NOT redirect either group away.
 
@@ -13,8 +15,6 @@ The system SHALL serve a landing page at `/` that explains the product: a hero s
 - **THEN** the navigation bar displays the user's email
 - **THEN** the "Login with Google" button is replaced by a logout control
 - **THEN** the navigation menu contains a link to the map
-
----
 
 ### Requirement: Navigation bar is shared across pages
 The system SHALL render a persistent navigation bar on all pages (`/`, `/map`, `/my-vehicles`, `/preferences`, `/ser-providers`, `/notification-channels`) that contains: the app title/logo rendered as a link to `/`, a link to the map, a language selector, and an auth control (login button when unauthenticated, user email + logout when authenticated). All nav labels SHALL be localised via the active i18n locale.
@@ -35,32 +35,3 @@ The system SHALL render a persistent navigation bar on all pages (`/`, `/map`, `
 #### Scenario: Nav title links to home
 - **WHEN** a user on any page clicks the nav title/logo
 - **THEN** the app navigates to `/`
-
----
-
-### Requirement: /map is a protected route
-The system SHALL protect the `/map` route so that unauthenticated users are redirected to `/`. Authenticated users can access the map without restriction.
-
-#### Scenario: Unauthenticated access to /map redirects to /
-- **WHEN** an unauthenticated user navigates to `/map`
-- **THEN** the app redirects to `/`
-
-#### Scenario: Authenticated user accesses /map normally
-- **WHEN** an authenticated user navigates to `/map`
-- **THEN** the map page renders without redirection
-
----
-
-### Requirement: Auth state is loaded once at app startup
-The system SHALL call `GET /auth/me` once when the React app mounts to determine the current authentication state. The result SHALL be stored in a React context (`AuthContext`) accessible to all components.
-
-#### Scenario: Auth state initialises from /auth/me on mount
-- **WHEN** the React app first renders
-- **THEN** `GET /auth/me` is called exactly once
-- **THEN** if HTTP 200, the returned user object is stored in `AuthContext`
-- **THEN** if HTTP 401, `AuthContext` user is `null`
-
-#### Scenario: Post-login redirect resolves auth state
-- **WHEN** the browser is redirected to `/` after a successful Google login
-- **THEN** `GET /auth/me` is called on mount and returns the newly provisioned user
-- **THEN** the nav bar displays the user's email without a page reload

@@ -10,6 +10,9 @@ import {
 } from "../api/notificationPreferences";
 import { getPreferences, PreferencesUpdateError, updatePreferences } from "../api/preferences";
 import Nav from "../components/Nav";
+import Button from "../components/ui/Button";
+import Input, { inputClasses } from "../components/ui/Input";
+import PageHeader from "../components/ui/PageHeader";
 import { listTimezoneOptions, type TimezoneOption } from "../utils/timezone";
 
 type NotificationPrefValue = {
@@ -262,9 +265,7 @@ export default function PreferencesPage() {
     <div className="flex h-screen flex-col">
       <Nav />
       <div className="flex-1 overflow-auto p-6">
-        <h1 className="mb-4 text-2xl font-bold text-gray-800">
-          {t("page.preferences.title")}
-        </h1>
+        <PageHeader title={t("page.preferences.title")} />
 
         <form
           onSubmit={(e) => void handleSubmit(e)}
@@ -278,13 +279,12 @@ export default function PreferencesPage() {
             >
               {t("page.preferences.durationLabel")}
             </label>
-            <input
+            <Input
               id="default-ticket-duration"
               type="number"
               min={1}
               value={durationMinutes}
               onChange={(e) => setDurationMinutes(Number(e.target.value))}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -320,7 +320,7 @@ export default function PreferencesPage() {
                 id="preferred-notification-channel"
                 value={preferredChannel ?? ""}
                 onChange={(e) => setPreferredChannel(e.target.value || null)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                className={inputClasses}
               >
                 <option value="">{t("page.preferences.noPreferredChannel")}</option>
                 {connectedChannels.map((channel) => (
@@ -343,7 +343,7 @@ export default function PreferencesPage() {
               id="notification-language"
               value={notificationLanguage ?? ""}
               onChange={(e) => setNotificationLanguage(e.target.value || null)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              className={inputClasses}
             >
               <option value="">{t("page.preferences.noNotificationLanguage")}</option>
               {availableLanguages.map((language) => (
@@ -363,7 +363,7 @@ export default function PreferencesPage() {
             </label>
             <div className="flex gap-2">
               <div className="relative w-full">
-                <input
+                <Input
                   id="timezone-search"
                   type="text"
                   role="combobox"
@@ -401,7 +401,6 @@ export default function PreferencesPage() {
                     }
                   }}
                   placeholder={t("page.preferences.timezoneSearchPlaceholder")}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
                 {isTimezoneDropdownOpen && (
                   <ul
@@ -435,17 +434,17 @@ export default function PreferencesPage() {
                 )}
               </div>
               {timezone && (
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => {
                     setTimezone(null);
                     setTimezoneSearch("");
                     setIsTimezoneDropdownOpen(false);
                   }}
-                  className="rounded bg-gray-100 px-3 py-2 text-sm hover:bg-gray-200"
                 >
                   {t("page.preferences.clearTimezone")}
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -490,7 +489,7 @@ export default function PreferencesPage() {
                               defaultValue: field,
                             })}
                           </label>
-                          <input
+                          <Input
                             id={`notification-${type.key}-${field}`}
                             type="number"
                             min={type.config_schema[field]?.min}
@@ -498,7 +497,7 @@ export default function PreferencesPage() {
                             onChange={(e) =>
                               handleNotificationConfigChange(type.key, field, Number(e.target.value))
                             }
-                            className="w-full max-w-[10rem] rounded border border-gray-300 px-3 py-2 text-sm"
+                            className="max-w-[10rem]"
                           />
                           <p className="mt-1 text-xs text-gray-500">
                             {t(`page.preferences.notifications.fields.${field}.help`, {
@@ -526,13 +525,9 @@ export default function PreferencesPage() {
           )}
 
           <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
+            <Button type="submit" disabled={saving}>
               {saving ? t("page.preferences.saving") : t("page.preferences.save")}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

@@ -4,6 +4,7 @@ import { getConnections } from "../api/serTicketProviders";
 import ConnectSerProviderModal from "../components/ConnectSerProviderModal";
 import Nav from "../components/Nav";
 import SerProviderRow from "../components/SerProviderRow";
+import PageHeader from "../components/ui/PageHeader";
 
 // Hardcoded known-provider list — mirrors AddVehicleModal's convention of
 // hardcoding small, slow-changing enumerations client-side rather than
@@ -55,7 +56,7 @@ export default function SerProvidersPage() {
     <div className="flex h-screen flex-col">
       <Nav />
       <div className="flex-1 overflow-auto p-6">
-        <h1 className="mb-4 text-2xl font-bold text-gray-800">{t("page.serProviders.title")}</h1>
+        <PageHeader title={t("page.serProviders.title")} />
 
         {error && (
           <p role="alert" className="mb-4 text-red-600">

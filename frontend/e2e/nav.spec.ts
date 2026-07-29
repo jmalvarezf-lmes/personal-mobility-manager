@@ -51,8 +51,11 @@ test.describe("Account dropdown", () => {
     const nav = new NavPage(page, MOCK_USER.email);
 
     await expect(nav.accountTrigger).not.toBeVisible();
+    // Scoped to the nav landmark: the redesigned landing page also renders
+    // its own "Login with Google" CTA in the hero section, so an unscoped
+    // locator would match two links.
     await expect(
-      page.getByRole("link", { name: /login with google/i }),
+      page.getByRole("navigation").getByRole("link", { name: /login with google/i }),
     ).toBeVisible();
   });
 });

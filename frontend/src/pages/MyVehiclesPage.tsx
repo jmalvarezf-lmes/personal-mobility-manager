@@ -8,6 +8,8 @@ import VehicleCard from "../components/VehicleCard";
 import VehicleLocationHistoryModal from "../components/VehicleLocationHistoryModal";
 import VehicleMap from "../components/VehicleMap";
 import VehicleSerTicketHistoryModal from "../components/VehicleSerTicketHistoryModal";
+import Button from "../components/ui/Button";
+import PageHeader from "../components/ui/PageHeader";
 import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
 
 export default function MyVehiclesPage() {
@@ -77,15 +79,12 @@ export default function MyVehiclesPage() {
     <div className="flex h-screen flex-col">
       <Nav />
       <div className="flex-1 overflow-auto p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-800">{t("page.myVehicles.title")}</h1>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-          >
-            {t("page.myVehicles.add")}
-          </button>
-        </div>
+        <PageHeader
+          title={t("page.myVehicles.title")}
+          action={
+            <Button onClick={() => setShowAdd(true)}>{t("page.myVehicles.add")}</Button>
+          }
+        />
 
         {error && (
           <p role="alert" className="mb-4 text-red-600">

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { fetchToyotaLocale } from "../api/config";
 import { createVehicle } from "../api/vehicles";
 import type { VehicleListItem } from "../types/vehicle";
+import Button from "./ui/Button";
+import Input, { inputClasses } from "./ui/Input";
 
 interface AddVehicleModalProps {
   onClose: () => void;
@@ -65,7 +67,7 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               id="brand"
               value={brand}
               onChange={(e) => setBrand(e.target.value as "toyota" | "generic")}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              className={inputClasses}
             >
               <option value="generic">{t("modal.addVehicle.brandGeneric")}</option>
               <option value="toyota">{t("modal.addVehicle.brandToyota")}</option>
@@ -76,13 +78,12 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display-name">
               {t("common.displayName")}
             </label>
-            <input
+            <Input
               id="display-name"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               required
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -91,14 +92,13 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
               {t("vehicle.licensePlate")}{" "}
               <span className="text-xs text-gray-400">{t("modal.addVehicle.optional")}</span>
             </label>
-            <input
+            <Input
               id="license-plate"
               type="text"
               value={licensePlate}
               onChange={(e) => setLicensePlate(e.target.value)}
               maxLength={20}
               placeholder={t("vehicle.noLicensePlate")}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
 
@@ -108,52 +108,48 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="vin">
                   {t("vehicle.vin")}
                 </label>
-                <input
+                <Input
                   id="vin"
                   type="text"
                   value={vin}
                   onChange={(e) => setVin(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="username">
                   {t("common.username")}
                 </label>
-                <input
+                <Input
                   id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
                   {t("common.password")}
                 </label>
-                <input
+                <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="locale">
                   {t("common.locale")}
                 </label>
-                <input
+                <Input
                   id="locale"
                   type="text"
                   value={locale}
                   onChange={(e) => setLocale(e.target.value)}
                   required
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
             </>
@@ -166,20 +162,12 @@ export default function AddVehicleModal({ onClose, onCreated }: AddVehicleModalP
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
-            >
+            <Button type="button" variant="secondary" onClick={onClose}>
               {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={submitting}>
               {submitting ? t("modal.addVehicle.adding") : t("modal.addVehicle.add")}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

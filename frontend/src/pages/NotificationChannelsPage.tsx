@@ -4,6 +4,7 @@ import { getAvailableChannels, getConfiguredChannels } from "../api/notification
 import Nav from "../components/Nav";
 import NotificationChannelRow from "../components/notificationChannels/NotificationChannelRow";
 import { CONNECT_FLOW_REGISTRY } from "../components/notificationChannels/registry";
+import PageHeader from "../components/ui/PageHeader";
 
 export default function NotificationChannelsPage() {
   const { t } = useTranslation();
@@ -54,9 +55,7 @@ export default function NotificationChannelsPage() {
     <div className="flex h-screen flex-col">
       <Nav />
       <div className="flex-1 overflow-auto p-6">
-        <h1 className="mb-4 text-2xl font-bold text-gray-800">
-          {t("page.notificationChannels.title")}
-        </h1>
+        <PageHeader title={t("page.notificationChannels.title")} />
 
         {error && (
           <p role="alert" className="mb-4 text-red-600">

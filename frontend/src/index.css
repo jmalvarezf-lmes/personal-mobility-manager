@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* Brand palette sampled from `frontend/public/logo.png`. `brand-blue` and
+   `brand-navy` are near-duplicates of Tailwind's own `blue-600`/`slate-800`
+   (already used across the app) — kept as distinct tokens so primitives can
+   reference "the brand color" explicitly. `brand-teal` is new: the logo's
+   accent color, with no existing equivalent in the default palette. */
+@theme {
+  --color-brand-teal: #37cfad;
+  --color-brand-blue: #1767cc;
+  --color-brand-navy: #1e273e;
+}
+
 /* Chromium draws a default focus outline around a clicked SVG path using its
    bounding box, not its actual shape. For a MultiPolygon zone made of many
    scattered pieces, that bounding box can span a huge area and look like a

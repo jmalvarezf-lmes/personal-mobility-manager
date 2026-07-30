@@ -2,6 +2,8 @@
   <img src="frontend/public/logo.png" alt="Personal Mobility Manager logo" width="220" />
 </p>
 
+[![codecov](https://codecov.io/github/jmalvarezf-lmes/personal-mobility-manager/graph/badge.svg?token=8M1756CGG4)](https://codecov.io/github/jmalvarezf-lmes/personal-mobility-manager)
+
 # Personal Mobility Manager
 
 Stop paying Madrid SER parking fines because you forgot to buy a ticket. This

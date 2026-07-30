@@ -15,7 +15,7 @@ run:
 	$(VENV)/bin/mobility-manager
 
 test:
-	$(PYTHON) -m pytest tests/ --cov=mobility_manager --cov-report=term-missing
+	$(PYTHON) -m pytest tests/ --cov=mobility_manager --cov-report=term-missing --cov-report=xml
 
 # Alias for `test` — AGENTS.md's documented coverage-check command; `test`
 # already runs with --cov, kept as one command so the two never drift apart.

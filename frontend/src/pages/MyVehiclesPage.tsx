@@ -10,7 +10,7 @@ import VehicleMap from "../components/VehicleMap";
 import VehicleSerTicketHistoryModal from "../components/VehicleSerTicketHistoryModal";
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
-import type { VehicleDetail, VehicleListItem } from "../types/vehicle";
+import type { VehicleDetail, VehicleListItem, VehicleLocation } from "../types/vehicle";
 
 export default function MyVehiclesPage() {
   const { t } = useTranslation();
@@ -50,6 +50,12 @@ export default function MyVehiclesPage() {
 
   function handleDeleted(vehicleId: string) {
     setVehicles((prev) => prev.filter((v) => v.vehicle_id !== vehicleId));
+  }
+
+  function handleLocationUpdated(vehicleId: string, location: VehicleLocation) {
+    setVehicles((prev) =>
+      prev.map((v) => (v.vehicle_id === vehicleId ? { ...v, location } : v)),
+    );
   }
 
   function handleUpdated(updated: VehicleDetail) {
@@ -116,6 +122,7 @@ export default function MyVehiclesPage() {
               onDeleted={handleDeleted}
               onViewHistory={(vehicle) => setHistoryVehicle(vehicle)}
               onViewSerTickets={(vehicle) => setSerTicketsVehicle(vehicle)}
+              onLocationUpdated={handleLocationUpdated}
             />
           ))}
         </div>

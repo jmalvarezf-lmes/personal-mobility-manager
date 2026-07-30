@@ -5,6 +5,7 @@ Endpoints:
   POST   /vehicles                                — register a new vehicle
   GET    /vehicles/{vehicle_id}/location           — latest known location
   GET    /vehicles/{vehicle_id}/locations          — paginated location history
+  POST   /vehicles/{vehicle_id}/locations          — owner-submitted location (session auth, generic only)
   GET    /vehicles/{vehicle_id}/ser-tickets        — paginated SER ticket history
   POST   /vehicles/{token}/location                — push ingest from generic device
   GET    /vehicles/{vehicle_id}/ser-parking-exemptions    — view exemption
@@ -389,6 +390,81 @@ def push_vehicle_location(
     vehicle_id = config_repo.find_vehicle_by_token(token)
     if vehicle_id is None:
         raise HTTPException(status_code=404, detail="Unknown token")
+
+    record_use_case = request.app.state.record_vehicle_location
+
+    try:
+        record_use_case.execute(
+            vehicle_id=vehicle_id,
+            lat=body.lat,
+            lon=body.lon,
+            recorded_at=body.recorded_at,
+            source="push",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return Response(status_code=204)
+
+
+def _owned_vehicle_id_key(request: Request) -> str:
+    """
+    Rate-limit key: the target vehicle's ID (path parameter), not the
+    caller's IP address — the session-authenticated counterpart of
+    `_vehicle_token_key` above, for the same reason: a single vehicle
+    receiving location submissions faster than 1/minute could otherwise
+    retrigger `SerTicketCreationTriggerHandler`'s zone-transition gate more
+    often than intended, regardless of which IP address the submissions
+    come from (see `_vehicle_token_key`'s docstring and design.md's
+    "Rate limiting mirrors both existing precedents").
+    """
+    return str(request.path_params["vehicle_id"])
+
+
+@router.post("/{vehicle_id}/locations", status_code=204)
+@limiter.limit("60/minute")
+@limiter.limit("1/minute", key_func=_owned_vehicle_id_key)
+def push_vehicle_location_authenticated(
+    request: Request,
+    vehicle_id: UUID,
+    body: PushLocationRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> Response:
+    """
+    Accept a GPS location submission from the authenticated owner of a
+    generic vehicle, via their own logged-in session — no device token
+    required.
+
+    Deliberately a distinct route from `POST /{token}/location` (plural
+    `locations`, not singular `location`): `location_token` values are
+    UUID-formatted, so a `{vehicle_id}` path converter on the same route
+    shape as the token route would be ambiguous / could silently misroute.
+    See design.md decision "Path must be `locations` (plural)...".
+
+    Restricted to `Brand.GENERIC` vehicles — Toyota vehicles get their
+    location exclusively from the Toyota backend poll, so accepting a
+    manual submission for one would create a second, conflicting source of
+    truth. Rejected with 400 (not 404/403 — the caller does own the
+    vehicle; the request is simply invalid for this vehicle type).
+
+    Delegates to the same `RecordVehicleLocation` use case as
+    `push_vehicle_location`, with `source="push"` — persistence, dedup, and
+    event semantics stay identical to the device-push path.
+
+    Rate-limited two ways, independently, mirroring `push_vehicle_location`:
+    60/minute per remote address, and 1/minute per `vehicle_id` (see
+    `_owned_vehicle_id_key`).
+    """
+    # Ownership is checked here (after `body` has already been parsed and
+    # validated above), not via Depends(require_owned_vehicle) — see
+    # deps.py module docstring / design.md decision 5 amendment.
+    vehicle = get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    if vehicle.brand != Brand.GENERIC:
+        raise HTTPException(
+            status_code=400,
+            detail="Only generic vehicles accept manual location submissions",
+        )
 
     record_use_case = request.app.state.record_vehicle_location
 

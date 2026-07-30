@@ -1,12 +1,34 @@
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getVehicle } from "../api/vehicles";
-import type { VehicleListItem } from "../types/vehicle";
-import { renderWithProviders, screen } from "../test/render";
+import { getVehicle, pushVehicleLocation } from "../api/vehicles";
+import type { VehicleListItem, VehicleLocation } from "../types/vehicle";
+import { renderWithProviders, screen, waitFor } from "../test/render";
 import VehicleCard from "./VehicleCard";
 
 vi.mock("../api/vehicles");
+
+/**
+ * Mirrors how MyVehiclesPage wires `onLocationUpdated` into vehicle-list
+ * state, so the full round trip through the real (non-mocked)
+ * SetVehicleLocationModal can be exercised end to end.
+ */
+function VehicleCardWithLocationState({ vehicle: initial }: { vehicle: VehicleListItem }) {
+  const [vehicle, setVehicle] = useState(initial);
+  return (
+    <VehicleCard
+      vehicle={vehicle}
+      onEdit={noop}
+      onDeleted={noop}
+      onViewHistory={noop}
+      onViewSerTickets={noop}
+      onLocationUpdated={(_vehicleId: string, location: VehicleLocation) =>
+        setVehicle((v) => ({ ...v, location }))
+      }
+    />
+  );
+}
 
 function makeVehicle(overrides: Partial<VehicleListItem> = {}): VehicleListItem {
   return {
@@ -167,5 +189,94 @@ describe("VehicleCard SER tickets button", () => {
     await userEvent.click(screen.getByRole("button", { name: /view ser tickets/i }));
 
     expect(onViewSerTickets).toHaveBeenCalledWith(vehicle);
+  });
+});
+
+describe("VehicleCard set-location action", () => {
+  beforeEach(() => {
+    vi.mocked(getVehicle).mockResolvedValue({
+      vehicle_id: "1",
+      brand: "generic",
+      display_name: "My scooter",
+      vin: null,
+      license_plate: null,
+      config: { location_token: "tok" },
+      ambient_label: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows the 'Set location' button for a generic vehicle", () => {
+    const vehicle = makeVehicle({ brand: "generic" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Set location" })).toBeInTheDocument();
+  });
+
+  it("does not show the 'Set location' button for a Toyota vehicle", () => {
+    const vehicle = makeVehicle({ brand: "toyota" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Set location" })).not.toBeInTheDocument();
+  });
+
+  it("opens the SetVehicleLocationModal when the button is clicked", async () => {
+    const vehicle = makeVehicle({ brand: "generic" });
+    const user = userEvent.setup();
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Set location" }));
+
+    expect(screen.getByRole("dialog", { name: "Set location" })).toBeInTheDocument();
+  });
+
+  it("closes the modal and updates the displayed location after a full set-location round trip", async () => {
+    vi.mocked(pushVehicleLocation).mockResolvedValue(undefined);
+    const vehicle = makeVehicle({ brand: "generic", location: null });
+    const user = userEvent.setup();
+    renderWithProviders(<VehicleCardWithLocationState vehicle={vehicle} />);
+
+    await user.click(screen.getByRole("button", { name: "Set location" }));
+    expect(screen.getByRole("dialog", { name: "Set location" })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Latitude"), "40.1");
+    await user.type(screen.getByLabelText("Longitude"), "-3.5");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(pushVehicleLocation).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ lat: 40.1, lon: -3.5 }),
+    );
+    expect(screen.getByText("Location: 40.10000, -3.50000")).toBeInTheDocument();
   });
 });

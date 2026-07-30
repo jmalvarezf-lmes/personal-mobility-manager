@@ -9,6 +9,7 @@ import {
   getVehicle,
   getVehicleLocationHistory,
   listVehicles,
+  pushVehicleLocation,
   setSerParkingExemption,
   updateVehicle,
 } from "./vehicles";
@@ -271,6 +272,40 @@ describe("vehicles api", () => {
       await expect(setSerParkingExemption("1", "MAD", "99")).rejects.toThrow(
         "Zone not found",
       );
+    });
+  });
+
+  describe("pushVehicleLocation", () => {
+    it("POSTs the location body to the vehicle's locations endpoint", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+      const body = { lat: 40.4168, lon: -3.7038, recorded_at: "2024-01-01T00:00:00Z" };
+
+      await pushVehicleLocation("1", body);
+
+      expect(fetch).toHaveBeenCalledWith("/api/vehicles/1/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+    });
+
+    it("throws an Error whose message includes the response body text", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response("Too many requests", { status: 429 }),
+      );
+
+      await expect(
+        pushVehicleLocation("1", { lat: 0, lon: 0, recorded_at: "2024-01-01T00:00:00Z" }),
+      ).rejects.toThrow("Too many requests");
+    });
+
+    it("falls back to a generic message when the response body is empty", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response("", { status: 500 }));
+
+      await expect(
+        pushVehicleLocation("1", { lat: 0, lon: 0, recorded_at: "2024-01-01T00:00:00Z" }),
+      ).rejects.toThrow("Failed to push vehicle location: 500");
     });
   });
 

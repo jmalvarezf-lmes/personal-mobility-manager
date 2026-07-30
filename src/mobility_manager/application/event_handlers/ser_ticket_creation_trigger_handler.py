@@ -5,22 +5,20 @@ Subscribed to VehicleLocationUpdated alongside SerTicketNotificationTriggerHandl
 (see design.md decision 1) — active only when the vehicle owner's
 `UserPreferences.auto_create_ticket` is `true`.
 
-Gates on a *zone transition*, not raw movement distance (see
-change-ser-auto-ticket-zone-gate design.md): a vehicle driving around inside
-an already-covered SER zone should not repeatedly reach
-`DetermineSerTicketRequirement`, while a vehicle that crosses into a new zone
-with only a small movement must still be checked. Ahead of the zone
-comparison, a small fixed GPS-noise floor
+The "is this ping worth acting on" decision (previously: a zone-transition
+gate, see change-ser-auto-ticket-zone-gate design.md) is now delegated to the
+shared `SerZoneRecheckGate` collaborator (see
+change-ser-ticket-stationary-recheck design.md D3/D4): this handler passes
+its own fixed GPS-noise floor
 (`get_ser_ticket_creation_zone_change_floor_meters()`, default 10 meters,
-technical/environment-only — not a user preference) skips the handler
-entirely, without any zone lookup, when movement since the previous
-recorded location is below it. When the floor is cleared (or there is no
-previous location at all — a vehicle's first-ever recorded location always
-proceeds), the SER zone containing the previous location and the SER zone
-containing the event's coordinates are each resolved via
-`FindContainingSerZone` and compared by `(city_code, zone_number)` (`None`
-is its own distinct state). Only a genuine zone change proceeds to
-`DetermineSerTicketRequirement`.
+technical/environment-only — not a user preference) as `movement_floor_meters`.
+The gate applies that floor plus a zone-unchanged skip only while the vehicle
+holds an active `ParkingTicket`; when it holds none, the gate always signals
+a recheck regardless of movement or zone, since time alone (enforcement
+schedule activation, an existing ticket's expiry) can flip the requirement
+for a stationary vehicle. When the gate signals `should_check=True`, its
+resolved `zone` is used directly for the `DetermineSerTicketRequirement` call
+below — no redundant `FindContainingSerZone` lookup here.
 
 `DetermineSerTicketRequirement` itself is unchanged from
 `ser-zone-ticket-notification`'s reuse of it, including exemption handling
@@ -63,11 +61,10 @@ from mobility_manager.application.use_cases.create_ser_ticket import CreateSerTi
 from mobility_manager.application.use_cases.determine_ser_ticket_requirement import (
     DetermineSerTicketRequirement,
 )
-from mobility_manager.application.use_cases.find_containing_ser_zone import (
-    FindContainingSerZone,
+from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
+    SerZoneRecheckGate,
 )
 from mobility_manager.config import get_ser_ticket_creation_zone_change_floor_meters
-from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
 from mobility_manager.domain.events.ser_ticket_creation_failed import (
     SerTicketCreationFailed,
@@ -89,24 +86,14 @@ from mobility_manager.domain.ports.user_preferences_repository import (
 from mobility_manager.domain.ports.user_ser_provider_config_repository import (
     UserSerProviderConfigRepository,
 )
-from mobility_manager.domain.ports.vehicle_location_repository import (
-    VehicleLocationRepository,
-)
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
-from mobility_manager.domain.value_objects.location import GeoLocation, distance_m
+from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.infrastructure.observability.metrics import (
     record_ser_ticket_auto_creation,
 )
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
-
-
-def _zone_key(zone: SerZone | None) -> tuple[str | None, str | None]:
-    """Return `(city_code, zone_number)` for `zone`, or `(None, None)` if `zone` is None."""
-    if zone is None:
-        return (None, None)
-    return (zone.city_code, zone.zone_number)
 
 
 def _map_exception_to_reason(exc: Exception) -> str:
@@ -142,20 +129,18 @@ class SerTicketCreationTriggerHandler:
     def __init__(
         self,
         vehicle_repo: VehicleRepository,
-        vehicle_location_repo: VehicleLocationRepository,
         user_preferences_repo: UserPreferencesRepository,
         user_ser_provider_config_repo: UserSerProviderConfigRepository,
-        find_containing_ser_zone: FindContainingSerZone,
         determine_ser_ticket_requirement: DetermineSerTicketRequirement,
+        ser_zone_recheck_gate: SerZoneRecheckGate,
         create_ser_ticket: CreateSerTicket,
         event_publisher: EventPublisher,
     ) -> None:
         self._vehicle_repo = vehicle_repo
-        self._vehicle_location_repo = vehicle_location_repo
         self._user_preferences_repo = user_preferences_repo
         self._user_ser_provider_config_repo = user_ser_provider_config_repo
-        self._find_containing_ser_zone = find_containing_ser_zone
         self._determine_ser_ticket_requirement = determine_ser_ticket_requirement
+        self._ser_zone_recheck_gate = ser_zone_recheck_gate
         self._create_ser_ticket = create_ser_ticket
         self._event_publisher = event_publisher
 
@@ -165,17 +150,14 @@ class SerTicketCreationTriggerHandler:
 
         1. Look up the Vehicle. Skip silently if it no longer exists.
         2. Skip silently if the owner's `auto_create_ticket` is not `true`.
-        3. If there is a previous recorded location, compute the distance to
-           the event's coordinates. If it is below the fixed GPS-noise floor
-           (`get_ser_ticket_creation_zone_change_floor_meters()`), skip
-           silently without looking up any zone. Otherwise (or if there is
-           no previous location at all — a vehicle's first-ever recorded
-           location always proceeds), resolve the SER zone containing the
-           previous location and the SER zone containing the event's
-           coordinates, and skip silently if they are the same zone
-           (`(city_code, zone_number)`, `None` as its own state).
-        4. Check whether a ticket is required for the event's zone.
-           Skip silently if not required (including a matching exemption).
+        3. Call `SerZoneRecheckGate.evaluate`, passing the fixed GPS-noise
+           floor (`get_ser_ticket_creation_zone_change_floor_meters()`) as
+           `movement_floor_meters`. Skip silently, without calling
+           `DetermineSerTicketRequirement`, if the returned decision's
+           `should_check` is `False`.
+        4. Check whether a ticket is required for the decision's resolved
+           `zone`. Skip silently if not required (including a matching
+           exemption).
         5. Resolve the provider (first of `list_connected_providers`) and
            call `CreateSerTicket.execute`, using the event's own
            coordinates as `location`.
@@ -195,32 +177,15 @@ class SerTicketCreationTriggerHandler:
                     logger.info("auto_create_ticket disabled for user: %s", vehicle.user_id)
                     return
 
-                previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
-                # A vehicle's first-ever recorded location (no previous
-                # location at all) does NOT skip this step and always
-                # proceeds to the zone-requirement check below, since there
-                # is no previous zone to compare against.
-                if previous is not None:
-                    distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
-                    floor = get_ser_ticket_creation_zone_change_floor_meters()
-                    if distance < floor:
-                        logger.info(
-                            "Movement below GPS-noise floor (%s meters) for vehicle: %s", distance, event.vehicle_id
-                        )
-                        return
-                    previous_zone = self._find_containing_ser_zone.execute(
-                        GeoLocation(lat=previous.latitude, lng=previous.longitude)
-                    )
-                    zone = self._find_containing_ser_zone.execute(
-                        GeoLocation(lat=event.latitude, lng=event.longitude)
-                    )
-                    if _zone_key(previous_zone) == _zone_key(zone):
-                        logger.info("SER zone unchanged for vehicle: %s", event.vehicle_id)
-                        return
-                else:
-                    zone = self._find_containing_ser_zone.execute(
-                        GeoLocation(lat=event.latitude, lng=event.longitude)
-                    )
+                decision = self._ser_zone_recheck_gate.evaluate(
+                    event, movement_floor_meters=get_ser_ticket_creation_zone_change_floor_meters()
+                )
+                if not decision.should_check:
+                    # SerZoneRecheckGate already logs the specific skip
+                    # reason (movement-below-floor or zone-unchanged) —
+                    # no redundant generic log line here.
+                    return
+                zone = decision.zone
 
                 if not self._determine_ser_ticket_requirement.execute(zone, event.vehicle_id, at=event.received_at):
                     logger.info("No SER ticket required for vehicle: %s", event.vehicle_id)

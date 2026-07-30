@@ -105,13 +105,18 @@ class InMemoryUserSerProviderConfigRepo:
 
 
 class InMemoryParkingTicketRepo:
-    def __init__(self, raise_on_save: bool = False) -> None:
+    def __init__(self, raise_on_save: bool = False, fail_first_n_saves: int = 0) -> None:
         self.saved: list[ParkingTicket] = []
+        self.save_calls = 0
         self._raise_on_save = raise_on_save
+        self._fail_first_n_saves = fail_first_n_saves
 
     def save(self, ticket: ParkingTicket) -> None:
+        self.save_calls += 1
         if self._raise_on_save:
             raise RuntimeError("db is down")
+        if self.save_calls <= self._fail_first_n_saves:
+            raise RuntimeError("transient db blip")
         self.saved.append(ticket)
 
 
@@ -307,14 +312,19 @@ def test_unregistered_provider_raises_provider_not_found() -> None:
     assert ticket_repo.saved == []
 
 
-def test_ticket_repo_save_failure_is_logged_and_raised_as_persistence_error(caplog: pytest.LogCaptureFixture) -> None:
+def test_ticket_repo_save_failure_is_logged_and_raised_as_persistence_error_after_exhausting_retries(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     """
-    The provider already created the real ticket by this point — a save
-    failure must surface as SerTicketPersistenceError (not a bare re-raise
-    of the underlying exception), chained via `from`, so callers can
-    distinguish "charged but unpersisted" from any other creation failure
-    (see this fix's docstring note in create_ser_ticket.py).
+    The provider already created the real ticket by this point. A save
+    failure is retried a bounded number of times (`_TICKET_SAVE_MAX_ATTEMPTS`)
+    before surfacing as SerTicketPersistenceError (not a bare re-raise of the
+    underlying exception), chained via `from`, so callers can distinguish
+    "charged but unpersisted" from any other creation failure (see this
+    fix's docstring note in create_ser_ticket.py). The retry delay is
+    monkeypatched to 0 so the test stays fast.
     """
+    monkeypatch.setattr("mobility_manager.application.use_cases.create_ser_ticket._TICKET_SAVE_RETRY_DELAY_SECONDS", 0)
     vehicle_repo = InMemoryVehicleRepo()
     config_repo = InMemoryUserSerProviderConfigRepo()
     ticket_repo = InMemoryParkingTicketRepo(raise_on_save=True)
@@ -342,7 +352,50 @@ def test_ticket_repo_save_failure_is_logged_and_raised_as_persistence_error(capl
 
     assert isinstance(exc_info.value.__cause__, RuntimeError)
     assert ticket_repo.saved == []
+    assert ticket_repo.save_calls == 3
     assert any("Failed to persist ParkingTicket" in record.message for record in caplog.records)
+
+
+def test_ticket_repo_save_succeeds_after_transient_failures_no_exception_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    A save that fails once or twice (transient blip: query timeout,
+    deadlock, momentary connection loss) but succeeds within the bounded
+    retry budget must persist the ticket normally, with no exception raised
+    — this is the fix for the financial-risk regression where a persistence
+    failure after a real provider charge would otherwise be indistinguishable
+    from "no ticket ever existed", causing SerZoneRecheckGate/
+    SerTicketCreationTriggerHandler to keep retrying the real charge on every
+    poll. The retry delay is monkeypatched to 0 so the test stays fast.
+    """
+    monkeypatch.setattr("mobility_manager.application.use_cases.create_ser_ticket._TICKET_SAVE_RETRY_DELAY_SECONDS", 0)
+    vehicle_repo = InMemoryVehicleRepo()
+    config_repo = InMemoryUserSerProviderConfigRepo()
+    ticket_repo = InMemoryParkingTicketRepo(fail_first_n_saves=2)
+    provider = FakeSerTicketProvider()
+    uc = CreateSerTicket(
+        vehicle_repo=vehicle_repo,
+        config_repo=config_repo,
+        ticket_repo=ticket_repo,
+        providers={"madrid_ser_app": provider},
+        event_publisher=FakeEventPublisher(),
+        get_latest_vehicle_location=FakeGetLatestVehicleLocation(),
+    )
+    vehicle = _make_vehicle(_OWNER)
+    vehicle_repo.add(vehicle)
+    config_repo.add(_OWNER, "madrid_ser_app", SerProviderSession(data={"token": "abc"}))
+
+    result = uc.execute(
+        user_id=_OWNER,
+        vehicle_id=vehicle.id,
+        provider="madrid_ser_app",
+        duration_minutes=60,
+        location=GeoLocation(lat=40.0, lng=-3.0),
+    )
+
+    assert ticket_repo.save_calls == 3
+    assert ticket_repo.saved == [result]
 
 
 def test_vehicle_not_present_in_provider_publishes_event_and_reraises() -> None:

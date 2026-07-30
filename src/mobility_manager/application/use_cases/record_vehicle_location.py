@@ -70,26 +70,36 @@ class RecordVehicleLocation:
             raise ValueError(f"recorded_at is more than {_MAX_FUTURE_SECONDS}s in the future")
 
         latest = self._location_repo.get_latest(vehicle_id)
-        if latest is not None and latest.latitude == lat and latest.longitude == lon:
+        is_duplicate = latest is not None and latest.latitude == lat and latest.longitude == lon
+
+        if is_duplicate:
+            # Persistence and publication are independent (see
+            # change-ser-ticket-stationary-recheck design.md D2): still skip
+            # writing a row identical to the last stored one (no bloat), but
+            # always publish VehicleLocationUpdated below regardless, with a
+            # freshly-computed received_at — a stationary vehicle's SER-ticket
+            # requirement can change purely from the passage of time
+            # (enforcement schedule, ticket expiry), and that re-evaluation
+            # depends on VehicleLocationUpdated still firing every poll.
             logger.info(
-                "Discarding duplicate location for vehicle %s (source=%s): unchanged since last stored (%s, %s)",
+                "Discarding duplicate location row for vehicle %s (source=%s): unchanged since last stored (%s, %s)",
                 vehicle_id,
                 source,
                 lat,
                 lon,
             )
-            return
+        else:
+            location = VehicleLocation(
+                id=uuid4(),
+                vehicle_id=vehicle_id,
+                latitude=lat,
+                longitude=lon,
+                recorded_at=recorded_at_utc,
+                received_at=now_utc,
+                source=source,
+            )
+            self._location_repo.save(location)
 
-        location = VehicleLocation(
-            id=uuid4(),
-            vehicle_id=vehicle_id,
-            latitude=lat,
-            longitude=lon,
-            recorded_at=recorded_at_utc,
-            received_at=now_utc,
-            source=source,
-        )
-        self._location_repo.save(location)
         self._event_publisher.publish(
             VehicleLocationUpdated(
                 vehicle_id=vehicle_id,

@@ -20,6 +20,9 @@ from opentelemetry.trace import StatusCode
 from mobility_manager.application.event_handlers.ser_ticket_notification_trigger_handler import (
     SerTicketNotificationTriggerHandler,
 )
+from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
+    SerZoneRecheckDecision,
+)
 from mobility_manager.domain.entities.user_notification_preference import (
     UserNotificationPreference,
 )
@@ -28,7 +31,6 @@ from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
 from mobility_manager.domain.value_objects.brand import Brand
-from mobility_manager.domain.value_objects.location import GeoLocation
 
 _LAT, _LNG = 40.4168, -3.7038
 
@@ -43,9 +45,14 @@ class _FakeVehicleRepo:
         return self._vehicle if vehicle_id == self._vehicle.id else None
 
 
-class _FakeVehicleLocationRepo:
-    def get_previous(self, vehicle_id: UUID, before: datetime):
-        return None  # first-ever location -> always proceeds to zone check
+class _FakeSerZoneRecheckGate:
+    def __init__(self, *, raises: bool = False) -> None:
+        self._raises = raises
+
+    def evaluate(self, event: VehicleLocationUpdated, movement_floor_meters: float) -> SerZoneRecheckDecision:
+        if self._raises:
+            raise RuntimeError("zone lookup boom")
+        return SerZoneRecheckDecision(should_check=True, zone=None)
 
 
 class _FakeNotificationPreferencesRepo:
@@ -58,16 +65,6 @@ class _FakeNotificationPreferencesRepo:
 
 class _FakeUserPreferencesRepo:
     def find_by_user_id(self, user_id: UUID):
-        return None
-
-
-class _FakeFindContainingSerZone:
-    def __init__(self, *, raises: bool = False) -> None:
-        self._raises = raises
-
-    def execute(self, location: GeoLocation):
-        if self._raises:
-            raise RuntimeError("zone lookup boom")
         return None
 
 
@@ -104,18 +101,17 @@ def _make_event(vehicle_id: UUID, now: datetime) -> VehicleLocationUpdated:
     )
 
 
-def _make_handler(vehicle_repo, find_containing_ser_zone) -> SerTicketNotificationTriggerHandler:
+def _make_handler(vehicle_repo, ser_zone_recheck_gate) -> SerTicketNotificationTriggerHandler:
     return SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,  # type: ignore[arg-type]
-        vehicle_location_repo=_FakeVehicleLocationRepo(),  # type: ignore[arg-type]
         user_preferences_repo=_FakeUserPreferencesRepo(),  # type: ignore[arg-type]
         notification_preferences_repo=_FakeNotificationPreferencesRepo(
             UserNotificationPreference(
                 user_id=uuid4(), type_key=_TYPE_KEY, enabled=True, config={}, updated_at=datetime.now(UTC)
             )
         ),  # type: ignore[arg-type]
-        find_containing_ser_zone=find_containing_ser_zone,  # type: ignore[arg-type]
         determine_ser_ticket_requirement=_FakeDetermineSerTicketRequirement(),  # type: ignore[arg-type]
+        ser_zone_recheck_gate=ser_zone_recheck_gate,  # type: ignore[arg-type]
         send_notification=_FakeSendNotification(),  # type: ignore[arg-type]
     )
 
@@ -127,7 +123,7 @@ def test_successful_handle_produces_a_span_with_no_error(
     monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     vehicle = _make_vehicle(vehicle_id, user_id)
-    handler = _make_handler(_FakeVehicleRepo(vehicle), _FakeFindContainingSerZone())
+    handler = _make_handler(_FakeVehicleRepo(vehicle), _FakeSerZoneRecheckGate())
 
     handler.on_vehicle_location_updated(_make_event(vehicle_id, now))
 
@@ -144,7 +140,7 @@ def test_failed_zone_lookup_marks_span_as_error_without_raising(
     monkeypatch.setenv("DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS", "50")
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     vehicle = _make_vehicle(vehicle_id, user_id)
-    handler = _make_handler(_FakeVehicleRepo(vehicle), _FakeFindContainingSerZone(raises=True))
+    handler = _make_handler(_FakeVehicleRepo(vehicle), _FakeSerZoneRecheckGate(raises=True))
 
     result = handler.on_vehicle_location_updated(_make_event(vehicle_id, now))  # must not raise
 

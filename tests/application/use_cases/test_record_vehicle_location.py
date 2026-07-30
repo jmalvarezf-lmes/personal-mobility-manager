@@ -173,7 +173,15 @@ def test_no_event_published_on_validation_failure() -> None:
     assert publisher.published == []
 
 
-def test_duplicate_location_is_not_saved_or_published() -> None:
+def test_duplicate_location_is_not_saved_but_event_is_still_published() -> None:
+    """
+    Persistence and publication are independent (see
+    change-ser-ticket-stationary-recheck design.md D2): a duplicate
+    coordinate still skips the redundant DB row, but VehicleLocationUpdated
+    is published every time regardless — a stationary vehicle's SER-ticket
+    requirement can change purely from the passage of time, and that
+    re-evaluation depends on the event still firing every poll.
+    """
     uc, repo, publisher = _make_use_case()
     vehicle_id = uuid4()
     first_time = datetime.now(UTC) - timedelta(minutes=5)
@@ -183,11 +191,32 @@ def test_duplicate_location_is_not_saved_or_published() -> None:
     uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=second_time, source="pull")
 
     assert len(repo.saved) == 1
-    assert len(publisher.published) == 1
+    assert len(publisher.published) == 2
+    second_event = publisher.published[1]
+    assert isinstance(second_event, VehicleLocationUpdated)
+    assert second_event.latitude == 40.4
+    assert second_event.longitude == -3.7
+
+
+def test_duplicate_location_published_event_has_fresh_received_at() -> None:
+    """The republished event's received_at reflects this call, not the first ping's."""
+    uc, repo, publisher = _make_use_case()
+    vehicle_id = uuid4()
+    first_time = datetime.now(UTC) - timedelta(minutes=5)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=first_time, source="pull")
+
+    before_second_call = datetime.now(UTC)
+    uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=datetime.now(UTC), source="pull")
+    after_second_call = datetime.now(UTC)
+
+    first_received_at = repo.saved[0].received_at
+    second_received_at = publisher.published[1].received_at
+    assert second_received_at > first_received_at
+    assert before_second_call <= second_received_at <= after_second_call
 
 
 def test_duplicate_location_across_pull_and_push_sources_is_not_saved() -> None:
-    """Dedup applies regardless of which source (pull/push) reported the identical fix."""
+    """Dedup applies regardless of which source (pull/push) reported the identical fix, but the event still publishes."""
     uc, repo, publisher = _make_use_case()
     vehicle_id = uuid4()
     first_time = datetime.now(UTC) - timedelta(minutes=5)
@@ -197,7 +226,8 @@ def test_duplicate_location_across_pull_and_push_sources_is_not_saved() -> None:
     uc.execute(vehicle_id=vehicle_id, lat=40.4, lon=-3.7, recorded_at=second_time, source="push")
 
     assert len(repo.saved) == 1
-    assert len(publisher.published) == 1
+    assert len(publisher.published) == 2
+    assert publisher.published[1].source == "push"
 
 
 def test_changed_location_is_saved_and_published() -> None:

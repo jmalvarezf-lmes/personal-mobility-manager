@@ -9,6 +9,7 @@ via POST /parking/ser-tickets.
 """
 
 import logging
+import time
 from dataclasses import replace
 from uuid import UUID
 
@@ -38,6 +39,18 @@ from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 from mobility_manager.domain.value_objects.location import GeoLocation
 
 logger = logging.getLogger(__name__)
+
+# Bounded retry for `_ticket_repo.save(ticket)` below, after the provider has
+# already created (and charged) the real ticket (see this fix's docstring
+# note on SerTicketPersistenceError). Deliberately NOT a full fix for
+# extended outages — a DB outage long enough to defeat a handful of quick
+# retries already breaks much more of this app than just this save — this
+# only closes the realistic transient-failure window (query timeout,
+# deadlock, momentary connection blip). Internal technical constants, not
+# per-deployment tuning knobs — mirrors `_MAX_FUTURE_SECONDS` in
+# record_vehicle_location.py.
+_TICKET_SAVE_MAX_ATTEMPTS = 3
+_TICKET_SAVE_RETRY_DELAY_SECONDS = 0.2
 
 
 class CreateSerTicket:
@@ -107,7 +120,9 @@ class CreateSerTicket:
                 call for any other provider-side or resolution failure.
             SerTicketPersistenceError: If the provider already created (and
                 charged) the real ticket, but persisting our own
-                ParkingTicket record afterwards fails — this is the one
+                ParkingTicket record afterwards still fails after a bounded
+                retry (`_TICKET_SAVE_MAX_ATTEMPTS` attempts,
+                `_TICKET_SAVE_RETRY_DELAY_SECONDS` apart) — this is the one
                 exception this use case itself raises (rather than
                 propagating unmodified), because only this use case knows
                 that specific case occurred (see design.md's "CreateSerTicket
@@ -151,12 +166,33 @@ class CreateSerTicket:
             auto_created=auto_created,
         )
 
-        try:
-            self._ticket_repo.save(ticket)
-        except Exception as exc:
-            # The provider has already created (and charged) the real ticket
-            # at this point — a failure here means we lose our own record of
-            # a transaction that already happened on the provider's side.
+        # The provider has already created (and charged) the real ticket by
+        # this point — a save failure here would otherwise mean we lose our
+        # own record of a transaction that already happened on the
+        # provider's side. Bounded retry closes the realistic transient
+        # window (query timeout, deadlock, momentary connection blip)
+        # before giving up (see this fix's docstring note above and
+        # SerTicketPersistenceError's docstring).
+        save_exc: Exception | None = None
+        for attempt in range(1, _TICKET_SAVE_MAX_ATTEMPTS + 1):
+            try:
+                self._ticket_repo.save(ticket)
+                save_exc = None
+                break
+            except Exception as exc:
+                save_exc = exc
+                logger.warning(
+                    "Attempt %s/%s to persist ParkingTicket failed: vehicle_id=%s user_id=%s provider=%s",
+                    attempt,
+                    _TICKET_SAVE_MAX_ATTEMPTS,
+                    vehicle_id,
+                    user_id,
+                    provider,
+                )
+                if attempt < _TICKET_SAVE_MAX_ATTEMPTS:
+                    time.sleep(_TICKET_SAVE_RETRY_DELAY_SECONDS)
+
+        if save_exc is not None:
             # Log everything needed for a manual reconciliation against the
             # provider's own records (mirrors register_vehicle.py's pattern
             # of logging around a post-critical-write side effect, applied
@@ -165,17 +201,19 @@ class CreateSerTicket:
             # callers can distinguish "charged but unpersisted" from any
             # other creation failure (see this fix's docstring note above).
             logger.exception(
-                "Failed to persist ParkingTicket after provider already created it: "
-                "vehicle_id=%s user_id=%s provider=%s provider_reference=%s cost=%s end_date=%s",
+                "Failed to persist ParkingTicket after provider already created it, "
+                "after %s attempts: vehicle_id=%s user_id=%s provider=%s provider_reference=%s cost=%s end_date=%s",
+                _TICKET_SAVE_MAX_ATTEMPTS,
                 vehicle_id,
                 user_id,
                 provider,
                 ticket.provider_reference,
                 ticket.cost,
                 ticket.end_date,
+                exc_info=save_exc,
             )
             raise SerTicketPersistenceError(
                 f"Failed to persist ParkingTicket after provider already created it: vehicle_id={vehicle_id}"
-            ) from exc
+            ) from save_exc
 
         return ticket

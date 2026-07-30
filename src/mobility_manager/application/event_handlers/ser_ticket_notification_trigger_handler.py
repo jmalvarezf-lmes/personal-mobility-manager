@@ -31,15 +31,23 @@ system is about to (attempt to) handle it automatically. This handler's
 all three event-subscribed methods on this class share one `on_<event>`
 naming convention (see design.md decision 1).
 
-Unlike NotificationDispatchHandler, a vehicle's first-ever recorded
-location does NOT skip this handler — it always proceeds to the zone check
-(once the preference gate passes), because there is no prior location to
-compare against and a vehicle's very first fix could already be inside a
-SER zone.
+The "is this ping worth acting on" decision (previously: this handler's own
+previous-location/distance check) is now delegated to the shared
+`SerZoneRecheckGate` collaborator (see change-ser-ticket-stationary-recheck
+design.md D3/D4/D5): this handler passes its own effective movement
+threshold (the owner's `ser_zone_ticket_required` preference `threshold_m`
+if set, otherwise `DEFAULT_NOTIFICATION_MOVEMENT_THRESHOLD_METERS` —
+independent of `SerTicketCreationTriggerHandler`'s own floor, never sharing
+a call or value) as `movement_floor_meters`. The gate applies that floor
+plus a zone-unchanged skip only while the vehicle holds an active
+`ParkingTicket` (a gain for this handler — it previously lacked the
+zone-unchanged optimization entirely); when it holds none, the gate always
+signals a recheck regardless of movement or zone, since time alone
+(enforcement schedule activation, an existing ticket's expiry) can flip the
+requirement for a stationary vehicle.
 
-When the location is different enough, checks zone containment via
-FindContainingSerZone and whether a ticket is currently required via
-DetermineSerTicketRequirement, passing `event.vehicle_id` so a matching
+When the gate signals `should_check=True`, its resolved `zone` is checked
+via DetermineSerTicketRequirement, passing `event.vehicle_id` so a matching
 per-vehicle SER parking exemption (see the vehicle-ser-parking-exemption
 capability) suppresses the requirement the same as an inactive enforcement
 schedule would. If a ticket is still required, it notifies the vehicle
@@ -72,10 +80,10 @@ from mobility_manager.application.notification_templates import render
 from mobility_manager.application.use_cases.determine_ser_ticket_requirement import (
     DetermineSerTicketRequirement,
 )
-from mobility_manager.application.use_cases.find_containing_ser_zone import (
-    FindContainingSerZone,
-)
 from mobility_manager.application.use_cases.send_notification import SendNotification
+from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
+    SerZoneRecheckGate,
+)
 from mobility_manager.config import resolve_effective_threshold
 from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
 from mobility_manager.domain.events.ser_ticket_creation_failed import (
@@ -90,11 +98,8 @@ from mobility_manager.domain.ports.notification_preferences_repository import (
 from mobility_manager.domain.ports.user_preferences_repository import (
     UserPreferencesRepository,
 )
-from mobility_manager.domain.ports.vehicle_location_repository import (
-    VehicleLocationRepository,
-)
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
-from mobility_manager.domain.value_objects.location import GeoLocation, distance_m
+from mobility_manager.domain.value_objects.location import GeoLocation
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
@@ -113,19 +118,17 @@ class SerTicketNotificationTriggerHandler:
     def __init__(
         self,
         vehicle_repo: VehicleRepository,
-        vehicle_location_repo: VehicleLocationRepository,
         user_preferences_repo: UserPreferencesRepository,
         notification_preferences_repo: NotificationPreferencesRepository,
-        find_containing_ser_zone: FindContainingSerZone,
         determine_ser_ticket_requirement: DetermineSerTicketRequirement,
+        ser_zone_recheck_gate: SerZoneRecheckGate,
         send_notification: SendNotification,
     ) -> None:
         self._vehicle_repo = vehicle_repo
-        self._vehicle_location_repo = vehicle_location_repo
         self._user_preferences_repo = user_preferences_repo
         self._notification_preferences_repo = notification_preferences_repo
-        self._find_containing_ser_zone = find_containing_ser_zone
         self._determine_ser_ticket_requirement = determine_ser_ticket_requirement
+        self._ser_zone_recheck_gate = ser_zone_recheck_gate
         self._send_notification = send_notification
 
     def on_vehicle_location_updated(self, event: VehicleLocationUpdated) -> None:
@@ -139,15 +142,13 @@ class SerTicketNotificationTriggerHandler:
         owns this event in that case, not this handler. Then checks the
         owner's `ser_zone_ticket_required` preference — skips silently (no
         notification, no error) if the row is missing or disabled, before
-        any previous-location or zone lookup. When enabled, skips the SER
-        zone lookup entirely when the location is unchanged relative to the
-        vehicle's previous recorded location (below the owner's effective
-        threshold for this type). A vehicle's first-ever recorded location
-        does NOT count as "unchanged" — it always triggers a zone check.
+        calling `SerZoneRecheckGate.evaluate`. When enabled, calls the gate
+        with the owner's effective movement threshold for this type; skips
+        silently if the gate signals `should_check=False`.
 
-        When the location is different enough, checks zone containment and
-        whether a ticket is currently required. If required, looks up the
-        vehicle owner's preferences, renders the localized "SER ticket
+        When the gate signals `should_check=True`, checks whether a ticket
+        is currently required for its resolved `zone`. If required, looks up
+        the vehicle owner's preferences, renders the localized "SER ticket
         required" message, and sends it.
 
         The whole method body is wrapped in a broad try/except so that a
@@ -180,19 +181,15 @@ class SerTicketNotificationTriggerHandler:
                     logger.info("ser_zone_ticket_required notifications disabled for user: %s", vehicle.user_id)
                     return
 
-                previous = self._vehicle_location_repo.get_previous(event.vehicle_id, before=event.received_at)
-                # Unlike NotificationDispatchHandler (which skips entirely when
-                # there is no previous location to compare against), a
-                # first-ever location here still proceeds to the zone check
-                # below — intentional divergence, see module docstring.
-                if previous is not None:
-                    distance = distance_m(previous.latitude, previous.longitude, event.latitude, event.longitude)
-                    threshold = resolve_effective_threshold(notification_preference.config)
-                    if distance < threshold:
-                        logger.info("Movement below threshold (%s meters) for vehicle: %s", distance, event.vehicle_id)
-                        return
+                threshold = resolve_effective_threshold(notification_preference.config)
+                decision = self._ser_zone_recheck_gate.evaluate(event, movement_floor_meters=threshold)
+                if not decision.should_check:
+                    # SerZoneRecheckGate already logs the specific skip
+                    # reason (movement-below-floor or zone-unchanged) —
+                    # no redundant generic log line here.
+                    return
+                zone = decision.zone
 
-                zone = self._find_containing_ser_zone.execute(GeoLocation(lat=event.latitude, lng=event.longitude))
                 if not self._determine_ser_ticket_requirement.execute(zone, event.vehicle_id, at=event.received_at):
                     logger.info("No SER ticket required for vehicle: %s", event.vehicle_id)
                     return

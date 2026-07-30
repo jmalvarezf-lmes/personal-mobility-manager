@@ -90,6 +90,9 @@ from mobility_manager.application.use_cases.remove_notification_channel import (
 )
 from mobility_manager.application.use_cases.revoke_session import RevokeSession
 from mobility_manager.application.use_cases.send_notification import SendNotification
+from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
+    SerZoneRecheckGate,
+)
 from mobility_manager.application.use_cases.set_vehicle_ser_parking_exemption import (
     SetVehicleSerParkingExemption,
 )
@@ -463,13 +466,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         ambient_label_repo=vehicle_ambient_label_repo,
         label_exemption_rule=ser_label_exemption_rule,
     )
+    # Single shared instance, reused by both SerTicketCreationTriggerHandler
+    # and SerTicketNotificationTriggerHandler (see
+    # change-ser-ticket-stationary-recheck design.md D4) — reuses the
+    # vehicle_location_repo, find_containing_uc, and parking_ticket_repo
+    # already built above.
+    ser_zone_recheck_gate = SerZoneRecheckGate(
+        vehicle_location_repo=vehicle_location_repo,
+        find_containing_ser_zone=find_containing_uc,
+        ticket_repo=parking_ticket_repo,
+    )
     ser_ticket_notification_trigger_handler = SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,
-        vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
         notification_preferences_repo=notification_preferences_repo,
-        find_containing_ser_zone=find_containing_uc,
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
+        ser_zone_recheck_gate=ser_zone_recheck_gate,
         send_notification=send_notification_uc,
     )
     event_publisher.subscribe(
@@ -596,11 +608,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # instance already built for the manual POST /parking/ser-tickets endpoint.
     ser_ticket_creation_trigger_handler = SerTicketCreationTriggerHandler(
         vehicle_repo=vehicle_repo,
-        vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
         user_ser_provider_config_repo=user_ser_provider_config_repo,
-        find_containing_ser_zone=find_containing_uc,
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
+        ser_zone_recheck_gate=ser_zone_recheck_gate,
         create_ser_ticket=create_ser_ticket_uc,
         event_publisher=event_publisher,
     )

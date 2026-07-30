@@ -90,11 +90,10 @@ def _make_handler(
 ) -> SerTicketNotificationTriggerHandler:
     return SerTicketNotificationTriggerHandler(
         vehicle_repo=None,  # type: ignore[arg-type] - not exercised by these methods
-        vehicle_location_repo=None,  # type: ignore[arg-type]
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
         notification_preferences_repo=notification_preferences_repo,  # type: ignore[arg-type]
-        find_containing_ser_zone=None,  # type: ignore[arg-type]
         determine_ser_ticket_requirement=None,  # type: ignore[arg-type]
+        ser_zone_recheck_gate=None,  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
     )
 

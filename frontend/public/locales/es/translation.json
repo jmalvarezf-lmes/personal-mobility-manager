@@ -18,8 +18,10 @@
     "apiDocs": "Documentación API",
     "account": "Menú de cuenta",
     "logout": "Cerrar sesión",
+    "login": "Iniciar sesión",
     "loginGoogle": "Iniciar sesión con Google",
-    "language": "Idioma"
+    "language": "Idioma",
+    "menu": "Menú"
   },
   "page": {
     "landing": {

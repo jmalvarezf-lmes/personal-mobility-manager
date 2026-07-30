@@ -18,8 +18,10 @@
     "apiDocs": "API Docs",
     "account": "Account menu",
     "logout": "Logout",
+    "login": "Login",
     "loginGoogle": "Login with Google",
-    "language": "Language"
+    "language": "Language",
+    "menu": "Menu"
   },
   "page": {
     "landing": {

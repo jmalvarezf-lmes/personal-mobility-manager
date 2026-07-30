@@ -1,4 +1,4 @@
-import { test as base } from "@playwright/test";
+import { test as base } from "./coverage";
 
 export const MOCK_USER = {
   id: "00000000-0000-0000-0000-000000000001",

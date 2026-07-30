@@ -1,4 +1,5 @@
-import { expect, test as base } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test as base } from "./fixtures/coverage";
 import { MOCK_USER, test } from "./fixtures/auth";
 import { NavPage } from "./pages/NavPage";
 

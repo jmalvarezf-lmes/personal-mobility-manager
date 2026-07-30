@@ -1,4 +1,5 @@
-import { expect, test as base, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test as base } from "./fixtures/coverage";
 import { test } from "./fixtures/auth";
 import { NotificationChannelsPage } from "./pages/NotificationChannelsPage";
 import { PreferencesPage } from "./pages/PreferencesPage";

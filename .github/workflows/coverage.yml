@@ -83,3 +83,88 @@ jobs:
           files: ./frontend/coverage/lcov.info
           flags: frontend
           name: frontend-coverage
+
+  e2e-test-frontend:
+    name: E2E test (frontend)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mobility
+          POSTGRES_PASSWORD: mobility
+          POSTGRES_DB: mobility_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mobility -d mobility_manager"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_DSN: postgresql://mobility:mobility@localhost:5432/mobility_manager
+      ENCRYPTION_KEY: test-encrytion-key
+      CORS_ORIGINS: http://localhost:5173
+      ELPARKING_API_BASE_URL: https://api.example.com
+      TELEGRAM_BOT_TOKEN: "token_bot"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install backend dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Apply database migrations
+        run: alembic upgrade head
+
+      - name: Start backend API
+        run: uvicorn mobility_manager.presentation.api.app:app --host 0.0.0.0 --port 8000 &
+
+      - name: Wait for API to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then
+              echo "API is ready"
+              break
+            fi
+            echo "Waiting for API... ($i/30)"
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health || { echo "API failed to start"; exit 1; }
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.11.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright tests with coverage
+        working-directory: frontend
+        run: pnpm test:e2e:coverage
+
+      - name: Upload e2e coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./frontend/coverage/e2e/lcov.info
+          flags: e2e
+          name: e2e-coverage

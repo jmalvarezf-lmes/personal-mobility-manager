@@ -61,7 +61,15 @@ jobs:
         run: alembic upgrade head
 
       - name: Run tests
-        run: pytest tests/ --cov=mobility_manager --cov-report=term-missing
+        run: pytest tests/ --cov=mobility_manager --cov-report=term-missing --cov-report=xml
+
+      - name: Upload backend coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: backend
+          name: backend-coverage
 
   lint-frontend:
     name: Lint (frontend)
@@ -116,7 +124,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run unit tests
-        run: pnpm test
+        run: pnpm test:coverage
+
+      - name: Upload frontend coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
 
   test-frontend:
     name: Test (frontend)

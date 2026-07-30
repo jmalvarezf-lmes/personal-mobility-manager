@@ -16,3 +16,9 @@ overrides:
   # ReDoS fix (GHSA advisory), pulled in transitively via
   # swagger-ui-react -> swagger-client -> @swagger-api/apidom-reference -> minimatch.
   brace-expansion: ^5.0.7
+  # @vitest/coverage-v8 pulls in glob@10.5.0 -> minimatch@9.0.9, which expects
+  # brace-expansion's v2 CJS export shape. The global v5 override above (needed
+  # for the swagger-ui-react ReDoS fix) breaks that chain at runtime with
+  # "brace_expansion_1.default is not a function". Scope minimatch@9 in this
+  # one chain back to the brace-expansion major it was built against.
+  'minimatch@9>brace-expansion': ^2.0.1

@@ -174,6 +174,17 @@
         "loading": "Loading…"
       }
     },
+    "setLocation": {
+      "title": "Set location",
+      "useCurrentLocation": "Use my current location",
+      "locating": "Locating…",
+      "geolocationError": "Couldn't get your current location. You can still enter it manually below.",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "validationError": "Latitude must be between -90 and 90, and longitude between -180 and 180.",
+      "saving": "Saving…",
+      "save": "Save"
+    },
     "connectSerProvider": {
       "title": "Connect {{provider}}",
       "connecting": "Connecting…",
@@ -229,6 +240,7 @@
     "ambientLabelIconAlt": "Ambient label {{label}}",
     "edit": "Edit",
     "delete": "Delete",
-    "confirmDelete": "Delete \"{{name}}\"?"
+    "confirmDelete": "Delete \"{{name}}\"?",
+    "setLocation": "Set location"
   }
 }

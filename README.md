@@ -22,7 +22,10 @@ through `pytoyoda` so the app can pull its GPS location on a schedule, or a
 "generic" device — anything that can POST coordinates to a per-vehicle
 push-token endpoint (a phone running GPS Logger, an ESP32, a Tasker profile,
 whatever you've got). From there the system watches that vehicle's location
-continuously.
+continuously. For a generic vehicle, you can also set its location directly
+from the app itself — no separate device needed — via a "Set location"
+action on the vehicle card, using your browser's own geolocation or manual
+lat/lng entry.
 
 Madrid publishes its SER (Servicio de Estacionamiento Regulado) zone
 boundaries as shapefiles. This ingests them, resolves each zone's street,

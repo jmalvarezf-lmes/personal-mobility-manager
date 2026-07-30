@@ -85,6 +85,22 @@ export async function getVehicleLocationHistory(
   return (await response.json()) as VehicleLocationHistoryPage;
 }
 
+export async function pushVehicleLocation(
+  vehicleId: string,
+  body: { lat: number; lon: number; recorded_at: string },
+): Promise<void> {
+  const response = await fetch(`/api/vehicles/${vehicleId}/locations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed to push vehicle location: ${response.status}`);
+  }
+}
+
 export async function getSerTicketHistory(
   vehicleId: string,
   { limit = 5, offset = 0 }: { limit?: number; offset?: number } = {},

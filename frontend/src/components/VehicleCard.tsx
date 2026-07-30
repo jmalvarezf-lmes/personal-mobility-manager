@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { deleteVehicle, getVehicle } from "../api/vehicles";
-import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem } from "../types/vehicle";
+import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem, VehicleLocation } from "../types/vehicle";
 import AmbientLabelIcon from "./AmbientLabelIcon";
+import SetVehicleLocationModal from "./SetVehicleLocationModal";
 import Button from "./ui/Button";
 import Card from "./ui/Card";
 
@@ -12,6 +13,7 @@ interface VehicleCardProps {
   onDeleted: (vehicleId: string) => void;
   onViewHistory: (vehicle: VehicleListItem) => void;
   onViewSerTickets: (vehicle: VehicleListItem) => void;
+  onLocationUpdated?: (vehicleId: string, location: VehicleLocation) => void;
 }
 
 export default function VehicleCard({
@@ -20,10 +22,12 @@ export default function VehicleCard({
   onDeleted,
   onViewHistory,
   onViewSerTickets,
+  onLocationUpdated,
 }: VehicleCardProps) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showSetLocation, setShowSetLocation] = useState(false);
 
   useEffect(() => {
     getVehicle(vehicle.vehicle_id)
@@ -134,10 +138,23 @@ export default function VehicleCard({
         <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
           {t("vehicle.edit")}
         </Button>
+        {vehicle.brand === "generic" && (
+          <Button variant="secondary" size="sm" onClick={() => setShowSetLocation(true)}>
+            {t("vehicle.setLocation")}
+          </Button>
+        )}
         <Button variant="danger" size="sm" onClick={() => void handleDelete()}>
           {t("vehicle.delete")}
         </Button>
       </div>
+
+      {showSetLocation && (
+        <SetVehicleLocationModal
+          vehicleId={vehicle.vehicle_id}
+          onClose={() => setShowSetLocation(false)}
+          onSaved={(location) => onLocationUpdated?.(vehicle.vehicle_id, location)}
+        />
+      )}
     </Card>
   );
 }

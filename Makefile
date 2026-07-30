@@ -3,7 +3,7 @@
 VENV    := venv
 PYTHON  := $(VENV)/bin/python
 PIP     := $(VENV)/bin/pip
-POSTGRES_DSN :=postgresql://mobility:mobility@localhost:5432/mobility_manager
+export POSTGRES_DSN := postgresql://mobility:mobility@localhost:5432/mobility_manager
 
 install:
 	$(PIP) install -e .

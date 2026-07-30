@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Nav from "../components/Nav";
 import Card from "../components/ui/Card";
 import Button, { buttonClasses } from "../components/ui/Button";

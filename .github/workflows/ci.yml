@@ -60,7 +60,7 @@ jobs:
         run: pnpm lint
 
   test-frontend:
-    name: Test (frontend)
+    name: E2E Test (frontend)
     runs-on: ubuntu-latest
     services:
       postgres:

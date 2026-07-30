@@ -1,0 +1,12 @@
+name: Coverage (main)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  coverage:
+    name: Coverage
+    uses: ./.github/workflows/coverage.yml
+    secrets: inherit

@@ -286,6 +286,14 @@ either fails fast at startup or the feature stays inactive, as noted.
 | `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio` | Standard OTel sampler name. |
 | `OTEL_TRACES_SAMPLER_ARG` | `0.25` | Sampling ratio (0.0–1.0) for the above sampler. |
 
+A ready-to-import Grafana dashboard is included at
+[`observability/grafana/mobility-manager-dashboard.json`](observability/grafana/mobility-manager-dashboard.json) —
+import it into your own Grafana Cloud stack (Dashboards → New → Import,
+paste the JSON) to see the product's live state at a glance: business
+metric health (notification dispatch, ingestion runs, vehicle polls,
+ambient-label lookups, SER auto-ticket creation, holiday refresh) and a
+trace explorer.
+
 ## Integrations implemented so far
 
 The architecture is deliberately registry/port-based specifically so more of

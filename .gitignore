@@ -15,6 +15,7 @@ htmlcov/
 .atl/
 .claude/
 *.csv
+.DS_Store
 
 # Frontend
 frontend/node_modules/

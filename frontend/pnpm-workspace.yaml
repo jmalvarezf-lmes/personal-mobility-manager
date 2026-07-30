@@ -22,3 +22,6 @@ overrides:
   # "brace_expansion_1.default is not a function". Scope minimatch@9 in this
   # one chain back to the brace-expansion major it was built against.
   'minimatch@9>brace-expansion': ^2.0.1
+  # Path traversal fix (GHSA-r28c-9q8g-f849), pulled in transitively via vite's
+  # bundled postcss dependency.
+  postcss: ^8.5.18

@@ -37,11 +37,11 @@
         },
         "park": {
           "title": "Park",
-          "description": "SER zone parking tickets are created automatically, so you never overstay a spot."
+          "description": "SER zone parking tickets are created automatically, so you never forget to create one by mistake."
         },
         "notify": {
           "title": "Notify",
-          "description": "Get alerts through your preferred channel when a ticket is about to expire or needs attention."
+          "description": "Get alerts through your preferred channel when a ticket is needed, a ticket was created, or there was an error but a ticket is needed anyway."
         }
       },
       "citiesCta": {

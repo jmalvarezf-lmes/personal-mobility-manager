@@ -37,11 +37,11 @@
         },
         "park": {
           "title": "Aparca",
-          "description": "Los tickets de zona SER se crean automáticamente, para que nunca te pases del tiempo de aparcamiento."
+          "description": "Los tickets de zona SER se crean automáticamente, para que nunca se te olvide poner el ticket."
         },
         "notify": {
           "title": "Notifica",
-          "description": "Recibe avisos por tu canal preferido cuando un ticket esté a punto de caducar o necesite tu atención."
+          "description": "Recibe avisos por tu canal preferido cuando requieras un ticket, el ticket se cree, o bien haya habido algun error. Todo de manera personalizada."
         }
       },
       "citiesCta": {

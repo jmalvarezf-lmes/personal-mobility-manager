@@ -35,6 +35,7 @@ export interface VehicleListItem {
   location: VehicleLocation | null;
   ambient_label: string | null;
   has_ser_tickets: boolean;
+  is_owner: boolean;
 }
 
 export interface ToyotaConfig {
@@ -47,14 +48,39 @@ export interface GenericConfig {
   location_token: string;
 }
 
+export interface RedactedConfig {
+  redacted: true;
+}
+
+export type VehicleConfig = ToyotaConfig | GenericConfig | RedactedConfig;
+
+export function isRedactedConfig(
+  config: VehicleConfig,
+): config is RedactedConfig {
+  return "redacted" in config && config.redacted === true;
+}
+
 export interface VehicleDetail {
   vehicle_id: string;
   brand: "toyota" | "generic";
   display_name: string;
   vin: string | null;
   license_plate: string | null;
-  config: ToyotaConfig | GenericConfig;
+  config: VehicleConfig;
   ambient_label: string | null;
+  is_owner: boolean;
+}
+
+export interface VehicleSharee {
+  user_id: string;
+  display_name: string;
+  email: string;
+  created_at: string;
+}
+
+export interface VehicleSharesResponse {
+  vehicle_id: string;
+  sharees: VehicleSharee[];
 }
 
 export interface SerParkingExemption {

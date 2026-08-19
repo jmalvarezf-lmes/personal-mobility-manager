@@ -2,7 +2,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getVehicle, pushVehicleLocation } from "../api/vehicles";
+import { getVehicle, listVehicleShares, pushVehicleLocation } from "../api/vehicles";
 import type { VehicleListItem, VehicleLocation } from "../types/vehicle";
 import { renderWithProviders, screen, waitFor } from "../test/render";
 import VehicleCard from "./VehicleCard";
@@ -40,6 +40,7 @@ function makeVehicle(overrides: Partial<VehicleListItem> = {}): VehicleListItem 
     location: null,
     ambient_label: null,
     has_ser_tickets: false,
+    is_owner: true,
     ...overrides,
   };
 }
@@ -56,6 +57,7 @@ describe("VehicleCard ambient label rendering", () => {
       license_plate: null,
       config: { location_token: "tok" },
       ambient_label: null,
+      is_owner: true,
     });
   });
 
@@ -121,6 +123,7 @@ describe("VehicleCard SER tickets button", () => {
       license_plate: null,
       config: { location_token: "tok" },
       ambient_label: null,
+      is_owner: true,
     });
   });
 
@@ -202,6 +205,7 @@ describe("VehicleCard set-location action", () => {
       license_plate: null,
       config: { location_token: "tok" },
       ambient_label: null,
+      is_owner: true,
     });
   });
 
@@ -278,5 +282,153 @@ describe("VehicleCard set-location action", () => {
       expect.objectContaining({ lat: 40.1, lon: -3.5 }),
     );
     expect(screen.getByText("Location: 40.10000, -3.50000")).toBeInTheDocument();
+  });
+});
+
+describe("VehicleCard owner-only actions", () => {
+  beforeEach(() => {
+    vi.mocked(getVehicle).mockResolvedValue({
+      vehicle_id: "1",
+      brand: "generic",
+      display_name: "My scooter",
+      vin: null,
+      license_plate: null,
+      config: { location_token: "tok" },
+      ambient_label: null,
+      is_owner: true,
+    });
+    vi.mocked(listVehicleShares).mockResolvedValue({ vehicle_id: "1", sharees: [] });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders Edit, Delete, Share and Set location for the owner", () => {
+    const vehicle = makeVehicle({ is_owner: true, brand: "generic" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set location" })).toBeInTheDocument();
+  });
+
+  it("hides owner-only buttons for a sharee", () => {
+    const vehicle = makeVehicle({ is_owner: false, brand: "generic" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Share" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Set location" })).not.toBeInTheDocument();
+  });
+
+  it("keeps View history visible for a sharee when a location exists", () => {
+    const vehicle = makeVehicle({
+      is_owner: false,
+      location: { latitude: 40.4168, longitude: -3.7038, recorded_at: "2024-01-01T00:00:00Z" },
+    });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "View history" })).toBeInTheDocument();
+  });
+
+  it("hides the generic push URL config for a sharee", async () => {
+    vi.mocked(getVehicle).mockResolvedValue({
+      vehicle_id: "1",
+      brand: "generic",
+      display_name: "My scooter",
+      vin: null,
+      license_plate: null,
+      config: { redacted: true },
+      ambient_label: null,
+      is_owner: false,
+    });
+
+    const vehicle = makeVehicle({ is_owner: false, brand: "generic" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    await waitFor(() => expect(getVehicle).toHaveBeenCalled());
+    expect(screen.queryByText(/Push URL:/)).not.toBeInTheDocument();
+  });
+
+  it("hides the Toyota config for a sharee", async () => {
+    vi.mocked(getVehicle).mockResolvedValue({
+      vehicle_id: "2",
+      brand: "toyota",
+      display_name: "My car",
+      vin: "VIN123",
+      license_plate: null,
+      config: { redacted: true },
+      ambient_label: null,
+      is_owner: false,
+    });
+
+    const vehicle = makeVehicle({ vehicle_id: "2", is_owner: false, brand: "toyota", vin: "VIN123" });
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    await waitFor(() => expect(getVehicle).toHaveBeenCalled());
+    expect(screen.queryByText(/Username:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Locale:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Password:/)).not.toBeInTheDocument();
+  });
+
+  it("opens the ShareVehicleModal when Share is clicked", async () => {
+    const vehicle = makeVehicle({ is_owner: true });
+    const user = userEvent.setup();
+    renderWithProviders(
+      <VehicleCard
+        vehicle={vehicle}
+        onEdit={noop}
+        onDeleted={noop}
+        onViewHistory={noop}
+        onViewSerTickets={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
+
+    expect(screen.getByRole("dialog", { name: "Share Vehicle" })).toBeInTheDocument();
   });
 });

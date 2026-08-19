@@ -35,8 +35,8 @@ class VehicleRepository(ABC):
         ...
 
     @abstractmethod
-    def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
-        """Return all vehicles belonging to the given user."""
+    def get_all_by_owner_id(self, owner_id: UUID) -> list[Vehicle]:
+        """Return all vehicles owned by the given user."""
         ...
 
     @abstractmethod

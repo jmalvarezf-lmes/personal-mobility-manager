@@ -9,13 +9,14 @@ import {
 } from "../api/vehicles";
 import { fetchZoneOptions } from "../api/zones";
 import type { City } from "../types/city";
-import type { GenericConfig, ToyotaConfig, VehicleDetail } from "../types/vehicle";
+import type { ToyotaConfig, VehicleConfig, VehicleDetail } from "../types/vehicle";
+import { isRedactedConfig } from "../types/vehicle";
 import type { ZoneOption } from "../types/zone";
 import Button from "./ui/Button";
 import Input, { inputClasses } from "./ui/Input";
 
-function isToyotaConfig(config: ToyotaConfig | GenericConfig): config is ToyotaConfig {
-  return "username" in config;
+function isToyotaConfig(config: VehicleConfig): config is ToyotaConfig {
+  return !isRedactedConfig(config) && "username" in config;
 }
 
 interface EditVehicleModalProps {

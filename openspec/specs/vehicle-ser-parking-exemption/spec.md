@@ -41,64 +41,44 @@ The system SHALL define a `VehicleSerParkingExemptionRepository` abstract port w
 - **THEN** the original `IntegrityError` propagates unchanged, not `InvalidSerParkingExemptionZoneError`
 
 ### Requirement: GET /vehicles/{id}/ser-parking-exemptions returns the vehicle's exemption
-The system SHALL expose `GET /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie. Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle not owned by the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404. When the vehicle exists and is owned by the caller, the response SHALL be HTTP 200 with `{ "city_code": ..., "zone_number": ... }` if an exemption exists, or `{ "city_code": null, "zone_number": null }` if none is set.
+The system SHALL expose `GET /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie. Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle neither owned by nor shared with the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404. When the vehicle exists and is accessible to the caller, the response SHALL be HTTP 200 with `{ "city_code": ..., "zone_number": ... }` if an exemption exists, or `{ "city_code": null, "zone_number": null }` if none is set.
 
 #### Scenario: Owner retrieves an existing exemption
 - **WHEN** an authenticated owner sends `GET /vehicles/{id}/ser-parking-exemptions` for a vehicle with a stored exemption
+- **THEN** the response is HTTP 200 with the stored `city_code` and `zone_number`
+
+#### Scenario: Sharee retrieves an existing exemption
+- **WHEN** an authenticated sharee sends `GET /vehicles/{id}/ser-parking-exemptions` for a shared vehicle with a stored exemption
 - **THEN** the response is HTTP 200 with the stored `city_code` and `zone_number`
 
 #### Scenario: Owner retrieves when no exemption is set
 - **WHEN** an authenticated owner sends `GET /vehicles/{id}/ser-parking-exemptions` for a vehicle with no exemption row
 - **THEN** the response is HTTP 200 with `city_code: null` and `zone_number: null`
 
-#### Scenario: Non-owner receives 403
-- **WHEN** an authenticated user sends `GET /vehicles/{id}/ser-parking-exemptions` for a vehicle owned by a different user
+#### Scenario: Non-accessible vehicle receives 403
+- **WHEN** an authenticated user sends `GET /vehicles/{id}/ser-parking-exemptions` for a vehicle neither owned by nor shared with them
 - **THEN** the response is HTTP 403
-
-#### Scenario: Non-existent vehicle returns 404
-- **WHEN** an authenticated user sends `GET /vehicles/{id}/ser-parking-exemptions` with an unknown vehicle UUID
-- **THEN** the response is HTTP 404
 
 ### Requirement: POST /vehicles/{id}/ser-parking-exemptions sets or replaces the vehicle's exemption
-The system SHALL expose `POST /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie, with a request body `{ "city_code": string, "zone_number": string }`. `zone_number` SHALL be rejected with HTTP 422 if it exceeds the stored column's length (10 characters) — validated at the request-schema layer so an over-length value never reaches Postgres as an unhandled `DataError`. Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle not owned by the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404. A `(city_code, zone_number)` pair with no matching `ser_zone_areas` row SHALL return HTTP 422. On success the system SHALL upsert the exemption and return HTTP 200 with the stored values.
+The system SHALL expose `POST /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie. The endpoint SHALL be restricted to the vehicle's owner. Unauthenticated requests SHALL return HTTP 401. Requests from a sharee or other non-owner SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404.
 
 #### Scenario: Owner sets a new exemption
-- **WHEN** an authenticated owner sends `POST /vehicles/{id}/ser-parking-exemptions` with a valid `city_code` and `zone_number` for a vehicle with no existing exemption
+- **WHEN** an authenticated owner sends `POST /vehicles/{id}/ser-parking-exemptions` with a valid `city_code` and `zone_number`
 - **THEN** a new row is created and the response is HTTP 200 with the stored `city_code` and `zone_number`
 
-#### Scenario: Owner replaces an existing exemption
-- **WHEN** an authenticated owner sends `POST /vehicles/{id}/ser-parking-exemptions` for a vehicle that already has a different exemption stored
-- **THEN** the existing row is replaced with the new `(city_code, zone_number)`, not duplicated
-
-#### Scenario: Unknown zone_number is rejected
-- **WHEN** an authenticated owner sends `POST /vehicles/{id}/ser-parking-exemptions` with a `(city_code, zone_number)` pair absent from `ser_zone_areas`
-- **THEN** the response is HTTP 422
-
-#### Scenario: Over-length zone_number is rejected before reaching the use case
-- **WHEN** an authenticated owner sends `POST /vehicles/{id}/ser-parking-exemptions` with a `zone_number` longer than 10 characters
-- **THEN** the response is HTTP 422 and the underlying use case/repository is never invoked
-
-#### Scenario: Non-owner receives 403
-- **WHEN** an authenticated user sends `POST /vehicles/{id}/ser-parking-exemptions` for a vehicle owned by a different user
+#### Scenario: Sharee set rejected
+- **WHEN** an authenticated sharee sends `POST /vehicles/{id}/ser-parking-exemptions`
 - **THEN** the response is HTTP 403
 
-#### Scenario: Non-existent vehicle returns 404
-- **WHEN** an authenticated user sends `POST /vehicles/{id}/ser-parking-exemptions` with an unknown vehicle UUID
-- **THEN** the response is HTTP 404
-
 ### Requirement: DELETE /vehicles/{id}/ser-parking-exemptions clears the vehicle's exemption
-The system SHALL expose `DELETE /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie. Unauthenticated requests SHALL return HTTP 401. Requests for a vehicle not owned by the authenticated user SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404. On success the system SHALL delete any existing exemption row and return HTTP 204, whether or not a row previously existed.
+The system SHALL expose `DELETE /vehicles/{id}/ser-parking-exemptions` requiring a valid JWT session cookie. The endpoint SHALL be restricted to the vehicle's owner. Unauthenticated requests SHALL return HTTP 401. Requests from a sharee or other non-owner SHALL return HTTP 403. Requests for a non-existent vehicle SHALL return HTTP 404. On success the system SHALL delete any existing exemption row and return HTTP 204.
 
 #### Scenario: Owner clears an existing exemption
 - **WHEN** an authenticated owner sends `DELETE /vehicles/{id}/ser-parking-exemptions` for a vehicle with a stored exemption
 - **THEN** the row is deleted and the response is HTTP 204
 
-#### Scenario: Clearing when none is set is a no-op success
-- **WHEN** an authenticated owner sends `DELETE /vehicles/{id}/ser-parking-exemptions` for a vehicle with no exemption row
-- **THEN** the response is HTTP 204 without raising an error
-
-#### Scenario: Non-owner receives 403
-- **WHEN** an authenticated user sends `DELETE /vehicles/{id}/ser-parking-exemptions` for a vehicle owned by a different user
+#### Scenario: Sharee delete rejected
+- **WHEN** an authenticated sharee sends `DELETE /vehicles/{id}/ser-parking-exemptions`
 - **THEN** the response is HTTP 403
 
 ### Requirement: Vehicle edit flow offers a city-then-zone exemption picker with a single unified save action

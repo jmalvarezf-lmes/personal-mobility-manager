@@ -58,7 +58,7 @@ def _make_vehicle(license_plate: str | None = "1234ABC") -> Vehicle:
         vin=None,
         license_plate=license_plate,
         created_at=datetime.now(UTC),
-        user_id=uuid4(),
+        owner_id=uuid4(),
     )
 
 
@@ -265,7 +265,7 @@ def test_create_ticket_full_flow_resolves_and_submits(monkeypatch: pytest.Monkey
     ]
     assert ticket.provider == "elparking"
     assert ticket.vehicle_id == vehicle.id
-    assert ticket.user_id == vehicle.user_id
+    assert ticket.user_id == vehicle.owner_id
     assert ticket.duration_minutes == 60
     assert ticket.cost == 2.5
     assert ticket.end_date == datetime.fromtimestamp(1784815200, tz=UTC)

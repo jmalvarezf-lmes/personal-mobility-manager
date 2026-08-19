@@ -25,6 +25,7 @@ const genericVehicle: VehicleDetail = {
   license_plate: "1234ABC",
   config: { location_token: "tok" },
   ambient_label: null,
+  is_owner: true,
 };
 
 const toyotaVehicle: VehicleDetail = {
@@ -35,6 +36,7 @@ const toyotaVehicle: VehicleDetail = {
   license_plate: null,
   config: { username: "myuser", locale: "en_GB", password: "" },
   ambient_label: null,
+  is_owner: true,
 };
 
 function mockEmptyExemption() {

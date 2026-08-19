@@ -30,6 +30,7 @@ function makeVehicle(overrides: Partial<VehicleListItem> = {}): VehicleListItem 
     location: { latitude: 40.41, longitude: -3.7, recorded_at: "2024-01-01T00:00:00Z" },
     ambient_label: null,
     has_ser_tickets: false,
+    is_owner: true,
     ...overrides,
   };
 }

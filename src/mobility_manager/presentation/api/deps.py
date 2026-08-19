@@ -1,6 +1,6 @@
 """
 Presentation: FastAPI dependencies for authenticated user resolution and
-per-vehicle ownership enforcement.
+per-vehicle authorization.
 
 get_current_user reads the session JWT cookie, validates it with PyJWT,
 extracts the `sid` claim, and calls ValidateSession to confirm the
@@ -12,11 +12,13 @@ even though the JWT signature itself still verifies. Only then does it fetch
 and return the User entity. Raises HTTP 401 on any failure — missing
 cookie, invalid token, failed session validation, or unknown user.
 
-Ownership enforcement has two entry points sharing one private helper
-(_fetch_owned_vehicle), rather than a single `Depends()` used everywhere.
+Vehicle authorization has two dimensions:
+- "access": owner OR an active sharee may read vehicle data.
+- "owner": only the owner may mutate or delete a vehicle.
+
 FastAPI resolves all `Depends(...)` parameters — including sub-dependencies —
 before it parses or validates the request body, so a route that both takes a
-body and depends on an ownership check would let the 404/403 short-circuit
+body and depends on an authorization check would let the 404/403 short-circuit
 *before* the body is ever validated, reordering behavior relative to an
 inline check (which historically ran after the body had already been bound).
 That lets a non-owner learn "this vehicle exists and isn't yours" with an
@@ -24,12 +26,13 @@ empty or malformed body, instead of requiring a crafted valid payload first.
 See design.md decision 5 (amended after the post-implementation 4R review)
 for the full rationale.
 
-- `require_owned_vehicle` — a `Depends()` target — is used on the four
-  routes with no request body, where dependency-vs-body ordering is moot.
-- `get_owned_vehicle_or_raise` — a plain function, not a `Depends()` target —
-  is called manually as the first line inside the two route handlers that do
-  take a body, *after* the body parameter has already resolved, restoring
-  the original body-then-ownership order exactly.
+- `require_vehicle_access` / `require_owned_vehicle` — `Depends()` targets —
+  are used on routes with no request body, where dependency-vs-body ordering
+  is moot.
+- `get_vehicle_access_or_raise` / `get_owned_vehicle_or_raise` — plain
+  functions, NOT `Depends()` targets — are called manually as the first line
+  inside route handlers that do take a body, *after* the body parameter has
+  already resolved, restoring the original body-then-auth order exactly.
 """
 
 from typing import Any
@@ -42,6 +45,10 @@ from mobility_manager.config import get_jwt_secret
 from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
+from mobility_manager.domain.ports.vehicle_share_repository import (
+    VehicleShareRepository,
+)
+from mobility_manager.domain.value_objects.vehicle_access import VehicleAccess
 
 _JWT_ALGORITHM = "HS256"
 
@@ -108,9 +115,36 @@ async def get_current_user(request: Request) -> User:
     return user
 
 
+def _fetch_vehicle_access(
+    vehicle_repo: VehicleRepository,
+    share_repo: VehicleShareRepository,
+    vehicle_id: UUID,
+    current_user: User,
+) -> VehicleAccess:
+    """
+    Fetch `vehicle_id` and verify the caller has access (owner or sharee).
+
+    Raises HTTP 404 if the vehicle doesn't exist or the caller has no access.
+    Returns a VehicleAccess otherwise.
+    """
+    vehicle: Vehicle | None = vehicle_repo.get_by_id(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    is_owner = vehicle.is_owned_by(current_user.id)
+    if is_owner:
+        return VehicleAccess(vehicle=vehicle, is_owner=True)
+
+    share = share_repo.find_by_vehicle_and_user(vehicle_id, current_user.id)
+    if share is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    return VehicleAccess(vehicle=vehicle, is_owner=False)
+
+
 def _fetch_owned_vehicle(vehicle_repo: VehicleRepository, vehicle_id: UUID, current_user: User) -> Vehicle:
     """
-    Fetch `vehicle_id` from `vehicle_repo` and enforce ownership.
+    Fetch `vehicle_id` and enforce ownership.
 
     Raises HTTP 404 if the vehicle doesn't exist, HTTP 403 if it exists but
     isn't owned by the authenticated user. Returns the Vehicle entity
@@ -121,10 +155,29 @@ def _fetch_owned_vehicle(vehicle_repo: VehicleRepository, vehicle_id: UUID, curr
     vehicle: Vehicle | None = vehicle_repo.get_by_id(vehicle_id)
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.user_id != current_user.id:
+    if not vehicle.is_owned_by(current_user.id):
         raise HTTPException(status_code=403, detail="You do not own this vehicle")
 
     return vehicle
+
+
+async def require_vehicle_access(
+    vehicle_id: UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> VehicleAccess:
+    """
+    FastAPI dependency that fetches `vehicle_id` and grants access to owners
+    and sharees.
+
+    Use this on read-only routes with no request body.
+    """
+    return _fetch_vehicle_access(
+        request.app.state.vehicle_repo,
+        request.app.state.vehicle_share_repo,
+        vehicle_id,
+        current_user,
+    )
 
 
 async def require_owned_vehicle(
@@ -139,6 +192,25 @@ async def require_owned_vehicle(
     also take a body — see module docstring.
     """
     return _fetch_owned_vehicle(request.app.state.vehicle_repo, vehicle_id, current_user)
+
+
+def get_vehicle_access_or_raise(
+    request: Request, vehicle_id: UUID, current_user: User
+) -> VehicleAccess:
+    """
+    Plain function (NOT a `Depends()` target) that fetches `vehicle_id` and
+    grants access to owners and sharees.
+
+    Call this manually as the first line of a route handler's body, after
+    its `body: ...Request` parameter has already resolved, so body
+    validation still runs before the authorization check — see module docstring.
+    """
+    return _fetch_vehicle_access(
+        request.app.state.vehicle_repo,
+        request.app.state.vehicle_share_repo,
+        vehicle_id,
+        current_user,
+    )
 
 
 def get_owned_vehicle_or_raise(request: Request, vehicle_id: UUID, current_user: User) -> Vehicle:

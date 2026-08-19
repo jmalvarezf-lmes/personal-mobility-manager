@@ -45,6 +45,11 @@ provider, place the purchase and record the result. Every step along the way
 — zone entry, ticket created, ticket failed — fires a Telegram notification,
 because the entire point is that you don't have to think about it.
 
+You can also share a vehicle with another user. The owner keeps full control
+(add, edit, delete, set location, connect ticket providers), while sharees can
+view the vehicle and its history and receive the same notifications — useful
+for households with multiple drivers and one car.
+
 Underneath, this is built as strict Clean/Hexagonal Architecture: domain
 entities and value objects with zero framework dependencies, use cases that
 depend only on abstract ports, and SQLAlchemy/FastAPI pushed out to the
@@ -110,7 +115,8 @@ retention window so the table doesn't grow unbounded.
 The API is mounted under `/api` (nginx proxies it to the backend service).
 Resource groups: auth (Google OAuth login/callback/session), vehicles (CRUD,
 latest location, location history, SER ticket history, the public
-push-ingest endpoint for generic devices, per-vehicle SER exemptions),
+push-ingest endpoint for generic devices, per-vehicle SER exemptions,
+vehicle sharing with owner/sharee permissions),
 parking (nearest SER zone lookup, ticket creation), zones (GeoJSON zone data
 for the map, a
 lightweight zone-options list), cities, config (runtime frontend config),

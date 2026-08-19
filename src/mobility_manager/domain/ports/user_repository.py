@@ -27,3 +27,8 @@ class UserRepository(ABC):
     def find_by_id(self, user_id: UUID) -> User | None:
         """Return the user with the given UUID, or None if not found."""
         ...
+
+    @abstractmethod
+    def find_by_email(self, email: str) -> User | None:
+        """Return the user with the given email, or None if not found."""
+        ...

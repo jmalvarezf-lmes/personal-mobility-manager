@@ -21,10 +21,13 @@ from mobility_manager.domain.entities.user_notification_preference import (
     UserNotificationPreference,
 )
 from mobility_manager.domain.entities.user_preferences import UserPreferences
+from mobility_manager.domain.entities.vehicle import Vehicle
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
 from mobility_manager.domain.events.ser_ticket_creation_failed import (
     SerTicketCreationFailed,
 )
+from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
@@ -83,18 +86,53 @@ class _FakeSendNotification:
         return True
 
 
+class _FakeVehicleRepo:
+    def __init__(self, owner_id: UUID) -> None:
+        self._owner_id = owner_id
+
+    def get_by_id(self, vehicle_id: UUID) -> Vehicle | None:
+        return Vehicle(
+            id=vehicle_id,
+            brand=Brand.GENERIC,
+            display_name="Test Vehicle",
+            vin=None,
+            license_plate="1234ABC",
+            created_at=datetime.now(UTC),
+            owner_id=self._owner_id,
+        )
+
+
+class _FakeVehicleShareRepo:
+    def save(self, share: VehicleShare) -> None:
+        pass
+
+    def find_by_vehicle_and_user(self, vehicle_id: UUID, user_id: UUID) -> VehicleShare | None:
+        return None
+
+    def list_sharees(self, vehicle_id: UUID) -> list[VehicleShare]:
+        return []
+
+    def delete(self, vehicle_id: UUID, user_id: UUID) -> None:
+        pass
+
+    def list_vehicle_ids_for_user(self, user_id: UUID) -> list[UUID]:
+        return []
+
+
 def _make_handler(
+    owner_id: UUID,
     preferences_repo: _FakeUserPreferencesRepo,
     notification_preferences_repo: _FakeNotificationPreferencesRepo,
     send_notification: _FakeSendNotification,
 ) -> SerTicketNotificationTriggerHandler:
     return SerTicketNotificationTriggerHandler(
-        vehicle_repo=None,  # type: ignore[arg-type] - not exercised by these methods
+        vehicle_repo=_FakeVehicleRepo(owner_id),  # type: ignore[arg-type]
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
         notification_preferences_repo=notification_preferences_repo,  # type: ignore[arg-type]
         determine_ser_ticket_requirement=None,  # type: ignore[arg-type]
         ser_zone_recheck_gate=None,  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
+        vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
     )
 
 
@@ -125,7 +163,7 @@ class TestOnTicketCreated:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -141,7 +179,7 @@ class TestOnTicketCreated:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATED_TYPE_KEY, enabled=False)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -153,7 +191,7 @@ class TestOnTicketCreated:
         preferences_repo.set(user_id)
         notification_preferences_repo = _FakeNotificationPreferencesRepo()  # no row
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -166,7 +204,7 @@ class TestOnTicketCreated:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -180,7 +218,7 @@ class TestOnTicketCreated:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -197,7 +235,7 @@ class TestOnTicketCreated:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_created(_make_created_event(user_id))
 
@@ -216,7 +254,7 @@ class TestOnTicketCreated:
             def execute(self, user_id, message):
                 raise RuntimeError("boom")
 
-        handler = _make_handler(preferences_repo, notification_preferences_repo, _RaisingSendNotification())
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, _RaisingSendNotification())
 
         result = handler.on_ticket_created(_make_created_event(user_id))  # must not raise
 
@@ -231,7 +269,7 @@ class TestOnTicketCreationFailed:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATION_FAILED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_creation_failed(_make_creation_failed_event(user_id, reason="provider_error"))
 
@@ -248,7 +286,7 @@ class TestOnTicketCreationFailed:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATION_FAILED_TYPE_KEY, enabled=False)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_creation_failed(_make_creation_failed_event(user_id))
 
@@ -260,7 +298,7 @@ class TestOnTicketCreationFailed:
         preferences_repo.set(user_id)
         notification_preferences_repo = _FakeNotificationPreferencesRepo()  # no row
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_creation_failed(_make_creation_failed_event(user_id))
 
@@ -273,7 +311,7 @@ class TestOnTicketCreationFailed:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATION_FAILED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         for reason in (
             "no_provider_session",
@@ -295,7 +333,7 @@ class TestOnTicketCreationFailed:
         notification_preferences_repo = _FakeNotificationPreferencesRepo()
         notification_preferences_repo.set(user_id, _CREATION_FAILED_TYPE_KEY, enabled=True)
         send_notification = _FakeSendNotification()
-        handler = _make_handler(preferences_repo, notification_preferences_repo, send_notification)
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, send_notification)
 
         handler.on_ticket_creation_failed(_make_creation_failed_event(user_id, reason="provider_error"))
         _, generic_message = send_notification.calls[0]
@@ -320,7 +358,7 @@ class TestOnTicketCreationFailed:
             def execute(self, user_id, message):
                 raise RuntimeError("boom")
 
-        handler = _make_handler(preferences_repo, notification_preferences_repo, _RaisingSendNotification())
+        handler = _make_handler(user_id, preferences_repo, notification_preferences_repo, _RaisingSendNotification())
 
         result = handler.on_ticket_creation_failed(_make_creation_failed_event(user_id))  # must not raise
 

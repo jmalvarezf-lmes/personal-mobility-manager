@@ -26,6 +26,7 @@ from mobility_manager.domain.entities.user_notification_preference import (
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
@@ -33,6 +34,7 @@ from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
 )
+from tests.doubles.metrics_collector import FakeMetricsCollector
 
 # Madrid city-centre coordinates, ~1km apart — comfortably past the default
 # 50m threshold. The "close" pair is a few metres apart — comfortably under it.
@@ -126,6 +128,29 @@ class FakeSendNotification:
         return True
 
 
+class FakeVehicleShareRepo:
+    def __init__(self) -> None:
+        self.shares: list[VehicleShare] = []
+
+    def save(self, share: VehicleShare) -> None:
+        self.shares.append(share)
+
+    def find_by_vehicle_and_user(self, vehicle_id: UUID, user_id: UUID) -> VehicleShare | None:
+        return next(
+            (s for s in self.shares if s.vehicle_id == vehicle_id and s.user_id == user_id),
+            None,
+        )
+
+    def list_sharees(self, vehicle_id: UUID) -> list[VehicleShare]:
+        return [s for s in self.shares if s.vehicle_id == vehicle_id]
+
+    def delete(self, vehicle_id: UUID, user_id: UUID) -> None:
+        self.shares = [s for s in self.shares if not (s.vehicle_id == vehicle_id and s.user_id == user_id)]
+
+    def list_vehicle_ids_for_user(self, user_id: UUID) -> list[UUID]:
+        return [s.vehicle_id for s in self.shares if s.user_id == user_id]
+
+
 def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "1234ABC") -> Vehicle:
     return Vehicle(
         id=vehicle_id,
@@ -134,7 +159,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "
         vin=None,
         license_plate=license_plate,
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -156,6 +181,8 @@ def _make_handler(
     preferences_repo: FakeUserPreferencesRepo,
     notification_preferences_repo: FakeNotificationPreferencesRepo,
     send_notification: FakeSendNotification,
+    share_repo: FakeVehicleShareRepo | None = None,
+    metrics_collector: FakeMetricsCollector | None = None,
 ) -> NotificationDispatchHandler:
     return NotificationDispatchHandler(
         vehicle_repo=vehicle_repo,  # type: ignore[arg-type]
@@ -163,6 +190,8 @@ def _make_handler(
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
         notification_preferences_repo=notification_preferences_repo,  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
+        vehicle_share_repo=share_repo or FakeVehicleShareRepo(),  # type: ignore[arg-type]
+        metrics_collector=metrics_collector or FakeMetricsCollector(),  # type: ignore[arg-type]
     )
 
 
@@ -536,3 +565,198 @@ def test_message_falls_back_to_default_language_when_unset() -> None:
     assert len(send_notification.calls) == 1
     _, message = send_notification.calls[0]
     assert message.text == "Your car with plate 9999ZZZ is now located here."
+
+
+def test_fan_out_to_owner_and_sharee() -> None:
+    """Both owner and sharee receive notifications when enabled."""
+    vehicle_id = uuid4()
+    owner_id = uuid4()
+    sharee_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, owner_id, license_plate="9999ZZZ"))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+
+    share_repo = FakeVehicleShareRepo()
+    share_repo.save(VehicleShare(vehicle_id=vehicle_id, user_id=sharee_id, created_at=now))
+
+    preferences_repo = FakeUserPreferencesRepo()
+    preferences_repo.set(owner_id, None)
+    preferences_repo.set(sharee_id, None)
+
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True)
+    notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=True)
+
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        send_notification,
+        share_repo,
+    )
+
+    event = VehicleLocationUpdated(
+        vehicle_id=vehicle_id,
+        latitude=_MOVED_LAT,
+        longitude=_MOVED_LNG,
+        recorded_at=now,
+        received_at=now,
+        source="push",
+    )
+
+    handler.handle(event)
+
+    notified_user_ids = {uid for uid, _ in send_notification.calls}
+    assert notified_user_ids == {owner_id, sharee_id}
+
+
+def test_sharee_disabled_does_not_notify_sharee_but_notifies_owner() -> None:
+    """Per-recipient preference is checked independently for sharees."""
+    vehicle_id = uuid4()
+    owner_id = uuid4()
+    sharee_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, owner_id, license_plate="9999ZZZ"))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+
+    share_repo = FakeVehicleShareRepo()
+    share_repo.save(VehicleShare(vehicle_id=vehicle_id, user_id=sharee_id, created_at=now))
+
+    preferences_repo = FakeUserPreferencesRepo()
+    preferences_repo.set(owner_id, None)
+    preferences_repo.set(sharee_id, None)
+
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True)
+    notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=False)
+
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        send_notification,
+        share_repo,
+    )
+
+    event = VehicleLocationUpdated(
+        vehicle_id=vehicle_id,
+        latitude=_MOVED_LAT,
+        longitude=_MOVED_LNG,
+        recorded_at=now,
+        received_at=now,
+        source="push",
+    )
+
+    handler.handle(event)
+
+    notified_user_ids = {uid for uid, _ in send_notification.calls}
+    assert notified_user_ids == {owner_id}
+
+
+def test_owner_disabled_but_sharee_enabled_still_looks_up_previous_location() -> None:
+    """A disabled owner must not prevent sharee notifications."""
+    vehicle_id = uuid4()
+    owner_id = uuid4()
+    sharee_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, owner_id, license_plate="9999ZZZ"))
+    location_repo = FakeVehicleLocationRepo()
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+
+    share_repo = FakeVehicleShareRepo()
+    share_repo.save(VehicleShare(vehicle_id=vehicle_id, user_id=sharee_id, created_at=now))
+
+    preferences_repo = FakeUserPreferencesRepo()
+    preferences_repo.set(owner_id, None)
+    preferences_repo.set(sharee_id, None)
+
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=False)
+    notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=True)
+
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        send_notification,
+        share_repo,
+    )
+
+    event = VehicleLocationUpdated(
+        vehicle_id=vehicle_id,
+        latitude=_MOVED_LAT,
+        longitude=_MOVED_LNG,
+        recorded_at=now,
+        received_at=now,
+        source="push",
+    )
+
+    handler.handle(event)
+
+    assert location_repo.get_previous_calls == [vehicle_id]
+    notified_user_ids = {uid for uid, _ in send_notification.calls}
+    assert notified_user_ids == {sharee_id}
+
+
+def test_owner_and_sharee_with_different_thresholds_notify_independently() -> None:
+    """Owner threshold suppresses while sharee threshold triggers, independently."""
+    vehicle_id = uuid4()
+    owner_id = uuid4()
+    sharee_id = uuid4()
+    now = datetime.now(UTC)
+
+    vehicle_repo = FakeVehicleRepo()
+    vehicle_repo.add(_make_vehicle(vehicle_id, owner_id, license_plate="9999ZZZ"))
+    location_repo = FakeVehicleLocationRepo()
+    # ~15m movement from _FAR_*.
+    location_repo.previous = _make_previous_location(vehicle_id, _FAR_LAT, _FAR_LNG, now)
+
+    share_repo = FakeVehicleShareRepo()
+    share_repo.save(VehicleShare(vehicle_id=vehicle_id, user_id=sharee_id, created_at=now))
+
+    preferences_repo = FakeUserPreferencesRepo()
+    preferences_repo.set(owner_id, None)
+    preferences_repo.set(sharee_id, None)
+
+    notification_preferences_repo = FakeNotificationPreferencesRepo()
+    # Owner threshold 50m suppresses ~15m movement; sharee threshold 5m triggers it.
+    notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True, config={"threshold_m": 50})
+    notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=True, config={"threshold_m": 5})
+
+    send_notification = FakeSendNotification()
+    handler = _make_handler(
+        vehicle_repo,
+        location_repo,
+        preferences_repo,
+        notification_preferences_repo,
+        send_notification,
+        share_repo,
+    )
+
+    event = VehicleLocationUpdated(
+        vehicle_id=vehicle_id,
+        latitude=_NEAR_LAT,
+        longitude=_NEAR_LNG,
+        recorded_at=now,
+        received_at=now,
+        source="push",
+    )
+
+    handler.handle(event)
+
+    notified_user_ids = {uid for uid, _ in send_notification.calls}
+    assert notified_user_ids == {sharee_id}

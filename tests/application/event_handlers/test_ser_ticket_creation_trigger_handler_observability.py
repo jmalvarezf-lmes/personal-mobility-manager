@@ -29,6 +29,7 @@ from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
 from mobility_manager.domain.value_objects.brand import Brand
+from tests.doubles.metrics_collector import FakeMetricsCollector
 
 _LAT, _LNG = 40.4168, -3.7038
 
@@ -95,7 +96,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
         vin=None,
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -119,6 +120,7 @@ def _make_handler(vehicle_repo, user_id, ser_zone_recheck_gate) -> SerTicketCrea
         ser_zone_recheck_gate=ser_zone_recheck_gate,  # type: ignore[arg-type]
         create_ser_ticket=_FakeCreateSerTicket(),  # type: ignore[arg-type]
         event_publisher=_FakeEventPublisher(),  # type: ignore[arg-type]
+        metrics_collector=FakeMetricsCollector(),  # type: ignore[arg-type]
     )
 
 

@@ -130,7 +130,7 @@ class CreateSerTicket:
                 fix).
         """
         vehicle = self._vehicle_repo.find_by_id(vehicle_id)
-        if vehicle is None or vehicle.user_id != user_id:
+        if vehicle is None or not vehicle.is_owned_by(user_id):
             raise VehicleNotFoundError(f"No vehicle found for id {vehicle_id}")
 
         session = self._config_repo.find(user_id, provider)

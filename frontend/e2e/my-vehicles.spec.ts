@@ -17,20 +17,26 @@ const MOCK_VEHICLES = [
     brand: "toyota",
     display_name: "My Toyota",
     vin: "JTDBF3EJ8A3045678",
+    license_plate: null,
     location: {
       latitude: 40.4168,
       longitude: -3.7038,
       recorded_at: "2026-07-01T10:00:00Z",
     },
     ambient_label: null,
+    has_ser_tickets: false,
+    is_owner: true,
   },
   {
     vehicle_id: GENERIC_ID,
     brand: "generic",
     display_name: "My Scooter",
     vin: null,
+    license_plate: null,
     location: null,
     ambient_label: null,
+    has_ser_tickets: false,
+    is_owner: true,
   },
 ];
 
@@ -106,7 +112,11 @@ async function mockVehicleApis(
         brand: body.brand,
         display_name: body.display_name,
         vin: null,
+        license_plate: null,
         location: null,
+        ambient_label: null,
+        has_ser_tickets: false,
+        is_owner: true,
         ...(body.brand === "generic" ? { location_token: "new-token-uuid" } : {}),
       };
       vehicles.push(newVehicle as (typeof MOCK_VEHICLES)[number]);

@@ -224,13 +224,23 @@ def test_get_records_uses_configured_urls_instead_of_defaults() -> None:
 
 
 def _build_barrios_zip() -> bytes:
+    """
+    Build a Barrios shapefile fixture using the current schema:
+    COD_DIS_TX (padded district) + COD_BAR (padded district + barrio).
+    The callejero fixture uses district 01 / barrio 06, which resolves to
+    compound code "1-6" and should match this record.
+    """
     shp = io.BytesIO()
     dbf = io.BytesIO()
     writer = shapefile.Writer(shp=shp, dbf=dbf, shapeType=shapefile.POLYGON)
-    writer.field("COD_DISB", "C")
+    writer.field("CODDIS", "C")
+    writer.field("NOMDIS", "C")
+    writer.field("COD_BAR", "C")
     writer.field("NOMBRE", "C")
+    writer.field("COD_DIS_TX", "C")
+    writer.field("COD_DISBAR", "C")
     writer.poly([[[440000.0, 4474000.0], [440100.0, 4474000.0], [440100.0, 4474100.0], [440000.0, 4474100.0]]])
-    writer.record("1-6", "Sol")
+    writer.record("1", "Centro", "016", "Sol", "01", "16")
     writer.close()
     shp.seek(0)
     dbf.seek(0)
@@ -542,10 +552,14 @@ def test_get_zone_areas_second_call_reflects_new_mocked_data_not_stale_cache() -
         shp = io.BytesIO()
         dbf = io.BytesIO()
         writer = shapefile.Writer(shp=shp, dbf=dbf, shapeType=shapefile.POLYGON)
-        writer.field("COD_DISB", "C")
+        writer.field("CODDIS", "C")
+        writer.field("NOMDIS", "C")
+        writer.field("COD_BAR", "C")
         writer.field("NOMBRE", "C")
+        writer.field("COD_DIS_TX", "C")
+        writer.field("COD_DISBAR", "C")
         writer.poly([[[440000.0, 4474000.0], [440100.0, 4474000.0], [440100.0, 4474100.0], [440000.0, 4474100.0]]])
-        writer.record("5-9", "Ríos Rosas")
+        writer.record("5", "Chamberí", "059", "Ríos Rosas", "05", "59")
         writer.close()
         shp.seek(0)
         dbf.seek(0)

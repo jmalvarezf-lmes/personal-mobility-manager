@@ -3,7 +3,12 @@ Unit tests for Madrid Barrios shapefile parsing.
 
 Builds small synthetic in-memory .shp/.dbf fixtures via pyshp's Writer (no
 network access, no real Madrid data needed) — shape_type=5 (Polygon), fields
-COD_DISB (text) and NOMBRE (text), matching the real BARRIOS schema.
+matching the real BARRIOS schema.
+
+The live Barrios shapefile changed schemas: older files expose a single
+``COD_DISB`` compound field (e.g. "1-6"), while current files expose
+``COD_DIS_TX`` (padded district) + ``COD_BAR`` (padded district + barrio).
+Both schemas are exercised here.
 """
 
 import io
@@ -20,8 +25,42 @@ from mobility_manager.infrastructure.parking_services.madrid.barrios_shapefile i
 _SAMPLE_POLYGON = [(440000.0, 4474000.0), (440100.0, 4474000.0), (440100.0, 4474100.0), (440000.0, 4474100.0)]
 
 
-def _build_shp_dbf(rows: list[tuple[str, str, list[tuple[float, float]]]]) -> tuple[io.BytesIO, io.BytesIO]:
-    """Build in-memory .shp/.dbf streams for the given (cod_disb, nombre, points) rows."""
+def _build_shp_dbf_new_schema(
+    rows: list[tuple[str, str, str, list[tuple[float, float]]]],
+) -> tuple[io.BytesIO, io.BytesIO]:
+    """
+    Build in-memory .shp/.dbf streams for the current Barrios schema:
+    (cod_dis_tx, cod_bar, nombre, points).
+    """
+    shp = io.BytesIO()
+    dbf = io.BytesIO()
+    writer = shapefile.Writer(shp=shp, dbf=dbf, shapeType=shapefile.POLYGON)
+    writer.field("CODDIS", "C")
+    writer.field("NOMDIS", "C")
+    writer.field("COD_BAR", "C")
+    writer.field("NOMBRE", "C")
+    writer.field("COD_DIS_TX", "C")
+    writer.field("COD_DISBAR", "C")
+
+    for cod_dis_tx, cod_bar, nombre, points in rows:
+        writer.poly([[[x, y] for x, y in points]])
+        coddis = str(int(cod_dis_tx)) if cod_dis_tx else ""
+        cod_disbar = cod_bar[len(cod_dis_tx) :] if cod_bar.startswith(cod_dis_tx) else cod_bar
+        writer.record(coddis, "DISTRITO", cod_bar, nombre, cod_dis_tx, cod_disbar)
+
+    writer.close()
+    shp.seek(0)
+    dbf.seek(0)
+    return shp, dbf
+
+
+def _build_shp_dbf_legacy_schema(
+    rows: list[tuple[str, str, list[tuple[float, float]]]],
+) -> tuple[io.BytesIO, io.BytesIO]:
+    """
+    Build in-memory .shp/.dbf streams for the legacy Barrios schema:
+    (cod_disb, nombre, points).
+    """
     shp = io.BytesIO()
     dbf = io.BytesIO()
     writer = shapefile.Writer(shp=shp, dbf=dbf, shapeType=shapefile.POLYGON)
@@ -39,10 +78,10 @@ def _build_shp_dbf(rows: list[tuple[str, str, list[tuple[float, float]]]]) -> tu
 
 
 def test_sample_rows_parse_expected_values() -> None:
-    shp, dbf = _build_shp_dbf(
+    shp, dbf = _build_shp_dbf_new_schema(
         [
-            ("1-1", "Palacio", _SAMPLE_POLYGON),
-            ("1-2", "Embajadores", _SAMPLE_POLYGON),
+            ("01", "011", "Palacio", _SAMPLE_POLYGON),
+            ("01", "012", "Embajadores", _SAMPLE_POLYGON),
         ]
     )
 
@@ -56,7 +95,7 @@ def test_sample_rows_parse_expected_values() -> None:
 
 
 def test_geometry_is_polygon() -> None:
-    shp, dbf = _build_shp_dbf([("1-1", "Palacio", _SAMPLE_POLYGON)])
+    shp, dbf = _build_shp_dbf_new_schema([("01", "011", "Palacio", _SAMPLE_POLYGON)])
 
     records = parse_barrios(shp, dbf)
 
@@ -65,11 +104,11 @@ def test_geometry_is_polygon() -> None:
     assert records[0].geometry.is_valid
 
 
-def test_missing_cod_disb_is_skipped() -> None:
-    shp, dbf = _build_shp_dbf(
+def test_missing_compound_code_is_skipped() -> None:
+    shp, dbf = _build_shp_dbf_new_schema(
         [
-            ("", "Palacio", _SAMPLE_POLYGON),
-            ("1-2", "Embajadores", _SAMPLE_POLYGON),
+            ("", "", "Palacio", _SAMPLE_POLYGON),
+            ("01", "012", "Embajadores", _SAMPLE_POLYGON),
         ]
     )
 
@@ -80,10 +119,10 @@ def test_missing_cod_disb_is_skipped() -> None:
 
 
 def test_missing_nombre_is_skipped() -> None:
-    shp, dbf = _build_shp_dbf(
+    shp, dbf = _build_shp_dbf_new_schema(
         [
-            ("1-1", "", _SAMPLE_POLYGON),
-            ("1-2", "Embajadores", _SAMPLE_POLYGON),
+            ("01", "011", "", _SAMPLE_POLYGON),
+            ("01", "012", "Embajadores", _SAMPLE_POLYGON),
         ]
     )
 
@@ -91,6 +130,25 @@ def test_missing_nombre_is_skipped() -> None:
 
     assert len(records) == 1
     assert records[0].cod_disb == "1-2"
+
+
+def test_legacy_cod_disb_schema_still_supported() -> None:
+    """
+    Older/cached Barrios shapefiles that expose the single COD_DISB field
+    must keep working after the schema change.
+    """
+    shp, dbf = _build_shp_dbf_legacy_schema(
+        [
+            ("1-1", "Palacio", _SAMPLE_POLYGON),
+            ("1-2", "Embajadores", _SAMPLE_POLYGON),
+        ]
+    )
+
+    records = parse_barrios(shp, dbf)
+
+    assert len(records) == 2
+    assert records[0].cod_disb == "1-1"
+    assert records[0].nombre == "Palacio"
 
 
 # ---------------------------------------------------------------------------

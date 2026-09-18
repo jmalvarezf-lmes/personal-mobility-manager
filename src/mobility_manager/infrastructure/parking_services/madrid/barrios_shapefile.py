@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import shapefile
 from shapely.geometry import shape as shapely_shape
@@ -36,6 +37,46 @@ class BarrioRecord:
     cod_disb: str  # compound district-barrio code, e.g. "1-1"
     nombre: str  # official barrio name, e.g. "Palacio"
     geometry: BaseGeometry  # Polygon or MultiPolygon, EPSG:25830 metres
+
+
+def _build_compound_code(record: dict[str, Any]) -> str | None:
+    """
+    Build the canonical compound district-barrio code (e.g. '1-6') from a
+    Barrios DBF record.
+
+    The live Madrid Barrios shapefile has changed schemas over time:
+
+    - Legacy files expose a pre-computed ``COD_DISB`` string like ``'1-6'``.
+    - Current files expose ``COD_DIS_TX`` (zero-padded district, e.g. ``'01'``)
+      and ``COD_BAR`` (padded district + barrio, e.g. ``'016'``); the barrio
+      number is the remainder after stripping the padded district prefix.
+
+    This helper prefers the legacy field when present and otherwise derives
+    the code from the current schema fields.
+    """
+    cod_disb = str(record.get("COD_DISB") or "").strip()
+    if cod_disb:
+        return cod_disb
+
+    district_padded = str(record.get("COD_DIS_TX") or "").strip()
+    barrio_full = str(record.get("COD_BAR") or "").strip()
+
+    if not district_padded or not barrio_full:
+        return None
+
+    if not barrio_full.startswith(district_padded):
+        logger.warning(
+            "Skipping Barrios record — COD_BAR %r does not start with district %r",
+            barrio_full,
+            district_padded,
+        )
+        return None
+
+    barrio_part = barrio_full[len(district_padded) :]
+    try:
+        return f"{int(district_padded)}-{int(barrio_part)}"
+    except ValueError:
+        return None
 
 
 def fetch_barrios_zip(url: str) -> bytes:
@@ -66,11 +107,14 @@ def parse_barrios(shp_bytes: io.BytesIO, dbf_bytes: io.BytesIO) -> list[BarrioRe
 
     for shape_record in reader.iterShapeRecords():
         record = shape_record.record.as_dict()
-        cod_disb = str(record.get("COD_DISB") or "").strip()
+        cod_disb = _build_compound_code(record)
         nombre = str(record.get("NOMBRE") or "").strip()
 
         if not cod_disb or not nombre:
-            logger.warning("Skipping Barrios record — missing COD_DISB or NOMBRE: %r", record)
+            logger.warning(
+                "Skipping Barrios record — missing compound district-barrio code or NOMBRE: %r",
+                record,
+            )
             skipped += 1
             continue
 

@@ -24,8 +24,10 @@ overrides:
   'minimatch@9>brace-expansion': ^2.1.4
   # Fix quadratic !!omap resolution (GHSA-5p4m-2wfm-xmqj), pulled in via
   # swagger-ui-react and the Istanbul tooling.
-  'js-yaml@^3.0.0': ^3.15.1
-  'js-yaml@^4.0.0': ^4.3.1
+  'js-yaml@^3.0.0': ^3.15.2
+  'js-yaml@^4.0.0': ^4.3.2
+  # Ensure browserslist is at least 4.28.7 for vulnerability fixes.
+  browserslist: ^4.28.7
   # Fix detached-subtree XSS during IN_PLACE sanitization (GHSA-55q2-fjhq-7xh7).
   dompurify: ^3.4.13
   # Fix zero-size custom generator infinite loop (GHSA-2v37-7h3g-55p8).

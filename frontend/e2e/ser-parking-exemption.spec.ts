@@ -14,8 +14,11 @@ const MOCK_VEHICLES = [
     brand: "generic",
     display_name: "Exemption Test Car",
     vin: null,
+    license_plate: null,
     location: null,
     ambient_label: null,
+    has_ser_tickets: false,
+    is_owner: true,
   },
 ];
 

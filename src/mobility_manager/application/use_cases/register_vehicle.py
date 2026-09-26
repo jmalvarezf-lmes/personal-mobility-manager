@@ -105,7 +105,7 @@ class RegisterVehicle:
             vin=vin,
             license_plate=license_plate,
             created_at=datetime.now(UTC),
-            user_id=user_id,
+            owner_id=user_id,
         )
         self._vehicle_repo.save(vehicle)
 

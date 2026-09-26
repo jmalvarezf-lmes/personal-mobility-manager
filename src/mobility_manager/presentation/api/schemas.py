@@ -170,7 +170,11 @@ RegisterVehicleRequest = Annotated[
 
 
 class VehicleResponse(BaseModel):
-    """Successful vehicle registration response."""
+    """Successful vehicle registration response.
+
+    Mirrors the fields the frontend's vehicle list needs so a newly created
+    vehicle can be rendered immediately without a refetch.
+    """
 
     vehicle_id: UUID
     brand: Brand
@@ -182,6 +186,11 @@ class VehicleResponse(BaseModel):
     # synchronously before this response was built; null otherwise (the
     # scheduler backfills it later). See VehicleListItem.ambient_label.
     ambient_label: str | None = None
+    # A freshly registered vehicle is always owned by the registering user and
+    # has no location or SER tickets yet.
+    location: VehicleLocationSummary | None = None
+    has_ser_tickets: bool = False
+    is_owner: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +282,9 @@ class VehicleListItem(BaseModel):
     # `auto_created` — gates the "View SER tickets" button (see
     # add-ser-ticket-history-ui design.md D6).
     has_ser_tickets: bool = False
+    # True for the owner; False for a sharee. The UI uses this to decide
+    # whether editing/sharing/deleting controls are shown.
+    is_owner: bool
 
 
 class ToyotaConfigResponse(BaseModel):
@@ -289,6 +301,12 @@ class GenericConfigResponse(BaseModel):
     location_token: str
 
 
+class RedactedConfigResponse(BaseModel):
+    """Placeholder config returned to sharees instead of real credentials."""
+
+    redacted: Literal[True] = True
+
+
 class VehicleDetailResponse(BaseModel):
     """Full vehicle detail including brand-specific config."""
 
@@ -297,9 +315,38 @@ class VehicleDetailResponse(BaseModel):
     display_name: str
     vin: str | None
     license_plate: str | None
-    config: ToyotaConfigResponse | GenericConfigResponse
+    config: ToyotaConfigResponse | GenericConfigResponse | RedactedConfigResponse
     # See VehicleListItem.ambient_label.
     ambient_label: str | None = None
+    # True for the owner; False for a sharee.
+    is_owner: bool
+
+
+# ---------------------------------------------------------------------------
+# Vehicle sharing schemas (GET/POST /vehicles/{id}/shares)
+# ---------------------------------------------------------------------------
+
+
+class ShareVehicleRequest(StrictRequestModel):
+    """Request body for POST /vehicles/{id}/shares."""
+
+    email: EmailStr = Field(..., min_length=6, max_length=100)
+
+
+class ShareeResponse(BaseModel):
+    """One sharee returned by the share-list endpoints."""
+
+    user_id: UUID
+    display_name: str
+    email: str
+    created_at: datetime
+
+
+class ShareVehicleResponse(BaseModel):
+    """Response for GET/POST /vehicles/{id}/shares."""
+
+    vehicle_id: UUID
+    sharees: list[ShareeResponse]
 
 
 # ---------------------------------------------------------------------------

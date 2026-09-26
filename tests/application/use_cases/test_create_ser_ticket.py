@@ -43,7 +43,7 @@ def _make_vehicle(user_id: UUID) -> Vehicle:
         vin=None,
         license_plate=None,
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -64,7 +64,7 @@ class FakeSerTicketProvider(SerTicketProviderPort):
         return ParkingTicket(
             id=uuid4(),
             vehicle_id=vehicle.id,
-            user_id=vehicle.user_id,
+            user_id=vehicle.owner_id,
             provider="madrid_ser_app",
             duration_minutes=duration_minutes,
             provider_reference="REF-123",

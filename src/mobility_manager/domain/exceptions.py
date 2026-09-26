@@ -15,6 +15,12 @@ class VehicleNotFoundError(Exception):
     pass
 
 
+class UserNotFoundError(Exception):
+    """Raised when a user lookup by email fails."""
+
+    pass
+
+
 class VehicleConfigNotFoundError(Exception):
     """Raised when no vehicle configuration is found for a given vehicle ID."""
 

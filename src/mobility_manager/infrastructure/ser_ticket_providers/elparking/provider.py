@@ -161,7 +161,7 @@ class ElParkingSerTicketProvider(SerTicketProviderPort):
         return ParkingTicket(
             id=uuid4(),
             vehicle_id=vehicle.id,
-            user_id=vehicle.user_id,
+            user_id=vehicle.owner_id,
             provider=_PROVIDER_NAME,
             duration_minutes=duration_minutes,
             provider_reference=provider_reference,

@@ -640,7 +640,7 @@ def _insert_vehicle_for_exemption_test(engine, vehicle_id) -> None:
         )
         conn.execute(
             text(
-                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, user_id)"
+                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, owner_id)"
                 " VALUES (:id, 'generic', 'Exemption Test Vehicle', :plate, :now, :user_id)"
             ),
             {
@@ -655,7 +655,7 @@ def _insert_vehicle_for_exemption_test(engine, vehicle_id) -> None:
 def _cleanup_vehicle_for_exemption_test(engine, vehicle_id) -> None:
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM vehicle_ser_parking_exemptions WHERE vehicle_id = :id"), {"id": str(vehicle_id)})
-        row = conn.execute(text("SELECT user_id FROM vehicles WHERE id = :id"), {"id": str(vehicle_id)}).fetchone()
+        row = conn.execute(text("SELECT owner_id FROM vehicles WHERE id = :id"), {"id": str(vehicle_id)}).fetchone()
         conn.execute(text("DELETE FROM vehicles WHERE id = :id"), {"id": str(vehicle_id)})
         if row is not None:
             conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": str(row[0])})

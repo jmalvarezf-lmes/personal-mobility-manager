@@ -17,6 +17,7 @@ from mobility_manager.domain.value_objects.ambient_label import AmbientLabel
 from mobility_manager.domain.value_objects.ambient_label_status import (
     AmbientLabelStatus,
 )
+from tests.doubles.metrics_collector import FakeMetricsCollector
 
 
 class _FakeLookupPort:
@@ -68,11 +69,12 @@ class _FakeIconRepo:
         self._cached[label] = AmbientLabelIcon(image_bytes=image_bytes, content_type=content_type)
 
 
-def _make_use_case(lookup_port, label_repo=None, icon_repo=None) -> LookupVehicleAmbientLabel:
+def _make_use_case(lookup_port, label_repo=None, icon_repo=None, metrics_collector=None) -> LookupVehicleAmbientLabel:
     return LookupVehicleAmbientLabel(
         lookup_port=lookup_port,
         label_repo=label_repo or _FakeLabelRepo(),
         icon_repo=icon_repo or _FakeIconRepo(),
+        metrics_collector=metrics_collector or FakeMetricsCollector(),  # type: ignore[arg-type]
     )
 
 

@@ -16,7 +16,7 @@ dependencies = [
     "httpx",
     "fastapi>=0.109.1",
     "uvicorn[standard]",
-    "sqlalchemy",
+    "sqlalchemy<2.1",
     "psycopg2-binary",
     "pyproj",
     "apscheduler",

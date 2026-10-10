@@ -27,7 +27,7 @@ dependencies = [
     "slowapi",
     "alembic",
     "authlib==1.7.2",
-    "PyJWT==2.13.0",
+    "PyJWT>=2.15.0",
     "itsdangerous==2.2.0",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",

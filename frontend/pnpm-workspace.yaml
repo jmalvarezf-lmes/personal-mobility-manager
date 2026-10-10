@@ -35,3 +35,6 @@ overrides:
   # Path traversal fix (GHSA-r28c-9q8g-f849), pulled in transitively via vite's
   # bundled postcss dependency.
   postcss: ^8.5.18
+  # Multiple high/medium severity advisories (GHSA-j8rh-479h-cp32 and others),
+  # pulled in transitively via swagger-ui-react -> swagger-client -> axios.
+  axios: ^1.20.0

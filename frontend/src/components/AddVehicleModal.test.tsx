@@ -18,6 +18,7 @@ const baseVehicle = {
   location: null,
   ambient_label: null,
   has_ser_tickets: false,
+  is_owner: true,
 };
 
 describe("AddVehicleModal", () => {

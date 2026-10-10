@@ -67,7 +67,7 @@ def _make_vehicle() -> Vehicle:
         vin="VIN123",
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=uuid4(),
+        owner_id=uuid4(),
     )
 
 

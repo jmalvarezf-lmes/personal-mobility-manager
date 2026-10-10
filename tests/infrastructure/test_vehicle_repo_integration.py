@@ -1,5 +1,5 @@
 """
-Integration tests for PostgresVehicleRepository.get_all_by_user_id.
+Integration tests for PostgresVehicleRepository.get_all_by_owner_id.
 
 Requires POSTGRES_DSN environment variable.
 Skipped automatically when the variable is absent.
@@ -43,7 +43,7 @@ def pg_engine():
                     vin VARCHAR(50),
                     license_plate VARCHAR(20),
                     created_at TIMESTAMPTZ NOT NULL,
-                    user_id UUID NOT NULL REFERENCES users(id)
+                    owner_id UUID NOT NULL REFERENCES users(id)
                 )
                 """
             )
@@ -60,7 +60,7 @@ def _insert_user(engine, user_id) -> None:  # type: ignore[no-untyped-def]
         conn.execute(
             text(
                 "INSERT INTO users (id, google_sub, email, display_name, created_at)"
-                " VALUES (:id, :sub, 'test@example.com', 'Test User', :now)"
+                " VALUES (:id, :sub, (:id || '@example.com'), 'Test User', :now)"
             ),
             {"id": str(user_id), "sub": str(uuid4()), "now": datetime.now(UTC)},
         )
@@ -70,14 +70,14 @@ def _insert_vehicle(engine, vehicle_id, user_id, brand="generic") -> None:  # ty
     with engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, user_id)"
+                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, owner_id)"
                 " VALUES (:id, :brand, 'Test Car', NULL, :now, :user_id)"
             ),
             {"id": str(vehicle_id), "brand": brand, "now": datetime.now(UTC), "user_id": str(user_id)},
         )
 
 
-def test_get_all_by_user_id_returns_owned_vehicles(pg_engine) -> None:  # type: ignore[no-untyped-def]
+def test_get_all_by_owner_id_returns_owned_vehicles(pg_engine) -> None:  # type: ignore[no-untyped-def]
     from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
         PostgresVehicleRepository,
     )
@@ -96,23 +96,23 @@ def test_get_all_by_user_id_returns_owned_vehicles(pg_engine) -> None:  # type: 
 
     repo = PostgresVehicleRepository(pg_engine)
 
-    vehicles_a = repo.get_all_by_user_id(user_a)
-    vehicles_b = repo.get_all_by_user_id(user_b)
+    vehicles_a = repo.get_all_by_owner_id(user_a)
+    vehicles_b = repo.get_all_by_owner_id(user_b)
 
     assert len(vehicles_a) == 2
-    assert all(v.user_id == user_a for v in vehicles_a)
+    assert all(v.owner_id == user_a for v in vehicles_a)
 
     assert len(vehicles_b) == 1
-    assert vehicles_b[0].user_id == user_b
+    assert vehicles_b[0].owner_id == user_b
 
 
-def test_get_all_by_user_id_empty_for_unknown_user(pg_engine) -> None:  # type: ignore[no-untyped-def]
+def test_get_all_by_owner_id_empty_for_unknown_user(pg_engine) -> None:  # type: ignore[no-untyped-def]
     from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
         PostgresVehicleRepository,
     )
 
     repo = PostgresVehicleRepository(pg_engine)
-    assert repo.get_all_by_user_id(uuid4()) == []
+    assert repo.get_all_by_owner_id(uuid4()) == []
 
 
 def test_update_license_plate_sets_value(pg_engine) -> None:  # type: ignore[no-untyped-def]

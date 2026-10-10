@@ -75,6 +75,9 @@ from mobility_manager.application.use_cases.list_user_vehicles import ListUserVe
 from mobility_manager.application.use_cases.list_vehicle_location_history import (
     ListVehicleLocationHistory,
 )
+from mobility_manager.application.use_cases.list_vehicle_shares import (
+    ListVehicleShares,
+)
 from mobility_manager.application.use_cases.lookup_vehicle_ambient_label import (
     LookupVehicleAmbientLabel,
 )
@@ -89,6 +92,9 @@ from mobility_manager.application.use_cases.remove_notification_channel import (
     RemoveNotificationChannel,
 )
 from mobility_manager.application.use_cases.revoke_session import RevokeSession
+from mobility_manager.application.use_cases.revoke_vehicle_share import (
+    RevokeVehicleShare,
+)
 from mobility_manager.application.use_cases.send_notification import SendNotification
 from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
     SerZoneRecheckGate,
@@ -96,6 +102,7 @@ from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
 from mobility_manager.application.use_cases.set_vehicle_ser_parking_exemption import (
     SetVehicleSerParkingExemption,
 )
+from mobility_manager.application.use_cases.share_vehicle import ShareVehicle
 from mobility_manager.application.use_cases.update_vehicle import UpdateVehicle
 from mobility_manager.application.use_cases.validate_session import ValidateSession
 from mobility_manager.config import (
@@ -140,6 +147,9 @@ from mobility_manager.infrastructure.holiday_refresh_scheduler import (
 )
 from mobility_manager.infrastructure.notification_channels.telegram.channel import (
     TelegramNotificationChannel,
+)
+from mobility_manager.infrastructure.observability.metrics_collector_adapter import (
+    OpenTelemetryMetricsCollector,
 )
 from mobility_manager.infrastructure.observability.setup import (
     init_observability,
@@ -206,6 +216,9 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
 from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_exemption_repo import (
     PostgresVehicleSerParkingExemptionRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.vehicle_share_repo import (
+    PostgresVehicleShareRepository,
+)
 from mobility_manager.infrastructure.scheduler import (
     ParkingIngestionScheduler,
     SessionCleanupScheduler,
@@ -271,6 +284,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     meter_provider: MeterProvider | None = None
     if get_otel_endpoint():
         tracer_provider, meter_provider = init_observability(app, engine)
+
+    # Shared domain-port adapter for business metrics. Installed unconditionally
+    # because the underlying OTel calls are no-ops when no MeterProvider is set.
+    metrics_collector = OpenTelemetryMetricsCollector()
 
     # --- Cities (city-registry) ---
     # Built early: GET /parking/ser-zones (below) and GET /cities both need
@@ -400,6 +417,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     vehicle_repo = PostgresVehicleRepository(engine)
     vehicle_config_repo = PostgresVehicleConfigRepository(engine, encryption_key)
     vehicle_location_repo = PostgresVehicleLocationRepository(engine)
+    vehicle_share_repo = PostgresVehicleShareRepository(engine)
 
     # --- SER parking exemption ---
     # Built here (ahead of --- Events ---) since DetermineSerTicketRequirement
@@ -433,6 +451,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         lookup_port=dgt_ambient_label_provider,
         label_repo=vehicle_ambient_label_repo,
         icon_repo=ambient_label_icon_repo,
+        metrics_collector=metrics_collector,
     )
     app.state.vehicle_ambient_label_repo = vehicle_ambient_label_repo
     app.state.ambient_label_icon_repo = ambient_label_icon_repo
@@ -480,10 +499,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         vehicle_repo=vehicle_repo,
         user_preferences_repo=user_preferences_repo,
         notification_preferences_repo=notification_preferences_repo,
+        vehicle_share_repo=vehicle_share_repo,
         determine_ser_ticket_requirement=determine_ser_ticket_requirement_uc,
         ser_zone_recheck_gate=ser_zone_recheck_gate,
         send_notification=send_notification_uc,
     )
+    # Note: SerTicketNotificationTriggerHandler intentionally does not record
+    # business metrics; only SerTicketCreationTriggerHandler does.
     event_publisher.subscribe(
         VehicleLocationUpdated, ser_ticket_notification_trigger_handler.on_vehicle_location_updated
     )
@@ -496,7 +518,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         vehicle_location_repo=vehicle_location_repo,
         user_preferences_repo=user_preferences_repo,
         notification_preferences_repo=notification_preferences_repo,
+        vehicle_share_repo=vehicle_share_repo,
         send_notification=send_notification_uc,
+        metrics_collector=metrics_collector,
     )
     event_publisher.subscribe(VehicleLocationUpdated, notification_dispatch_handler.handle)
     app.state.event_publisher = event_publisher
@@ -513,10 +537,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     list_ser_tickets_uc = ListSerTickets(ticket_repo=parking_ticket_repo)
 
     list_uc = ListUserVehicles(
-        vehicle_repo=vehicle_repo, location_repo=vehicle_location_repo, ticket_repo=parking_ticket_repo
+        vehicle_repo=vehicle_repo,
+        location_repo=vehicle_location_repo,
+        ticket_repo=parking_ticket_repo,
+        share_repo=vehicle_share_repo,
     )
     delete_uc = DeleteVehicle(vehicle_repo=vehicle_repo)
     update_uc = UpdateVehicle(vehicle_repo=vehicle_repo, config_repo=vehicle_config_repo)
+    share_vehicle_uc = ShareVehicle(
+        vehicle_repo=vehicle_repo,
+        user_repo=user_repo,
+        share_repo=vehicle_share_repo,
+    )
+    revoke_vehicle_share_uc = RevokeVehicleShare(
+        vehicle_repo=vehicle_repo,
+        share_repo=vehicle_share_repo,
+    )
+    list_vehicle_shares_uc = ListVehicleShares(
+        vehicle_repo=vehicle_repo,
+        share_repo=vehicle_share_repo,
+        user_repo=user_repo,
+    )
 
     app.state.register_vehicle = register_uc
     app.state.record_vehicle_location = record_uc
@@ -526,8 +567,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.list_user_vehicles = list_uc
     app.state.delete_vehicle = delete_uc
     app.state.update_vehicle = update_uc
+    app.state.share_vehicle = share_vehicle_uc
+    app.state.revoke_vehicle_share = revoke_vehicle_share_uc
+    app.state.list_vehicle_shares = list_vehicle_shares_uc
     app.state.vehicle_config_repo = vehicle_config_repo
     app.state.vehicle_repo = vehicle_repo
+    app.state.vehicle_share_repo = vehicle_share_repo
 
     # Brand registry validates ENCRYPTION_KEY when Toyota is enabled
     brand_registry = BrandRegistry()
@@ -614,6 +659,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         ser_zone_recheck_gate=ser_zone_recheck_gate,
         create_ser_ticket=create_ser_ticket_uc,
         event_publisher=event_publisher,
+        metrics_collector=metrics_collector,
     )
     event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_creation_trigger_handler.handle)
 

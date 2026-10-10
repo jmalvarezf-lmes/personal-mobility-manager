@@ -8,9 +8,12 @@ import {
   getSerTicketHistory,
   getVehicle,
   getVehicleLocationHistory,
+  listVehicleShares,
   listVehicles,
   pushVehicleLocation,
+  revokeVehicleShare,
   setSerParkingExemption,
+  shareVehicle,
   updateVehicle,
 } from "./vehicles";
 
@@ -326,6 +329,76 @@ describe("vehicles api", () => {
 
       await expect(clearSerParkingExemption("1")).rejects.toThrow(
         "Failed to clear SER parking exemption: 500",
+      );
+    });
+  });
+
+  describe("listVehicleShares", () => {
+    it("requests the share list with credentials", async () => {
+      const response = { vehicle_id: "1", sharees: [] };
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(response));
+
+      const result = await listVehicleShares("1");
+
+      expect(fetch).toHaveBeenCalledWith("/api/vehicles/1/shares", {
+        credentials: "include",
+      });
+      expect(result).toEqual(response);
+    });
+
+    it("throws on a non-OK response", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 403 }));
+
+      await expect(listVehicleShares("1")).rejects.toThrow(
+        "Failed to list vehicle shares: 403",
+      );
+    });
+  });
+
+  describe("shareVehicle", () => {
+    it("POSTs the email and returns the updated sharee list", async () => {
+      const response = { vehicle_id: "1", sharees: [{ user_id: "u2", email: "a@b.com", display_name: "A", created_at: "2024-01-01" }] };
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(response, { status: 201 }));
+
+      const result = await shareVehicle("1", "a@b.com");
+
+      expect(fetch).toHaveBeenCalledWith("/api/vehicles/1/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: "a@b.com" }),
+      });
+      expect(result).toEqual(response);
+    });
+
+    it("throws an Error whose message includes the response body text", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response("User not found", { status: 422 }),
+      );
+
+      await expect(shareVehicle("1", "unknown@example.com")).rejects.toThrow(
+        "User not found",
+      );
+    });
+  });
+
+  describe("revokeVehicleShare", () => {
+    it("DELETEs the share for the given user", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+
+      await revokeVehicleShare("1", "u2");
+
+      expect(fetch).toHaveBeenCalledWith("/api/vehicles/1/shares/u2", {
+        method: "DELETE",
+        credentials: "include",
+      });
+    });
+
+    it("throws on a non-OK response", async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 403 }));
+
+      await expect(revokeVehicleShare("1", "u2")).rejects.toThrow(
+        "Failed to revoke vehicle share: 403",
       );
     });
   });

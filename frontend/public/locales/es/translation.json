@@ -221,6 +221,20 @@
       "provenanceAuto": "Automático",
       "provenanceManual": "Manual",
       "provenanceUnknown": "Desconocido"
+    },
+    "shareVehicle": {
+      "title": "Compartir vehículo",
+      "emailPlaceholder": "Introduce el correo del usuario",
+      "share": "Compartir",
+      "sharing": "Compartiendo…",
+      "shareesTitle": "Compartido con",
+      "loading": "Cargando compartidos…",
+      "noSharees": "Aún no se ha compartido con nadie.",
+      "remove": "Quitar",
+      "removing": "Quitando…",
+      "loadError": "No se pudieron cargar los compartidos.",
+      "shareError": "No se pudo compartir el vehículo.",
+      "revokeError": "No se pudo quitar al compartido."
     }
   },
   "vehicle": {
@@ -241,6 +255,7 @@
     "edit": "Editar",
     "delete": "Eliminar",
     "confirmDelete": "¿Eliminar \"{{name}}\"?",
-    "setLocation": "Establecer ubicación"
+    "setLocation": "Establecer ubicación",
+    "share": "Compartir"
   }
 }

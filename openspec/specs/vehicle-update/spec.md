@@ -7,30 +7,14 @@ The system SHALL expose `PUT /vehicles/{id}` requiring a valid JWT session cooki
 - **THEN** the Toyota credentials (username, password, locale) are unchanged
 - **THEN** the `license_plate` is unchanged
 
-#### Scenario: Update Toyota credentials
-- **WHEN** an authenticated owner sends `PUT /vehicles/{id}` for a Toyota vehicle with a new `username`, non-empty `password`, and `locale`
-- **THEN** the Toyota config row is updated with the new credentials re-encrypted
-
 #### Scenario: Update Generic display_name
 - **WHEN** an authenticated owner sends `PUT /vehicles/{id}` for a Generic vehicle with a new `display_name`
 - **THEN** the vehicle's `display_name` is updated
 - **THEN** the `location_token` is unchanged
 
-#### Scenario: Set license plate on any brand
-- **WHEN** an authenticated owner sends `PUT /vehicles/{id}` with `license_plate: "1234 ABC"` for any brand
-- **THEN** the vehicle's `license_plate` is updated to `"1234 ABC"` in the database
-
-#### Scenario: Clear license plate
-- **WHEN** an authenticated owner sends `PUT /vehicles/{id}` with `license_plate: null`
-- **THEN** the vehicle's `license_plate` is set to `null` in the database
-
-#### Scenario: License plate too long is rejected
-- **WHEN** an authenticated owner sends `PUT /vehicles/{id}` with a `license_plate` value longer than 20 characters
-- **THEN** the response is HTTP 422
-
-#### Scenario: Non-owner update rejected
-- **WHEN** an authenticated user sends `PUT /vehicles/{id}` for a vehicle owned by a different user
-- **THEN** the response is HTTP 403
+#### Scenario: Sharee update rejected
+- **WHEN** an authenticated user sends `PUT /vehicles/{id}` for a vehicle shared with them but not owned by them
+- **THEN** the response is HTTP 403 and the vehicle is not updated
 
 #### Scenario: Non-existent vehicle returns 404
 - **WHEN** an authenticated user sends `PUT /vehicles/{id}` with an unknown UUID

@@ -32,42 +32,30 @@ The system SHALL render a single Leaflet map at the top of the My Vehicles page.
 
 ---
 
-### Requirement: Vehicle cards list all user vehicles
-Below the map the system SHALL render one card per vehicle belonging to the authenticated user. Each card SHALL display:
+### Requirement: Vehicle cards list all vehicles accessible to the user
+Below the map the system SHALL render one card per vehicle owned by or shared with the authenticated user. Each card SHALL display:
 - `display_name` and `brand` badge
 - `license_plate` (localised label) if set, or a localised "no plate" placeholder if null
-- Brand-specific config section (see vehicle-detail spec for what is shown)
-- Last known location as coordinates (lat, lon) if available, or a localised "no location" placeholder if not. This line is plain text, not clickable.
-- A "View history" button, shown alongside the location line, that opens a `VehicleLocationHistoryModal` scoped to that vehicle (see vehicle-location-history-ui spec). The button SHALL only be shown/enabled when the vehicle has a known location.
-- Action buttons: Edit and Delete (labels localised)
+- Brand-specific config section, visible only to the owner; hidden for sharees
+- Last known location as coordinates (lat, lon) if available, or a localised "no location" placeholder if not
+- A "View history" button, shown alongside the location line, that opens a `VehicleLocationHistoryModal` scoped to that vehicle. The button SHALL only be shown/enabled when the vehicle has a known location.
+- Action buttons conditional on ownership: Edit, Delete, and Share for owners; no owner-only actions for sharees
 
-#### Scenario: Vehicle card shows Toyota config
-- **WHEN** the vehicle is brand TOYOTA
-- **THEN** the card shows `username`, `locale`, `vin` and a masked password field (`●●●●●●●●`)
+#### Scenario: Owner card shows config and owner actions
+- **WHEN** a card is rendered for a vehicle the user owns
+- **THEN** the card shows the brand-specific config section, an Edit button, a Delete button, and a Share button
 
-#### Scenario: Vehicle card shows Generic config
-- **WHEN** the vehicle is brand GENERIC
-- **THEN** the card shows the constructed push URL: `<window.location.origin>/api/vehicles/{location_token}/location`
+#### Scenario: Generic owner card shows Set location
+- **WHEN** a card is rendered for a GENERIC vehicle the user owns
+- **THEN** the card shows a "Set location" button alongside Edit/Delete/Share
 
-#### Scenario: Vehicle card shows license plate when set
-- **WHEN** a vehicle has a `license_plate` value
-- **THEN** the card displays the plate with a localised label (e.g. "License plate: 1234 ABC")
+#### Scenario: Sharee card hides config and owner actions
+- **WHEN** a card is rendered for a vehicle shared with the user
+- **THEN** the card does not show the config section, Edit, Delete, Share, or Set location buttons
 
-#### Scenario: Vehicle card shows placeholder when no plate
-- **WHEN** a vehicle has `license_plate: null`
-- **THEN** the card displays a localised placeholder (e.g. "No license plate" / "Sin matrícula")
-
-#### Scenario: Card shows coordinates when location is available
-- **WHEN** the vehicle has a last known location
-- **THEN** the card displays latitude and longitude to 6 decimal places, and a "View history" button is shown next to it
-
-#### Scenario: Card shows localised placeholder when no location
-- **WHEN** the vehicle has no location history
-- **THEN** the card displays a localised placeholder string (e.g. "No location data" in English, "Sin datos de ubicación" in Spanish), and no "View history" button is shown
-
-#### Scenario: Clicking "View history" opens the history modal
-- **WHEN** a user clicks the "View history" button on a card whose vehicle has a location
-- **THEN** the `VehicleLocationHistoryModal` opens scoped to that vehicle
+#### Scenario: Sharee card still shows View history when location exists
+- **WHEN** a shared vehicle has a known location
+- **THEN** the sharee's card shows the "View history" button
 
 ---
 
@@ -90,46 +78,29 @@ The page SHALL include an "Add Vehicle" button that opens a modal or inline form
 
 ---
 
-### Requirement: Edit Vehicle opens a pre-filled edit form including license plate
-Clicking Edit on a vehicle card SHALL open an edit modal pre-filled with the current vehicle's editable fields. For Toyota: display_name, username, locale, license_plate (password field empty — submitting blank means "keep existing"). For Generic: display_name and license_plate. The license_plate field SHALL be optional (clearable). On successful update the card SHALL reflect the new values including the plate.
+### Requirement: Edit Vehicle opens a pre-filled edit form
+Clicking Edit on a vehicle card SHALL open an edit modal pre-filled with the current vehicle's editable fields. Edit SHALL only be available to owners.
 
-#### Scenario: Edit Toyota vehicle — change display_name only
-- **WHEN** the user opens the edit modal for a Toyota vehicle, changes only display_name, and submits
-- **THEN** a PUT /api/vehicles/{id} request is sent with the new display_name and empty password
-- **THEN** the card updates to show the new display_name
+#### Scenario: Owner opens edit modal
+- **WHEN** the owner clicks Edit
+- **THEN** the edit modal opens
 
-#### Scenario: Edit Toyota vehicle — update credentials
-- **WHEN** the user enters a new password in the edit modal and submits
-- **THEN** the PUT request includes the new password and the backend updates the encrypted config
-
-#### Scenario: Edit Generic vehicle — display_name and license plate available
-- **WHEN** the user opens the edit modal for a Generic vehicle
-- **THEN** the display_name and license_plate fields are editable; no credential fields are shown
-
-#### Scenario: Edit vehicle — set license plate
-- **WHEN** the user enters a license plate in the edit modal and submits
-- **THEN** the PUT request includes the license_plate value and the card updates to display it
-
-#### Scenario: Edit vehicle — clear license plate
-- **WHEN** the user clears the license plate field in the edit modal and submits
-- **THEN** the PUT request sends `license_plate: null` and the card updates to show the "no plate" placeholder
+#### Scenario: Sharee cannot edit
+- **WHEN** a sharee views a vehicle card
+- **THEN** no Edit button is present
 
 ---
 
 ### Requirement: Delete Vehicle requires confirmation
-Clicking Delete on a vehicle card SHALL show a confirmation prompt (browser confirm dialog or inline confirmation UI). On confirmation a DELETE /api/vehicles/{id} request SHALL be sent. On success the card SHALL be removed from the list.
+Clicking Delete on a vehicle card SHALL show a confirmation prompt. On confirmation a DELETE /api/vehicles/{id} request SHALL be sent. On success the card SHALL be removed from the list. Delete SHALL only be available to owners.
 
 #### Scenario: Delete with confirmation removes card
-- **WHEN** the user clicks Delete and confirms
+- **WHEN** the owner clicks Delete and confirms
 - **THEN** DELETE /api/vehicles/{id} is sent and the vehicle card disappears from the list
 
-#### Scenario: Delete cancelled leaves vehicle intact
-- **WHEN** the user clicks Delete but cancels the confirmation
-- **THEN** no DELETE request is sent and the vehicle card remains
-
-#### Scenario: Delete error shows feedback
-- **WHEN** the DELETE request returns an error
-- **THEN** an error message is displayed and the card remains in the list
+#### Scenario: Sharee cannot delete
+- **WHEN** a sharee views a vehicle card
+- **THEN** no Delete button is present
 
 ---
 
@@ -174,3 +145,31 @@ The `SetVehicleLocationModal` SHALL present a single form containing a "Use my c
 #### Scenario: Save error keeps the dialog open with feedback
 - **WHEN** the submission request fails (e.g. HTTP 429 or 500)
 - **THEN** the modal displays an inline error message and stays open with the entered values intact
+
+## ADDED Requirements
+
+### Requirement: Share Vehicle opens a share management modal
+Clicking Share on a vehicle card SHALL open a modal listing current sharees and offering an email input to add a new sharee. The modal SHALL only accept emails of registered users. Adding an already-shared email SHALL be a no-op success. The owner SHALL be able to remove any sharee from the list. The modal SHALL surface API errors inline.
+
+#### Scenario: Owner opens share modal
+- **WHEN** the owner clicks Share on a vehicle card
+- **THEN** a modal opens showing the current sharee list and an email input
+
+#### Scenario: Owner adds a sharee by email
+- **WHEN** the owner enters a registered user's email and submits
+- **THEN** `POST /api/vehicles/{id}/shares` is sent
+- **THEN** the modal's sharee list is replaced with the response's `sharees` array, which includes the new sharee
+
+#### Scenario: Owner removes a sharee
+- **WHEN** the owner clicks Remove next to a sharee
+- **THEN** the Remove button is disabled while the request is in flight
+- **THEN** `DELETE /api/vehicles/{id}/shares/{user_id}` is sent
+- **THEN** the sharee is removed from the list only after the API call succeeds
+
+#### Scenario: Unknown email shows error
+- **WHEN** the owner enters an email not present in the system
+- **THEN** the modal displays an error and no share is created
+
+#### Scenario: Sharee cannot open share modal
+- **WHEN** a sharee views a vehicle card
+- **THEN** no Share button is present and the share modal cannot be opened

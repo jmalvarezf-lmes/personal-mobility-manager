@@ -25,7 +25,7 @@ def _make_vehicle(brand: Brand = Brand.GENERIC, owner_id: UUID | None = None) ->
         vin="VIN001" if brand == Brand.TOYOTA else None,
         license_plate=None,
         created_at=datetime.now(UTC),
-        user_id=owner_id or _OWNER_ID,
+        owner_id=owner_id or _OWNER_ID,
     )
 
 
@@ -47,7 +47,7 @@ class InMemoryVehicleRepo:
     def get_all_by_brand(self, brand: Brand) -> list[Vehicle]:
         return [v for v in self.vehicles if v.brand == brand]
 
-    def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
+    def get_all_by_owner_id(self, user_id: UUID) -> list[Vehicle]:
         return [v for v in self.vehicles if v.user_id == user_id]
 
     def delete(self, vehicle_id: UUID) -> None:

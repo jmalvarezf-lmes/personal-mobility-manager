@@ -26,6 +26,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     Uuid,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -113,6 +114,7 @@ users_table = Table(
     Column("email", Text, nullable=False),
     Column("display_name", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("idx_users_email_lower", func.lower("email"), unique=True),
 )
 
 vehicles_table = Table(
@@ -124,7 +126,16 @@ vehicles_table = Table(
     Column("vin", String(50), nullable=True),
     Column("license_plate", String(20), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("user_id", Uuid, ForeignKey("users.id"), nullable=False),
+    Column("owner_id", Uuid, ForeignKey("users.id"), nullable=False),
+)
+
+vehicle_shares_table = Table(
+    "vehicle_shares",
+    metadata,
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("idx_vehicle_shares_user_id", "user_id"),
 )
 
 user_preferences_table = Table(

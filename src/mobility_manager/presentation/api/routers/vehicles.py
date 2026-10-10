@@ -3,11 +3,14 @@ Presentation: Vehicles API router.
 
 Endpoints:
   POST   /vehicles                                — register a new vehicle
-  GET    /vehicles/{vehicle_id}/location           — latest known location
-  GET    /vehicles/{vehicle_id}/locations          — paginated location history
-  POST   /vehicles/{vehicle_id}/locations          — owner-submitted location (session auth, generic only)
-  GET    /vehicles/{vehicle_id}/ser-tickets        — paginated SER ticket history
-  POST   /vehicles/{token}/location                — push ingest from generic device
+  GET    /vehicles/{vehicle_id}/shares            — list sharees (owner only)
+  POST   /vehicles/{vehicle_id}/shares            — share with a user (owner only)
+  DELETE /vehicles/{vehicle_id}/shares/{user_id}  — revoke a share (owner or self)
+  GET    /vehicles/{vehicle_id}/location          — latest known location
+  GET    /vehicles/{vehicle_id}/locations         — paginated location history
+  POST   /vehicles/{vehicle_id}/locations         — owner-submitted location (session auth, generic only)
+  GET    /vehicles/{vehicle_id}/ser-tickets       — paginated SER ticket history
+  POST   /vehicles/{token}/location               — push ingest from generic device
   GET    /vehicles/{vehicle_id}/ser-parking-exemptions    — view exemption
   POST   /vehicles/{vehicle_id}/ser-parking-exemptions    — set/replace exemption
   DELETE /vehicles/{vehicle_id}/ser-parking-exemptions    — clear exemption
@@ -23,20 +26,27 @@ from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.exceptions import (
     BrandNotEnabledError,
     InvalidSerParkingExemptionZoneError,
+    UserNotFoundError,
     VehicleLocationNotFoundError,
     VehicleNotFoundError,
 )
 from mobility_manager.domain.ports.vehicle_ambient_label_repository import (
     VehicleAmbientLabelRepository,
 )
+from mobility_manager.domain.ports.vehicle_config_repository import (
+    VehicleConfigRepository,
+)
 from mobility_manager.domain.value_objects.ambient_label_status import (
     AmbientLabelStatus,
 )
 from mobility_manager.domain.value_objects.brand import Brand
+from mobility_manager.domain.value_objects.vehicle_access import VehicleAccess
 from mobility_manager.presentation.api.deps import (
     get_current_user,
     get_owned_vehicle_or_raise,
+    get_vehicle_access_or_raise,
     require_owned_vehicle,
+    require_vehicle_access,
 )
 from mobility_manager.presentation.api.factories import (
     VehicleRegisterFactory,
@@ -46,10 +56,14 @@ from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.schemas import (
     GenericConfigResponse,
     PushLocationRequest,
+    RedactedConfigResponse,
     RegisterVehicleRequest,
     SerTicketHistoryResponse,
     SerTicketListItemResponse,
     SetVehicleSerParkingExemptionRequest,
+    ShareeResponse,
+    ShareVehicleRequest,
+    ShareVehicleResponse,
     ToyotaConfigResponse,
     UpdateVehicleRequest,
     VehicleDetailResponse,
@@ -83,7 +97,7 @@ def list_vehicles(
     request: Request,
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> list[VehicleListItem]:
-    """Return all vehicles owned by the authenticated user."""
+    """Return all vehicles owned by or shared with the authenticated user."""
     result = request.app.state.list_user_vehicles.execute(current_user.id)
     ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
     items: list[VehicleListItem] = []
@@ -105,23 +119,34 @@ def list_vehicles(
                 location=location_summary,
                 ambient_label=_resolve_ambient_label(item.vehicle.id, ambient_label_repo),
                 has_ser_tickets=item.has_ser_tickets,
+                is_owner=item.is_owner,
             )
         )
     return items
 
 
-def _build_vehicle_detail(vehicle, config_repo, ambient_label_repo=None) -> VehicleDetailResponse:  # type: ignore[no-untyped-def]
+def _build_vehicle_detail(
+    vehicle: Vehicle,
+    is_owner: bool,
+    config_repo: VehicleConfigRepository,
+    ambient_label_repo: VehicleAmbientLabelRepository | None = None,
+) -> VehicleDetailResponse:
     """Build a VehicleDetailResponse from a vehicle entity and its config repo."""
-    if vehicle.brand == Brand.TOYOTA:
-        toyota = config_repo.get_toyota_config(vehicle.id)
-        config: ToyotaConfigResponse | GenericConfigResponse = ToyotaConfigResponse(
-            username=toyota.username,
-            locale=toyota.locale,
-        )
+    config: ToyotaConfigResponse | GenericConfigResponse | RedactedConfigResponse
+    if is_owner:
+        if vehicle.brand == Brand.TOYOTA:
+            toyota = config_repo.get_toyota_config(vehicle.id)
+            config = ToyotaConfigResponse(
+                username=toyota.username,
+                locale=toyota.locale,
+            )
+        else:
+            generic = config_repo.get_generic_config(vehicle.id)
+            token = generic.location_token if generic is not None else ""
+            config = GenericConfigResponse(location_token=token)
     else:
-        generic = config_repo.get_generic_config(vehicle.id)
-        token = generic.location_token if generic is not None else ""
-        config = GenericConfigResponse(location_token=token)
+        config = RedactedConfigResponse(redacted=True)
+
     return VehicleDetailResponse(
         vehicle_id=vehicle.id,
         brand=vehicle.brand,
@@ -130,6 +155,7 @@ def _build_vehicle_detail(vehicle, config_repo, ambient_label_repo=None) -> Vehi
         license_plate=vehicle.license_plate,
         config=config,
         ambient_label=_resolve_ambient_label(vehicle.id, ambient_label_repo),
+        is_owner=is_owner,
     )
 
 
@@ -137,11 +163,116 @@ def _build_vehicle_detail(vehicle, config_repo, ambient_label_repo=None) -> Vehi
 def get_vehicle(
     request: Request,
     vehicle_id: UUID,
-    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+    access: VehicleAccess = Depends(require_vehicle_access),  # noqa: B008
 ) -> VehicleDetailResponse:
-    """Return full detail for a specific vehicle owned by the authenticated user."""
+    """Return full detail for a vehicle accessible to the authenticated user."""
     ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
-    return _build_vehicle_detail(vehicle, request.app.state.vehicle_config_repo, ambient_label_repo)
+    return _build_vehicle_detail(
+        access.vehicle,
+        access.is_owner,
+        request.app.state.vehicle_config_repo,
+        ambient_label_repo,
+    )
+
+
+@router.get("/{vehicle_id}/shares", response_model=ShareVehicleResponse)
+@limiter.limit("60/minute")
+def list_vehicle_shares(
+    request: Request,
+    # Unused directly, but required — see the identical note on update_vehicle
+    # above / limiter.py's headers_enabled note.
+    response: Response,
+    vehicle_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> ShareVehicleResponse:
+    """List the users this vehicle is shared with (owner only)."""
+    get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.list_vehicle_shares
+    shares = use_case.execute(vehicle_id, current_user.id)
+    return ShareVehicleResponse(
+        vehicle_id=vehicle_id,
+        sharees=[
+            ShareeResponse(
+                user_id=share.user_id,
+                display_name=share.display_name,
+                email=share.email,
+                created_at=share.created_at,
+            )
+            for share in shares
+        ],
+    )
+
+
+@router.post("/{vehicle_id}/shares", response_model=ShareVehicleResponse, status_code=201)
+@limiter.limit("60/minute")
+def share_vehicle(
+    request: Request,
+    # Unused directly, but required — see the identical note on update_vehicle
+    # above / limiter.py's headers_enabled note.
+    response: Response,
+    vehicle_id: UUID,
+    body: ShareVehicleRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> ShareVehicleResponse:
+    """Share this vehicle with another user by email (owner only)."""
+    # Ownership check runs after the body has been parsed; see deps.py
+    # module docstring / design.md decision 5 amendment.
+    get_owned_vehicle_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.share_vehicle
+    try:
+        use_case.execute(vehicle_id, current_user.id, body.email)
+    except VehicleNotFoundError:
+        raise HTTPException(status_code=404, detail="Vehicle or user not found") from None
+    except UserNotFoundError:
+        # Return the same status/detail as a missing vehicle so the endpoint
+        # cannot be used to enumerate registered email addresses.
+        raise HTTPException(status_code=404, detail="Vehicle or user not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Return the full sharee list so the client can replace its local state
+    # without an extra round-trip.
+    list_use_case = request.app.state.list_vehicle_shares
+    shares = list_use_case.execute(vehicle_id, current_user.id)
+    return ShareVehicleResponse(
+        vehicle_id=vehicle_id,
+        sharees=[
+            ShareeResponse(
+                user_id=share.user_id,
+                display_name=share.display_name,
+                email=share.email,
+                created_at=share.created_at,
+            )
+            for share in shares
+        ],
+    )
+
+
+@router.delete("/{vehicle_id}/shares/{user_id}", status_code=204)
+@limiter.limit("60/minute")
+def revoke_vehicle_share(
+    request: Request,
+    vehicle_id: UUID,
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> Response:
+    """Revoke a share. Owners may revoke anyone; sharees may revoke themselves."""
+    # Access check ensures the vehicle exists and the current user is the
+    # owner or a sharee. The use case then enforces that non-owners can only
+    # revoke themselves.
+    get_vehicle_access_or_raise(request, vehicle_id, current_user)
+
+    use_case = request.app.state.revoke_vehicle_share
+    try:
+        use_case.execute(vehicle_id, current_user.id, user_id)
+    except VehicleNotFoundError:
+        raise HTTPException(status_code=404, detail="Vehicle not found") from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Cannot revoke another user's share") from None
+
+    return Response(status_code=204)
 
 
 @router.delete("/{vehicle_id}", status_code=204)
@@ -196,7 +327,12 @@ def update_vehicle(
     if updated_vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found after update")
     ambient_label_repo = getattr(request.app.state, "vehicle_ambient_label_repo", None)
-    return _build_vehicle_detail(updated_vehicle, request.app.state.vehicle_config_repo, ambient_label_repo)
+    return _build_vehicle_detail(
+        updated_vehicle,
+        True,
+        request.app.state.vehicle_config_repo,
+        ambient_label_repo,
+    )
 
 
 @router.post("", response_model=VehicleResponse, status_code=201)
@@ -239,6 +375,12 @@ def register_vehicle(
         # (not a value threaded through RegisterVehicleResult) already
         # reflects it — same helper used by GET /vehicles and /vehicles/{id}.
         ambient_label=_resolve_ambient_label(result.vehicle_id, ambient_label_repo),
+        # A newly registered vehicle is always owned by the registering user
+        # and has no location or SER tickets yet, so the card can render its
+        # owner-only controls immediately without a list refetch.
+        location=None,
+        has_ser_tickets=False,
+        is_owner=True,
     )
 
 
@@ -246,7 +388,7 @@ def register_vehicle(
 def get_latest_location(
     request: Request,
     vehicle_id: UUID,
-    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+    access: VehicleAccess = Depends(require_vehicle_access),  # noqa: B008
 ) -> VehicleLocationResponse:
     """Return the most recent known GPS location for the given vehicle."""
     use_case = request.app.state.get_latest_vehicle_location
@@ -279,7 +421,7 @@ def list_location_history(
     vehicle_id: UUID,
     limit: int = Query(default=5, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
-    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+    access: VehicleAccess = Depends(require_vehicle_access),  # noqa: B008
 ) -> VehicleLocationHistoryResponse:
     """Return a page of the given vehicle's location history, newest first."""
     use_case = request.app.state.list_vehicle_location_history
@@ -312,7 +454,7 @@ def list_ser_tickets(
     vehicle_id: UUID,
     limit: int = Query(default=5, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
-    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+    access: VehicleAccess = Depends(require_vehicle_access),  # noqa: B008
 ) -> SerTicketHistoryResponse:
     """
     Return a page of the given vehicle's SER tickets, newest first.
@@ -486,9 +628,9 @@ def push_vehicle_location_authenticated(
 def get_ser_parking_exemption(
     request: Request,
     vehicle_id: UUID,
-    vehicle: Vehicle = Depends(require_owned_vehicle),  # noqa: B008
+    access: VehicleAccess = Depends(require_vehicle_access),  # noqa: B008
 ) -> VehicleSerParkingExemptionResponse:
-    """Return the authenticated owner's vehicle's stored SER parking exemption, or nulls if unset."""
+    """Return the vehicle's stored SER parking exemption, or nulls if unset."""
     use_case = request.app.state.get_vehicle_ser_parking_exemption
     exemption = use_case.execute(vehicle_id)
     if exemption is None:

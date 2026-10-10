@@ -4,6 +4,7 @@ import type {
   VehicleDetail,
   VehicleListItem,
   VehicleLocationHistoryPage,
+  VehicleSharesResponse,
 } from "../types/vehicle";
 
 export async function listVehicles(): Promise<VehicleListItem[]> {
@@ -168,5 +169,47 @@ export async function clearSerParkingExemption(
     throw new Error(
       `Failed to clear SER parking exemption: ${response.status}`,
     );
+  }
+}
+
+export async function listVehicleShares(
+  vehicleId: string,
+): Promise<VehicleSharesResponse> {
+  const response = await fetch(`/api/vehicles/${vehicleId}/shares`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to list vehicle shares: ${response.status}`);
+  }
+  return (await response.json()) as VehicleSharesResponse;
+}
+
+export async function shareVehicle(
+  vehicleId: string,
+  email: string,
+): Promise<VehicleSharesResponse> {
+  const response = await fetch(`/api/vehicles/${vehicleId}/shares`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed to share vehicle: ${response.status}`);
+  }
+  return (await response.json()) as VehicleSharesResponse;
+}
+
+export async function revokeVehicleShare(
+  vehicleId: string,
+  userId: string,
+): Promise<void> {
+  const response = await fetch(`/api/vehicles/${vehicleId}/shares/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to revoke vehicle share: ${response.status}`);
   }
 }

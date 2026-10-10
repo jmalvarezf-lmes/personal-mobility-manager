@@ -48,6 +48,7 @@ from mobility_manager.domain.exceptions import (
 )
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.location import GeoLocation
+from tests.doubles.metrics_collector import FakeMetricsCollector
 
 _MOVED_LAT, _MOVED_LNG = 40.4258, -3.7038
 
@@ -145,7 +146,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
         vin=None,
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -199,6 +200,7 @@ class _Fixture:
         self.ser_zone_recheck_gate = FakeSerZoneRecheckGate()
         self.create_ser_ticket = FakeCreateSerTicket()
         self.event_publisher = FakeEventPublisher()
+        self.metrics_collector = FakeMetricsCollector()
 
     def build(self) -> SerTicketCreationTriggerHandler:
         return SerTicketCreationTriggerHandler(
@@ -209,6 +211,7 @@ class _Fixture:
             ser_zone_recheck_gate=self.ser_zone_recheck_gate,  # type: ignore[arg-type]
             create_ser_ticket=self.create_ser_ticket,  # type: ignore[arg-type]
             event_publisher=self.event_publisher,  # type: ignore[arg-type]
+            metrics_collector=self.metrics_collector,  # type: ignore[arg-type]
         )
 
 
@@ -370,12 +373,7 @@ def test_missing_vehicle_skipped_without_error() -> None:
     assert fx.event_publisher.published == []
 
 
-def test_ticket_created_records_created_outcome_metric(monkeypatch) -> None:
-    recorded: list[str] = []
-    monkeypatch.setattr(
-        "mobility_manager.application.event_handlers.ser_ticket_creation_trigger_handler.record_ser_ticket_auto_creation",
-        lambda outcome: recorded.append(outcome),
-    )
+def test_ticket_created_records_created_outcome_metric() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
@@ -389,15 +387,10 @@ def test_ticket_created_records_created_outcome_metric(monkeypatch) -> None:
 
     handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
 
-    assert recorded == ["created"]
+    assert fx.metrics_collector.ser_ticket_auto_creations == ["created"]
 
 
-def test_ticket_creation_failure_records_failed_outcome_metric(monkeypatch) -> None:
-    recorded: list[str] = []
-    monkeypatch.setattr(
-        "mobility_manager.application.event_handlers.ser_ticket_creation_trigger_handler.record_ser_ticket_auto_creation",
-        lambda outcome: recorded.append(outcome),
-    )
+def test_ticket_creation_failure_records_failed_outcome_metric() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
@@ -411,7 +404,7 @@ def test_ticket_creation_failure_records_failed_outcome_metric(monkeypatch) -> N
 
     handler.handle(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
 
-    assert recorded == ["failed"]
+    assert fx.metrics_collector.ser_ticket_auto_creations == ["failed"]
 
 
 def test_no_connected_provider_publishes_creation_failed_without_calling_create_ser_ticket() -> None:

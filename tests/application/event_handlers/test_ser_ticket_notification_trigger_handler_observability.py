@@ -27,6 +27,7 @@ from mobility_manager.domain.entities.user_notification_preference import (
     UserNotificationPreference,
 )
 from mobility_manager.domain.entities.vehicle import Vehicle
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
@@ -78,6 +79,23 @@ class _FakeSendNotification:
         return True
 
 
+class _FakeVehicleShareRepo:
+    def save(self, share: VehicleShare) -> None:
+        pass
+
+    def find_by_vehicle_and_user(self, vehicle_id: UUID, user_id: UUID) -> VehicleShare | None:
+        return None
+
+    def list_sharees(self, vehicle_id: UUID) -> list[VehicleShare]:
+        return []
+
+    def delete(self, vehicle_id: UUID, user_id: UUID) -> None:
+        pass
+
+    def list_vehicle_ids_for_user(self, user_id: UUID) -> list[UUID]:
+        return []
+
+
 def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
     return Vehicle(
         id=vehicle_id,
@@ -86,7 +104,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
         vin=None,
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -113,6 +131,7 @@ def _make_handler(vehicle_repo, ser_zone_recheck_gate) -> SerTicketNotificationT
         determine_ser_ticket_requirement=_FakeDetermineSerTicketRequirement(),  # type: ignore[arg-type]
         ser_zone_recheck_gate=ser_zone_recheck_gate,  # type: ignore[arg-type]
         send_notification=_FakeSendNotification(),  # type: ignore[arg-type]
+        vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
     )
 
 

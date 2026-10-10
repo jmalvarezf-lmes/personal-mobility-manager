@@ -27,6 +27,7 @@ from mobility_manager.domain.entities.user_notification_preference import (
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_location import VehicleLocation
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
@@ -34,6 +35,9 @@ from mobility_manager.domain.exceptions import NotificationChannelApiError
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
+)
+from mobility_manager.infrastructure.observability.metrics_collector_adapter import (
+    OpenTelemetryMetricsCollector,
 )
 
 _FAR_LAT, _FAR_LNG = 40.4168, -3.7038
@@ -87,6 +91,23 @@ class _FakeSendNotification:
         return self._result
 
 
+class _FakeVehicleShareRepo:
+    def save(self, share: VehicleShare) -> None:
+        pass
+
+    def find_by_vehicle_and_user(self, vehicle_id: UUID, user_id: UUID) -> VehicleShare | None:
+        return None
+
+    def list_sharees(self, vehicle_id: UUID) -> list[VehicleShare]:
+        return []
+
+    def delete(self, vehicle_id: UUID, user_id: UUID) -> None:
+        pass
+
+    def list_vehicle_ids_for_user(self, user_id: UUID) -> list[UUID]:
+        return []
+
+
 def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
     return Vehicle(
         id=vehicle_id,
@@ -95,7 +116,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
         vin=None,
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -150,6 +171,8 @@ def test_successful_dispatch_produces_a_span_and_records_metric(
         user_preferences_repo=_FakeUserPreferencesRepo(preferences),  # type: ignore[arg-type]
         notification_preferences_repo=_FakeNotificationPreferencesRepo(notification_preference),  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
+        vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
+        metrics_collector=OpenTelemetryMetricsCollector(),  # type: ignore[arg-type]
     )
 
     metric_attrs = {"channel": "telegram", "success": True}
@@ -214,6 +237,8 @@ def test_failed_send_marks_span_as_error_without_raising(
         user_preferences_repo=_FakeUserPreferencesRepo(preferences),  # type: ignore[arg-type]
         notification_preferences_repo=_FakeNotificationPreferencesRepo(notification_preference),  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
+        vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
+        metrics_collector=OpenTelemetryMetricsCollector(),  # type: ignore[arg-type]
     )
 
     result = handler.handle(_make_event(vehicle_id, now))  # must not raise
@@ -236,6 +261,8 @@ def test_skip_path_still_produces_a_span_with_no_error(
         user_preferences_repo=_FakeUserPreferencesRepo(None),  # type: ignore[arg-type]
         notification_preferences_repo=_FakeNotificationPreferencesRepo(None),  # type: ignore[arg-type]
         send_notification=_FakeSendNotification(),  # type: ignore[arg-type]
+        vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
+        metrics_collector=OpenTelemetryMetricsCollector(),  # type: ignore[arg-type]
     )
 
     handler.handle(_make_event(vehicle_id, now))

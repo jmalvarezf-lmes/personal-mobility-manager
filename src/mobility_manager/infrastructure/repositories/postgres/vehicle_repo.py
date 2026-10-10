@@ -32,7 +32,7 @@ class PostgresVehicleRepository(VehicleRepository):
                     vin=vehicle.vin,
                     license_plate=vehicle.license_plate,
                     created_at=vehicle.created_at,
-                    user_id=vehicle.user_id,
+                    owner_id=vehicle.owner_id,
                 )
             )
 
@@ -54,10 +54,10 @@ class PostgresVehicleRepository(VehicleRepository):
             rows = conn.execute(select(vehicles_table).where(vehicles_table.c.brand == brand.value)).fetchall()
         return [self._row_to_vehicle(r) for r in rows]
 
-    def get_all_by_user_id(self, user_id: UUID) -> list[Vehicle]:
+    def get_all_by_owner_id(self, owner_id: UUID) -> list[Vehicle]:
         """Return all vehicles owned by the given user."""
         with self._engine.connect() as conn:
-            rows = conn.execute(select(vehicles_table).where(vehicles_table.c.user_id == user_id)).fetchall()
+            rows = conn.execute(select(vehicles_table).where(vehicles_table.c.owner_id == owner_id)).fetchall()
         return [self._row_to_vehicle(r) for r in rows]
 
     def delete(self, vehicle_id: UUID) -> None:
@@ -88,5 +88,5 @@ class PostgresVehicleRepository(VehicleRepository):
             vin=row.vin,  # type: ignore[attr-defined]
             license_plate=row.license_plate,  # type: ignore[attr-defined]
             created_at=row.created_at,  # type: ignore[attr-defined]
-            user_id=row.user_id,  # type: ignore[attr-defined]
+            owner_id=row.owner_id,  # type: ignore[attr-defined]
         )

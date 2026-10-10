@@ -24,15 +24,13 @@ from mobility_manager.domain.ports.ambient_label_icon_repository import (
 from mobility_manager.domain.ports.ambient_label_lookup_port import (
     AmbientLabelLookupPort,
 )
+from mobility_manager.domain.ports.metrics_collector import MetricsCollector
 from mobility_manager.domain.ports.vehicle_ambient_label_repository import (
     VehicleAmbientLabelRepository,
 )
 from mobility_manager.domain.value_objects.ambient_label import AmbientLabel
 from mobility_manager.domain.value_objects.ambient_label_status import (
     AmbientLabelStatus,
-)
-from mobility_manager.infrastructure.observability.metrics import (
-    record_ambient_label_lookup,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,10 +48,12 @@ class LookupVehicleAmbientLabel:
         lookup_port: AmbientLabelLookupPort,
         label_repo: VehicleAmbientLabelRepository,
         icon_repo: AmbientLabelIconRepository,
+        metrics_collector: MetricsCollector,
     ) -> None:
         self._lookup_port = lookup_port
         self._label_repo = label_repo
         self._icon_repo = icon_repo
+        self._metrics_collector = metrics_collector
 
     def execute(self, vehicle_id: UUID, license_plate: str) -> None:
         """
@@ -67,11 +67,11 @@ class LookupVehicleAmbientLabel:
             result = self._lookup_port.lookup(license_plate)
         except Exception:
             logger.exception("Ambient label lookup failed for vehicle %s", vehicle_id)
-            record_ambient_label_lookup(status=AmbientLabelStatus.ERROR.value)
+            self._metrics_collector.record_ambient_label_lookup(status=AmbientLabelStatus.ERROR.value)
             self._label_repo.upsert(vehicle_id, None, AmbientLabelStatus.ERROR, now)
             return
 
-        record_ambient_label_lookup(status=result.status.value)
+        self._metrics_collector.record_ambient_label_lookup(status=result.status.value)
         self._label_repo.upsert(vehicle_id, result.label, result.status, now)
 
         if result.status == AmbientLabelStatus.FOUND and result.label in _ICON_ELIGIBLE_LABELS:

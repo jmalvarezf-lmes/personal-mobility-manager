@@ -55,7 +55,7 @@ def pg_engine():
                     vin VARCHAR(50),
                     license_plate VARCHAR(20),
                     created_at TIMESTAMPTZ NOT NULL,
-                    user_id UUID NOT NULL REFERENCES users(id)
+                    owner_id UUID NOT NULL REFERENCES users(id)
                 )
                 """
             )
@@ -97,13 +97,13 @@ def _insert_vehicle(engine, vehicle_id, license_plate: str | None = "1234ABC") -
         conn.execute(
             text(
                 "INSERT INTO users (id, google_sub, email, display_name, created_at)"
-                " VALUES (:id, :sub, 'test@example.com', 'Test User', :now)"
+                " VALUES (:id, :sub, (:id || '@example.com'), 'Test User', :now)"
             ),
             {"id": str(user_id), "sub": str(uuid4()), "now": datetime.now(UTC)},
         )
         conn.execute(
             text(
-                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, user_id)"
+                "INSERT INTO vehicles (id, brand, display_name, license_plate, created_at, owner_id)"
                 " VALUES (:id, 'generic', 'Test', :plate, :now, :user_id)"
             ),
             {

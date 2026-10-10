@@ -20,6 +20,7 @@ from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_ser_parking_exemption import (
     VehicleSerParkingExemption,
 )
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.exceptions import InvalidSerParkingExemptionZoneError
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.presentation.api.routers.vehicles import router
@@ -56,7 +57,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID) -> Vehicle:
         vin=None,
         license_plate="1234ABC",
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -66,6 +67,7 @@ def _build_app(
     get_uc=None,
     set_uc=None,
     clear_uc=None,
+    vehicle_share_repo=None,
 ) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -79,6 +81,10 @@ def _build_app(
         app.state.set_vehicle_ser_parking_exemption = set_uc
     if clear_uc is not None:
         app.state.clear_vehicle_ser_parking_exemption = clear_uc
+    if vehicle_share_repo is None:
+        vehicle_share_repo = MagicMock()
+        vehicle_share_repo.find_by_vehicle_and_user.return_value = None
+    app.state.vehicle_share_repo = vehicle_share_repo
     mock_validate_session = MagicMock()
     mock_validate_session.execute.return_value = True
     app.state.validate_session = mock_validate_session
@@ -99,6 +105,21 @@ def _build_authed_app(vehicle=None, **kwargs) -> tuple[FastAPI, str]:
     app = _build_app(**kwargs)
     cookie = _make_session_cookie(user)
     return app, cookie
+
+
+def _make_share_repo(sharee: bool = False) -> MagicMock:
+    """Return a vehicle_share_repo mock: None for non-sharees, a share row for sharees."""
+    repo = MagicMock()
+    repo.find_by_vehicle_and_user.return_value = (
+        VehicleShare(
+            vehicle_id=uuid4(),
+            user_id=_OWNER_ID,
+            created_at=datetime.now(UTC),
+        )
+        if sharee
+        else None
+    )
+    return repo
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +146,7 @@ class TestGetSerParkingExemption:
 
         assert response.status_code == 404
 
-    def test_non_owner_returns_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_owner_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
         vehicle_id = uuid4()
         other_owner_id = uuid4()
@@ -136,7 +157,32 @@ class TestGetSerParkingExemption:
 
         response = client.get(f"/vehicles/{vehicle_id}/ser-parking-exemptions")
 
-        assert response.status_code == 403
+        assert response.status_code == 404
+
+    def test_sharee_gets_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)
+        vehicle_id = uuid4()
+        other_owner_id = uuid4()
+        vehicle = _make_vehicle(vehicle_id, other_owner_id)
+        get_uc = MagicMock()
+        get_uc.execute.return_value = VehicleSerParkingExemption(
+            vehicle_id=vehicle_id,
+            city_code="madrid",
+            zone_number="163",
+            updated_at=datetime.now(UTC),
+        )
+        app, cookie = _build_authed_app(
+            vehicle=vehicle,
+            get_uc=get_uc,
+            vehicle_share_repo=_make_share_repo(sharee=True),
+        )
+        client = TestClient(app)
+        client.cookies.set("session", cookie)
+
+        response = client.get(f"/vehicles/{vehicle_id}/ser-parking-exemptions")
+
+        assert response.status_code == 200
+        assert response.json() == {"city_code": "madrid", "zone_number": "163"}
 
     def test_owner_retrieves_existing_exemption(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("JWT_SECRET", _JWT_SECRET)

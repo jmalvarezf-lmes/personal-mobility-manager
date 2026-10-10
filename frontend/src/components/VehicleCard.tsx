@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { deleteVehicle, getVehicle } from "../api/vehicles";
 import type { GenericConfig, ToyotaConfig, VehicleDetail, VehicleListItem, VehicleLocation } from "../types/vehicle";
+import { isRedactedConfig } from "../types/vehicle";
 import AmbientLabelIcon from "./AmbientLabelIcon";
 import SetVehicleLocationModal from "./SetVehicleLocationModal";
+import ShareVehicleModal from "./ShareVehicleModal";
 import Button from "./ui/Button";
 import Card from "./ui/Card";
 
@@ -28,6 +30,7 @@ export default function VehicleCard({
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showSetLocation, setShowSetLocation] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   useEffect(() => {
     getVehicle(vehicle.vehicle_id)
@@ -56,8 +59,10 @@ export default function VehicleCard({
     }
   }
 
-  const toyotaConfig = detail?.brand === "toyota" ? (detail.config as ToyotaConfig) : null;
-  const genericConfig = detail?.brand === "generic" ? (detail.config as GenericConfig) : null;
+  const config = detail?.config ?? null;
+  const configVisible = config !== null && !isRedactedConfig(config);
+  const toyotaConfig = configVisible && detail?.brand === "toyota" ? (config as ToyotaConfig) : null;
+  const genericConfig = configVisible && detail?.brand === "generic" ? (config as GenericConfig) : null;
 
   return (
     <Card data-testid="vehicle-card">
@@ -134,18 +139,25 @@ export default function VehicleCard({
         </p>
       )}
 
-      <div className="mt-3 flex gap-2">
-        <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
-          {t("vehicle.edit")}
-        </Button>
-        {vehicle.brand === "generic" && (
-          <Button variant="secondary" size="sm" onClick={() => setShowSetLocation(true)}>
-            {t("vehicle.setLocation")}
-          </Button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {vehicle.is_owner && (
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void handleEdit()}>
+              {t("vehicle.edit")}
+            </Button>
+            {vehicle.brand === "generic" && (
+              <Button variant="secondary" size="sm" onClick={() => setShowSetLocation(true)}>
+                {t("vehicle.setLocation")}
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={() => setShowShare(true)}>
+              {t("vehicle.share")}
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => void handleDelete()}>
+              {t("vehicle.delete")}
+            </Button>
+          </>
         )}
-        <Button variant="danger" size="sm" onClick={() => void handleDelete()}>
-          {t("vehicle.delete")}
-        </Button>
       </div>
 
       {showSetLocation && (
@@ -153,6 +165,13 @@ export default function VehicleCard({
           vehicleId={vehicle.vehicle_id}
           onClose={() => setShowSetLocation(false)}
           onSaved={(location) => onLocationUpdated?.(vehicle.vehicle_id, location)}
+        />
+      )}
+
+      {showShare && (
+        <ShareVehicleModal
+          vehicleId={vehicle.vehicle_id}
+          onClose={() => setShowShare(false)}
         />
       )}
     </Card>

@@ -83,7 +83,7 @@ def _make_vehicle(vehicle_id, owner_id) -> Vehicle:
         vin=None,
         license_plate=None,
         created_at=datetime.now(UTC),
-        user_id=owner_id,
+        owner_id=owner_id,
     )
 
 

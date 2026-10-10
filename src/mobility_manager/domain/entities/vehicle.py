@@ -21,4 +21,8 @@ class Vehicle:
     vin: str | None
     license_plate: str | None
     created_at: datetime
-    user_id: UUID
+    owner_id: UUID
+
+    def is_owned_by(self, user_id: UUID) -> bool:
+        """Return True when the given user owns this vehicle."""
+        return self.owner_id == user_id

@@ -62,7 +62,7 @@ def _make_vehicle(vehicle_id: UUID, license_plate: str | None = "1234ABC") -> Ve
         vin=None,
         license_plate=license_plate,
         created_at=datetime.now(UTC),
-        user_id=uuid4(),
+        owner_id=uuid4(),
     )
 
 
@@ -135,7 +135,7 @@ def test_backlog_query_is_used_not_full_vehicle_list() -> None:
 
     assert len(label_repo.cooldowns_requested) == 1
     assert label_repo.cooldowns_requested[0] == timedelta(hours=24)
-    assert not hasattr(vehicle_repo, "get_all_by_user_id")  # never even has that capability
+    assert not hasattr(vehicle_repo, "get_all_by_owner_id")  # never even has that capability
 
 
 def test_found_vehicles_never_appear_in_the_backlog_so_never_looked_up() -> None:

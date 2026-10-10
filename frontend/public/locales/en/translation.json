@@ -221,6 +221,20 @@
       "provenanceAuto": "Automatic",
       "provenanceManual": "Manual",
       "provenanceUnknown": "Unknown"
+    },
+    "shareVehicle": {
+      "title": "Share Vehicle",
+      "emailPlaceholder": "Enter user's email",
+      "share": "Share",
+      "sharing": "Sharing…",
+      "shareesTitle": "Shared with",
+      "loading": "Loading sharees…",
+      "noSharees": "Not shared with anyone yet.",
+      "remove": "Remove",
+      "removing": "Removing…",
+      "loadError": "Failed to load sharees.",
+      "shareError": "Failed to share vehicle.",
+      "revokeError": "Failed to remove sharee."
     }
   },
   "vehicle": {
@@ -241,6 +255,7 @@
     "edit": "Edit",
     "delete": "Delete",
     "confirmDelete": "Delete \"{{name}}\"?",
-    "setLocation": "Set location"
+    "setLocation": "Set location",
+    "share": "Share"
   }
 }

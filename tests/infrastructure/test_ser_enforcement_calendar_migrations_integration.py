@@ -51,6 +51,16 @@ def pg_engine():
 def test_migrations_apply_cleanly_and_seed_data_matches_spec(pg_engine) -> None:
     cfg = Config(str(_REPO_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+
+    # This test verifies the migrations themselves, so it needs a clean
+    # starting state. Other integration tests share the same Postgres
+    # instance and may have truncated seed tables (e.g. cities); reset the
+    # schema so upgrade re-runs from scratch.
+    with pg_engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+
     command.upgrade(cfg, "head")
 
     with pg_engine.connect() as conn:

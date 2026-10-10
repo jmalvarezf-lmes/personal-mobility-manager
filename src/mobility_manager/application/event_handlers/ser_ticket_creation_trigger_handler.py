@@ -80,6 +80,7 @@ from mobility_manager.domain.exceptions import (
     SerZoneNotFoundError,
 )
 from mobility_manager.domain.ports.event_publisher import EventPublisher
+from mobility_manager.domain.ports.metrics_collector import MetricsCollector
 from mobility_manager.domain.ports.user_preferences_repository import (
     UserPreferencesRepository,
 )
@@ -88,9 +89,6 @@ from mobility_manager.domain.ports.user_ser_provider_config_repository import (
 )
 from mobility_manager.domain.ports.vehicle_repository import VehicleRepository
 from mobility_manager.domain.value_objects.location import GeoLocation
-from mobility_manager.infrastructure.observability.metrics import (
-    record_ser_ticket_auto_creation,
-)
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -135,6 +133,7 @@ class SerTicketCreationTriggerHandler:
         ser_zone_recheck_gate: SerZoneRecheckGate,
         create_ser_ticket: CreateSerTicket,
         event_publisher: EventPublisher,
+        metrics_collector: MetricsCollector,
     ) -> None:
         self._vehicle_repo = vehicle_repo
         self._user_preferences_repo = user_preferences_repo
@@ -143,6 +142,7 @@ class SerTicketCreationTriggerHandler:
         self._ser_zone_recheck_gate = ser_zone_recheck_gate
         self._create_ser_ticket = create_ser_ticket
         self._event_publisher = event_publisher
+        self._metrics_collector = metrics_collector
 
     def handle(self, event: VehicleLocationUpdated) -> None:
         """
@@ -172,9 +172,9 @@ class SerTicketCreationTriggerHandler:
                     logger.warning("Vehicle not found: %s", event.vehicle_id)
                     return
 
-                preferences = self._user_preferences_repo.find_by_user_id(vehicle.user_id)
+                preferences = self._user_preferences_repo.find_by_user_id(vehicle.owner_id)
                 if preferences is None or not preferences.auto_create_ticket:
-                    logger.info("auto_create_ticket disabled for user: %s", vehicle.user_id)
+                    logger.info("auto_create_ticket disabled for user: %s", vehicle.owner_id)
                     return
 
                 decision = self._ser_zone_recheck_gate.evaluate(
@@ -196,7 +196,7 @@ class SerTicketCreationTriggerHandler:
                     # identical guard for rationale.
                     return
 
-                self._create_ticket(vehicle.id, vehicle.user_id, zone.zone_number, event)
+                self._create_ticket(vehicle.id, vehicle.owner_id, zone.zone_number, event)
             except Exception as exc:
                 span.record_exception(exc)
                 span.set_status(Status(StatusCode.ERROR))
@@ -206,7 +206,7 @@ class SerTicketCreationTriggerHandler:
         connected_providers = self._user_ser_provider_config_repo.list_connected_providers(user_id)
         if not connected_providers:
             logger.warning("No connected SER ticket provider for user: %s", user_id)
-            record_ser_ticket_auto_creation(outcome="failed")
+            self._metrics_collector.record_ser_ticket_auto_creation(outcome="failed")
             self._event_publisher.publish(
                 SerTicketCreationFailed(
                     vehicle_id=vehicle_id,
@@ -236,7 +236,7 @@ class SerTicketCreationTriggerHandler:
                 user_id,
                 zone_number,
             )
-            record_ser_ticket_auto_creation(outcome="failed")
+            self._metrics_collector.record_ser_ticket_auto_creation(outcome="failed")
             self._event_publisher.publish(
                 SerTicketCreationFailed(
                     vehicle_id=vehicle_id,
@@ -247,7 +247,7 @@ class SerTicketCreationTriggerHandler:
             )
             return
 
-        record_ser_ticket_auto_creation(outcome="created")
+        self._metrics_collector.record_ser_ticket_auto_creation(outcome="created")
         # ElParkingSerTicketProvider — the only concrete provider — always
         # sets start_date or raises; a successfully created ticket never
         # reaches here without one.

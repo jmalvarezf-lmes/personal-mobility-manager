@@ -8,7 +8,7 @@ Uses INSERT ... ON CONFLICT (google_sub) DO UPDATE for upsert semantics.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
@@ -60,6 +60,24 @@ class PostgresUserRepository(UserRepository):
         with self._engine.connect() as conn:
             row = conn.execute(
                 select(users_table).where(users_table.c.id == user_id)
+            ).fetchone()
+
+        if row is None:
+            return None
+        return self._row_to_user(row)
+
+    def find_by_email(self, email: str) -> User | None:
+        """Return the user with the given email, or None if not found.
+
+        Matching is case-insensitive and backed by a unique lowercase index,
+        so `User@Example.com` and `user@example.com` resolve to the same row
+        and cannot coexist in the database.
+        """
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                select(users_table).where(
+                    func.lower(users_table.c.email) == email.lower()
+                )
             ).fetchone()
 
         if row is None:

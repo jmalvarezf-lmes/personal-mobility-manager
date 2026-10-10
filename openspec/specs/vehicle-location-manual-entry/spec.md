@@ -1,17 +1,13 @@
 ### Requirement: Authenticated endpoint accepts location from the vehicle's owner
-The system SHALL expose `POST /vehicles/{vehicle_id}/locations` (plural — distinct from the existing singular `POST /vehicles/{token}/location`, since `location_token` values are UUID-formatted and would otherwise be indistinguishable from `vehicle_id` on the same route shape) to accept a GPS location update from the authenticated owner of that vehicle. The endpoint SHALL require a valid user session and SHALL accept `lat`, `lon`, and `recorded_at` in the request body, using the same validation rules as `POST /vehicles/{token}/location`.
+The system SHALL expose `POST /vehicles/{vehicle_id}/locations` (plural) to accept a GPS location update from the authenticated owner of that vehicle. The endpoint SHALL require a valid user session and SHALL accept `lat`, `lon`, and `recorded_at` in the request body, using the same validation rules as `POST /vehicles/{token}/location`.
 
 #### Scenario: Valid submission accepted
 - **WHEN** the authenticated owner of a generic vehicle sends `POST /vehicles/{vehicle_id}/locations` with valid `lat`, `lon`, `recorded_at`
 - **THEN** the system stores the location with `source="push"` and responds with HTTP 204
 
-#### Scenario: Invalid lat/lon rejected
-- **WHEN** `lat` is outside [-90, 90] or `lon` is outside [-180, 180]
-- **THEN** the system responds with HTTP 422 and a validation error
-
-#### Scenario: `recorded_at` in the future rejected
-- **WHEN** `recorded_at` is more than 60 seconds in the future relative to server time
-- **THEN** the system responds with HTTP 422 indicating the timestamp is invalid
+#### Scenario: Sharee submission rejected
+- **WHEN** an authenticated sharee sends `POST /vehicles/{vehicle_id}/locations` for a shared generic vehicle
+- **THEN** the system responds with HTTP 403 and does not record a location
 
 #### Scenario: Unauthenticated request rejected
 - **WHEN** a request is sent without a valid user session
@@ -28,7 +24,7 @@ The system SHALL resolve the target vehicle using the same ownership-check depen
 
 #### Scenario: Non-owner request rejected
 - **WHEN** the authenticated user does not own the vehicle identified by `vehicle_id`
-- **THEN** the system responds with HTTP 403, consistent with other owned-vehicle endpoints (`get_owned_vehicle_or_raise` returns 404 only when the vehicle does not exist at all, 403 when it exists but is owned by someone else)
+- **THEN** the system responds with HTTP 403
 
 #### Scenario: Unknown vehicle rejected
 - **WHEN** `vehicle_id` does not match any existing vehicle

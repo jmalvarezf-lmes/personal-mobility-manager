@@ -41,6 +41,7 @@ from mobility_manager.domain.entities.user_notification_preference import (
 )
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
+from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
 )
@@ -151,6 +152,29 @@ class FakeSendNotification:
         return True
 
 
+class FakeVehicleShareRepo:
+    def __init__(self) -> None:
+        self.shares: list[VehicleShare] = []
+
+    def save(self, share: VehicleShare) -> None:
+        self.shares.append(share)
+
+    def find_by_vehicle_and_user(self, vehicle_id: UUID, user_id: UUID) -> VehicleShare | None:
+        return next(
+            (s for s in self.shares if s.vehicle_id == vehicle_id and s.user_id == user_id),
+            None,
+        )
+
+    def list_sharees(self, vehicle_id: UUID) -> list[VehicleShare]:
+        return [s for s in self.shares if s.vehicle_id == vehicle_id]
+
+    def delete(self, vehicle_id: UUID, user_id: UUID) -> None:
+        self.shares = [s for s in self.shares if not (s.vehicle_id == vehicle_id and s.user_id == user_id)]
+
+    def list_vehicle_ids_for_user(self, user_id: UUID) -> list[UUID]:
+        return [s.vehicle_id for s in self.shares if s.user_id == user_id]
+
+
 def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "1234ABC") -> Vehicle:
     return Vehicle(
         id=vehicle_id,
@@ -159,7 +183,7 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "
         vin=None,
         license_plate=license_plate,
         created_at=datetime.now(UTC),
-        user_id=user_id,
+        owner_id=user_id,
     )
 
 
@@ -193,6 +217,7 @@ class _Fixture:
         self.determine_requirement = FakeDetermineSerTicketRequirement(required=True)
         self.ser_zone_recheck_gate = FakeSerZoneRecheckGate()
         self.send_notification = FakeSendNotification()
+        self.share_repo = FakeVehicleShareRepo()
 
     def build(self) -> SerTicketNotificationTriggerHandler:
         return SerTicketNotificationTriggerHandler(
@@ -202,6 +227,7 @@ class _Fixture:
             determine_ser_ticket_requirement=self.determine_requirement,  # type: ignore[arg-type]
             ser_zone_recheck_gate=self.ser_zone_recheck_gate,  # type: ignore[arg-type]
             send_notification=self.send_notification,  # type: ignore[arg-type]
+            vehicle_share_repo=self.share_repo,  # type: ignore[arg-type]
         )
 
 

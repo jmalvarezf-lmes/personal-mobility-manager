@@ -61,7 +61,7 @@ def _insert_user(engine, user_id) -> None:
         conn.execute(
             text(
                 "INSERT INTO users (id, google_sub, email, display_name, created_at)"
-                " VALUES (:id, :sub, 'test@example.com', 'Test User', :now)"
+                " VALUES (:id, :sub, (:id || '@example.com'), 'Test User', :now)"
             ),
             {"id": str(user_id), "sub": str(uuid4()), "now": datetime.now(UTC)},
         )

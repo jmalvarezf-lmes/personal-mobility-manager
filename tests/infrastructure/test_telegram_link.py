@@ -11,8 +11,9 @@ from mobility_manager.infrastructure.telegram_link import (
     generate_link_token,
     verify_link_token,
 )
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-telegram-link"
+_JWT_SECRET = JWT_SECRET
 
 
 @pytest.fixture(autouse=True)

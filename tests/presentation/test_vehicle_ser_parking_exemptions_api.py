@@ -24,8 +24,9 @@ from mobility_manager.domain.entities.vehicle_share import VehicleShare
 from mobility_manager.domain.exceptions import InvalidSerParkingExemptionZoneError
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.presentation.api.routers.vehicles import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-ser-parking-exemptions"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 

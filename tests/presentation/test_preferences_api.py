@@ -17,8 +17,9 @@ from fastapi.testclient import TestClient
 from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.presentation.api.routers.preferences import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-preferences"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 

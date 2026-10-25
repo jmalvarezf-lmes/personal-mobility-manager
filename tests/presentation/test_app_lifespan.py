@@ -27,12 +27,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from tests import JWT_SECRET
+
 _REQUIRED_ENV = {
     "POSTGRES_DSN": "postgresql://user:pass@localhost:5432/db",
     "TELEGRAM_BOT_TOKEN": "test-token",
     "TELEGRAM_WEBHOOK_SECRET": "test-secret",
     "TELEGRAM_BOT_USERNAME": "test_bot",
-    "JWT_SECRET": "test-jwt-secret",
+    "JWT_SECRET": JWT_SECRET,
     "GOOGLE_CLIENT_ID": "test-client-id",
     "GOOGLE_CLIENT_SECRET": "test-client-secret",
     "GOOGLE_REDIRECT_URI": "http://localhost/callback",
@@ -54,8 +56,8 @@ def _app_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def test_health_responds_normally_with_no_otel_endpoint_configured(_app_env: None) -> None:
     with (
         patch("mobility_manager.presentation.api.app.init_observability") as mock_init,
-        patch("mobility_manager.presentation.api.app.build_providers", return_value=[]),
-        patch("mobility_manager.presentation.api.app.list_city_codes", return_value=[]),
+        patch("mobility_manager.infrastructure.app_factory.build_providers", return_value=[]),
+        patch("mobility_manager.infrastructure.app_factory.list_city_codes", return_value=[]),
     ):
         from mobility_manager.presentation.api.app import app
 
@@ -75,8 +77,8 @@ def test_init_observability_called_when_otel_endpoint_configured(
     with (
         patch("mobility_manager.presentation.api.app.init_observability") as mock_init,
         patch("mobility_manager.presentation.api.app.shutdown_observability") as mock_shutdown,
-        patch("mobility_manager.presentation.api.app.build_providers", return_value=[]),
-        patch("mobility_manager.presentation.api.app.list_city_codes", return_value=[]),
+        patch("mobility_manager.infrastructure.app_factory.build_providers", return_value=[]),
+        patch("mobility_manager.infrastructure.app_factory.list_city_codes", return_value=[]),
     ):
         mock_init.return_value = (MagicMock(), MagicMock())
         from mobility_manager.presentation.api.app import app

@@ -39,6 +39,46 @@ from mobility_manager.infrastructure.orm.tables import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_ser_zone_row(row: Any) -> SerZone | None:
+    """Convert a raw ser_zones row into a SerZone, logging and skipping on bad WKT."""
+    try:
+        geometry = shapely_wkt.loads(row[5])
+    except Exception:
+        logger.warning(
+            "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
+            row[1],
+            row[2],
+        )
+        return None
+    return SerZone(
+        city_code=row[0],
+        zone_number=row[1],
+        zone_type=row[2],
+        district=row[3],
+        spot_count=row[4],
+        geometry=geometry,
+    )
+
+
+def _parse_zone_area_row(row: Any) -> ZoneArea | None:
+    """Convert a raw ser_zone_areas row into a ZoneArea, logging and skipping on bad WKT."""
+    try:
+        geometry = shapely_wkt.loads(row[3])
+    except Exception:
+        logger.warning(
+            "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
+            row[0],
+            row[1],
+        )
+        return None
+    return ZoneArea(
+        city_code=row[0],
+        zone_number=row[1],
+        neighbourhood=row[2],
+        geometry=geometry,
+    )
+
+
 class PostgresSerZoneRepository(SerZoneRepository):
     """PostgreSQL-backed SER zone repository using SQLAlchemy Core."""
 
@@ -93,28 +133,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(query).fetchall()
 
-        zones: list[SerZone] = []
-        for row in rows:
-            try:
-                geometry = shapely_wkt.loads(row[5])
-            except Exception:
-                logger.warning(
-                    "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
-                    row[1],
-                    row[2],
-                )
-                continue
-            zones.append(
-                SerZone(
-                    city_code=row[0],
-                    zone_number=row[1],
-                    zone_type=row[2],
-                    district=row[3],
-                    spot_count=row[4],
-                    geometry=geometry,
-                )
-            )
-        return zones
+        zones = [_parse_ser_zone_row(row) for row in rows]
+        return [z for z in zones if z is not None]
 
     def list_zones_for_city(self, city_code: str) -> list[SerZone]:
         """
@@ -131,28 +151,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(query, {"city_code": city_code}).fetchall()
 
-        zones: list[SerZone] = []
-        for row in rows:
-            try:
-                geometry = shapely_wkt.loads(row[5])
-            except Exception:
-                logger.warning(
-                    "Skipping SER zone with unparsable geometry_wkt: zone_number=%r zone_type=%r",
-                    row[1],
-                    row[2],
-                )
-                continue
-            zones.append(
-                SerZone(
-                    city_code=row[0],
-                    zone_number=row[1],
-                    zone_type=row[2],
-                    district=row[3],
-                    spot_count=row[4],
-                    geometry=geometry,
-                )
-            )
-        return zones
+        zones = [_parse_ser_zone_row(row) for row in rows]
+        return [z for z in zones if z is not None]
 
     def get_street_names(self, city_code: str, zone_number: str, zone_type: str) -> list[str]:
         """Return all street names for the given (city_code, zone_number, zone_type)."""
@@ -178,18 +178,7 @@ class PostgresSerZoneRepository(SerZoneRepository):
 
         if row is None:
             return None
-
-        try:
-            geometry = shapely_wkt.loads(row[3])
-        except Exception:
-            logger.warning(
-                "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
-                row[0],
-                row[1],
-            )
-            return None
-
-        return ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry)
+        return _parse_zone_area_row(row)
 
     def list_zone_areas(self) -> list[ZoneArea]:
         """Return all stored frontiers (across all cities) ordered by city_code, zone_number."""
@@ -200,19 +189,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(query).fetchall()
 
-        zone_areas: list[ZoneArea] = []
-        for row in rows:
-            try:
-                geometry = shapely_wkt.loads(row[3])
-            except Exception:
-                logger.warning(
-                    "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
-                    row[0],
-                    row[1],
-                )
-                continue
-            zone_areas.append(ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry))
-        return zone_areas
+        zone_areas = [_parse_zone_area_row(row) for row in rows]
+        return [za for za in zone_areas if za is not None]
 
     def list_zone_areas_for_city(self, city_code: str) -> list[ZoneArea]:
         """Return frontiers scoped to `city_code` only, ordered by zone_number."""
@@ -223,19 +201,8 @@ class PostgresSerZoneRepository(SerZoneRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(query, {"city_code": city_code}).fetchall()
 
-        zone_areas: list[ZoneArea] = []
-        for row in rows:
-            try:
-                geometry = shapely_wkt.loads(row[3])
-            except Exception:
-                logger.warning(
-                    "Skipping ser_zone_areas row with unparsable geometry_wkt: city_code=%r zone_number=%r",
-                    row[0],
-                    row[1],
-                )
-                continue
-            zone_areas.append(ZoneArea(city_code=row[0], zone_number=row[1], neighbourhood=row[2], geometry=geometry))
-        return zone_areas
+        zone_areas = [_parse_zone_area_row(row) for row in rows]
+        return [za for za in zone_areas if za is not None]
 
     def bulk_replace(self, records: list[dict[str, Any]], zone_areas: list[dict[str, Any]] | None = None) -> int:
         """

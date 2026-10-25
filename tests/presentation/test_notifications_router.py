@@ -22,8 +22,9 @@ from mobility_manager.domain.entities.user import User
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.infrastructure.telegram_link import generate_link_token
 from mobility_manager.presentation.api.routers.notifications import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-notifications"
+_JWT_SECRET = JWT_SECRET
 _WEBHOOK_SECRET = "test-webhook-secret"
 _BOT_USERNAME = "TestMobilityBot"
 _OWNER_ID = uuid4()

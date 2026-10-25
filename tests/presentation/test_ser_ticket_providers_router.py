@@ -22,8 +22,9 @@ from mobility_manager.domain.exceptions import (
     SerTicketProviderNotFoundError,
 )
 from mobility_manager.presentation.api.routers.ser_ticket_providers import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-ser-ticket-providers"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 

@@ -10,8 +10,9 @@ from mobility_manager.application.use_cases.generate_telegram_link_code import (
     GenerateTelegramLinkCode,
 )
 from mobility_manager.infrastructure.telegram_link import verify_link_token
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-generate-telegram-link-code"
+_JWT_SECRET = JWT_SECRET
 
 
 @pytest.fixture(autouse=True)

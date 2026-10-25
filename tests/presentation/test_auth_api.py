@@ -28,8 +28,9 @@ from mobility_manager.domain.entities.user import User
 from mobility_manager.presentation.api.csrf import generate_signed_state
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.auth import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-auth-secret"
+_JWT_SECRET = JWT_SECRET
 _ALGORITHM = "HS256"
 
 

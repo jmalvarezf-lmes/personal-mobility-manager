@@ -41,8 +41,9 @@ from mobility_manager.domain.value_objects.generic_config import GenericConfig
 from mobility_manager.domain.value_objects.toyota_config import ToyotaConfig
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.vehicles import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-vehicles"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 

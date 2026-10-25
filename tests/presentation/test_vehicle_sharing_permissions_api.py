@@ -31,8 +31,9 @@ from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.generic_config import GenericConfig
 from mobility_manager.presentation.api.limiter import limiter
 from mobility_manager.presentation.api.routers.vehicles import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-permissions"
+_JWT_SECRET = JWT_SECRET
 
 
 @pytest.fixture()

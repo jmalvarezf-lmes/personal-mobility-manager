@@ -27,8 +27,9 @@ from mobility_manager.domain.exceptions import (
     VehicleNotFoundError,
 )
 from mobility_manager.presentation.api.routers.parking import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-parking-router"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 

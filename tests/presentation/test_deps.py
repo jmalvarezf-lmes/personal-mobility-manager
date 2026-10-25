@@ -22,8 +22,9 @@ from mobility_manager.presentation.api.deps import (
     get_owned_vehicle_or_raise,
     require_owned_vehicle,
 )
+from tests import JWT_SECRET
 
-_SECRET = "unit-test-secret"
+_SECRET = JWT_SECRET
 _ALGORITHM = "HS256"
 
 

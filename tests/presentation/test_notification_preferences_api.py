@@ -21,8 +21,9 @@ from mobility_manager.domain.entities.user_notification_preference import (
     UserNotificationPreference,
 )
 from mobility_manager.presentation.api.routers.notification_preferences import router
+from tests import JWT_SECRET
 
-_JWT_SECRET = "test-secret-for-notification-preferences"
+_JWT_SECRET = JWT_SECRET
 _OWNER_ID = uuid4()
 
 _THRESHOLD_SCHEMA = {"threshold_m": {"type": "integer", "min": 1}}

@@ -27,6 +27,10 @@ from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
 from mobility_manager.domain.events.ser_ticket_creation_failed import (
     SerTicketCreationFailed,
 )
+from mobility_manager.domain.ports.user_ser_requirement_notification_repository import (
+    UserSerRequirementNotification,
+    UserSerRequirementNotificationRepository,
+)
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.notification_message import (
     NotificationMessage,
@@ -119,6 +123,14 @@ class _FakeVehicleShareRepo:
         return []
 
 
+class _FakeNotificationAuditRepo(UserSerRequirementNotificationRepository):
+    def __init__(self) -> None:
+        self.items: list[UserSerRequirementNotification] = []
+
+    def save(self, notification: UserSerRequirementNotification) -> None:
+        self.items.append(notification)
+
+
 def _make_handler(
     owner_id: UUID,
     preferences_repo: _FakeUserPreferencesRepo,
@@ -129,10 +141,9 @@ def _make_handler(
         vehicle_repo=_FakeVehicleRepo(owner_id),  # type: ignore[arg-type]
         user_preferences_repo=preferences_repo,  # type: ignore[arg-type]
         notification_preferences_repo=notification_preferences_repo,  # type: ignore[arg-type]
-        determine_ser_ticket_requirement=None,  # type: ignore[arg-type]
-        ser_zone_recheck_gate=None,  # type: ignore[arg-type]
         send_notification=send_notification,  # type: ignore[arg-type]
         vehicle_share_repo=_FakeVehicleShareRepo(),  # type: ignore[arg-type]
+        notification_audit_repo=_FakeNotificationAuditRepo(),  # type: ignore[arg-type]
     )
 
 

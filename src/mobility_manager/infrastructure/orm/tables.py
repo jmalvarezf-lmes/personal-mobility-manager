@@ -283,3 +283,29 @@ vehicle_ser_parking_exemptions_table = Table(
         ondelete="CASCADE",
     ),
 )
+
+vehicle_ser_requirement_states_table = Table(
+    "vehicle_ser_requirement_states",
+    metadata,
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id", ondelete="CASCADE"), primary_key=True),
+    Column("city_code", Text, nullable=True),
+    Column("zone_number", Text, nullable=True),
+    Column("is_required", Boolean, nullable=False),
+    Column("activated_at", DateTime(timezone=True), nullable=True),
+    Column("last_evaluated_at", DateTime(timezone=True), nullable=False),
+)
+
+user_ser_requirement_notifications_table = Table(
+    "user_ser_requirement_notifications",
+    metadata,
+    Column("id", Uuid, primary_key=True),
+    Column("user_id", Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("vehicle_id", Uuid, ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False),
+    Column("city_code", Text, nullable=True),
+    Column("zone_number", Text, nullable=True),
+    Column("latitude", Float, nullable=False),
+    Column("longitude", Float, nullable=False),
+    Column("requirement_activated_at", DateTime(timezone=True), nullable=False),
+    Column("notified_at", DateTime(timezone=True), nullable=False),
+    Index("idx_user_ser_requirement_notifications_user_vehicle", "user_id", "vehicle_id"),
+)

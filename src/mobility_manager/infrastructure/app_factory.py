@@ -28,6 +28,9 @@ from mobility_manager.application.event_handlers.ser_ticket_creation_trigger_han
 from mobility_manager.application.event_handlers.ser_ticket_notification_trigger_handler import (
     SerTicketNotificationTriggerHandler,
 )
+from mobility_manager.application.event_handlers.ser_ticket_requirement_state_handler import (
+    SerTicketRequirementStateHandler,
+)
 from mobility_manager.application.use_cases.authenticate_google_user import (
     AuthenticateGoogleUser,
 )
@@ -48,6 +51,9 @@ from mobility_manager.application.use_cases.determine_ser_ticket_requirement imp
 )
 from mobility_manager.application.use_cases.disconnect_ser_ticket_provider import (
     DisconnectSerTicketProvider,
+)
+from mobility_manager.application.use_cases.evaluate_ser_ticket_requirement_state import (
+    EvaluateSerTicketRequirementState,
 )
 from mobility_manager.application.use_cases.find_containing_ser_zone import (
     FindContainingSerZone,
@@ -115,6 +121,7 @@ from mobility_manager.config import (
     get_holiday_calendar_url,
     get_holiday_refresh_interval_hours,
     get_ingestion_interval_hours,
+    get_ser_ticket_creation_zone_change_floor_meters,
     get_session_cleanup_interval_hours,
     get_session_cleanup_retention_days,
     get_vehicle_poll_interval_minutes,
@@ -122,6 +129,9 @@ from mobility_manager.config import (
 from mobility_manager.domain.events.ser_ticket_created import SerTicketCreated
 from mobility_manager.domain.events.ser_ticket_creation_failed import (
     SerTicketCreationFailed,
+)
+from mobility_manager.domain.events.ser_ticket_requirement_activated import (
+    SerTicketRequirementActivated,
 )
 from mobility_manager.domain.events.vehicle_location_updated import (
     VehicleLocationUpdated,
@@ -192,6 +202,9 @@ from mobility_manager.infrastructure.repositories.postgres.user_repo import (
 from mobility_manager.infrastructure.repositories.postgres.user_ser_provider_config_repo import (
     PostgresUserSerProviderConfigRepository,
 )
+from mobility_manager.infrastructure.repositories.postgres.user_ser_requirement_notification_repo import (
+    PostgresUserSerRequirementNotificationRepository,
+)
 from mobility_manager.infrastructure.repositories.postgres.vehicle_ambient_label_repo import (
     PostgresVehicleAmbientLabelRepository,
 )
@@ -206,6 +219,9 @@ from mobility_manager.infrastructure.repositories.postgres.vehicle_repo import (
 )
 from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_parking_exemption_repo import (
     PostgresVehicleSerParkingExemptionRepository,
+)
+from mobility_manager.infrastructure.repositories.postgres.vehicle_ser_requirement_state_repo import (
+    PostgresVehicleSerRequirementStateRepository,
 )
 from mobility_manager.infrastructure.repositories.postgres.vehicle_share_repo import (
     PostgresVehicleShareRepository,
@@ -254,6 +270,7 @@ class AppState:
     parking_ticket_repo: PostgresParkingTicketRepository
     holiday_repo: PostgresHolidayRepository
     user_ser_provider_config_repo: PostgresUserSerProviderConfigRepository
+    user_ser_requirement_notification_repo: PostgresUserSerRequirementNotificationRepository
     elparking_zone_mapping_repo: PostgresElParkingZoneMappingRepository
     ser_ticket_provider_registry: SerTicketProviderRegistry
 
@@ -442,17 +459,31 @@ def build_app_state(
         find_containing_ser_zone=find_containing_ser_zone,
         ticket_repo=parking_ticket_repo,
     )
+    vehicle_ser_requirement_state_repo = PostgresVehicleSerRequirementStateRepository(engine)
+    user_ser_requirement_notification_repo = PostgresUserSerRequirementNotificationRepository(engine)
+    evaluate_ser_ticket_requirement_state = EvaluateSerTicketRequirementState(
+        ser_zone_recheck_gate=ser_zone_recheck_gate,
+        find_containing_ser_zone=find_containing_ser_zone,
+        determine_ser_ticket_requirement=determine_ser_ticket_requirement,
+        ticket_repo=parking_ticket_repo,
+        event_publisher=event_publisher,
+        movement_floor_meters=get_ser_ticket_creation_zone_change_floor_meters(),
+    )
+    ser_ticket_requirement_state_handler = SerTicketRequirementStateHandler(
+        state_repo=vehicle_ser_requirement_state_repo,
+        evaluate_state=evaluate_ser_ticket_requirement_state,
+    )
     ser_ticket_notification_trigger_handler = SerTicketNotificationTriggerHandler(
         vehicle_repo=vehicle_repo,
         user_preferences_repo=user_preferences_repo,
         notification_preferences_repo=notification_preferences_repo,
         vehicle_share_repo=vehicle_share_repo,
-        determine_ser_ticket_requirement=determine_ser_ticket_requirement,
-        ser_zone_recheck_gate=ser_zone_recheck_gate,
         send_notification=send_notification,
+        notification_audit_repo=user_ser_requirement_notification_repo,
     )
+    event_publisher.subscribe(VehicleLocationUpdated, ser_ticket_requirement_state_handler.handle)
     event_publisher.subscribe(
-        VehicleLocationUpdated, ser_ticket_notification_trigger_handler.on_vehicle_location_updated
+        SerTicketRequirementActivated, ser_ticket_notification_trigger_handler.on_requirement_activated
     )
     event_publisher.subscribe(SerTicketCreated, ser_ticket_notification_trigger_handler.on_ticket_created)
     event_publisher.subscribe(
@@ -593,6 +624,7 @@ def build_app_state(
         parking_ticket_repo=parking_ticket_repo,
         holiday_repo=holiday_repo,
         user_ser_provider_config_repo=user_ser_provider_config_repo,
+        user_ser_requirement_notification_repo=user_ser_requirement_notification_repo,
         elparking_zone_mapping_repo=elparking_zone_mapping_repo,
         ser_ticket_provider_registry=ser_ticket_provider_registry,
         find_nearest_ser_zone=find_nearest_ser_zone,

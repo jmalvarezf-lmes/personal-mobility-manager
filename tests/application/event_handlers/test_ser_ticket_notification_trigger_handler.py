@@ -1,49 +1,28 @@
 """
 Unit tests for SerTicketNotificationTriggerHandler.
 
-Covers every scenario in the ser-zone-ticket-notification and
-vehicle-location-events specs: a disabled (or missing) `ser_zone_ticket_required`
-preference skips before ever calling `SerZoneRecheckGate.evaluate`, the gate
-signalling `should_check=False` skips without calling
-`DetermineSerTicketRequirement`, a stationary vehicle with no active ticket
-still gets rechecked (delegated to the gate), the newly-gained
-zone-unchanged skip (delegated to the gate, with an active ticket), no
-notification when `DetermineSerTicketRequirement` returns False, a
-notification with the correct plate/zone_number when it returns True, a
-missing vehicle is skipped without error, the effective threshold passed to
-the gate is independent from `location_moved`'s, the message is localized to
-the owner's `notification_language` (or falls back to the default when
-unset), and the early exit when the owner's `auto_create_ticket` is enabled.
-Also confirms no ticket-provider or ticket-creation code path is ever
-exercised.
-
-The previous-location/distance/zone-comparison logic itself now lives in
-SerZoneRecheckGate (see change-ser-ticket-stationary-recheck design.md
-D3/D4/D5) and is unit-tested there (test_ser_zone_recheck_gate.py) — this
-handler is tested here against a mocked gate.
+Covers every scenario in the ser-zone-ticket-notification modified spec:
+activation-event-driven notification to owner and sharees, preference gating,
+owner auto_create_ticket suppression, localization, and audit recording.
 """
 
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from shapely.geometry import Polygon
-
 from mobility_manager.application.event_handlers.ser_ticket_notification_trigger_handler import (
     SerTicketNotificationTriggerHandler,
 )
-from mobility_manager.application.use_cases.ser_zone_recheck_gate import (
-    SerZoneRecheckDecision,
-)
-from mobility_manager.config import resolve_effective_threshold
-from mobility_manager.domain.entities.ser_zone import SerZone
 from mobility_manager.domain.entities.user_notification_preference import (
     UserNotificationPreference,
 )
 from mobility_manager.domain.entities.user_preferences import UserPreferences
 from mobility_manager.domain.entities.vehicle import Vehicle
 from mobility_manager.domain.entities.vehicle_share import VehicleShare
-from mobility_manager.domain.events.vehicle_location_updated import (
-    VehicleLocationUpdated,
+from mobility_manager.domain.events.ser_ticket_requirement_activated import (
+    SerTicketRequirementActivated,
+)
+from mobility_manager.domain.ports.user_ser_requirement_notification_repository import (
+    UserSerRequirementNotification,
 )
 from mobility_manager.domain.value_objects.brand import Brand
 from mobility_manager.domain.value_objects.notification_message import (
@@ -51,8 +30,6 @@ from mobility_manager.domain.value_objects.notification_message import (
 )
 
 _MOVED_LAT, _MOVED_LNG = 40.4258, -3.7038
-
-_SQUARE = Polygon([(440584, 4474459), (440604, 4474459), (440604, 4474479), (440584, 4474479)])
 
 _TYPE_KEY = "ser_zone_ticket_required"
 
@@ -95,7 +72,6 @@ class FakeUserPreferencesRepo:
 class FakeNotificationPreferencesRepo:
     def __init__(self) -> None:
         self._rows: dict[tuple[UUID, str], UserNotificationPreference] = {}
-        self.find_by_user_id_and_type_calls: list[tuple[UUID, str]] = []
 
     def set(self, user_id: UUID, type_key: str, enabled: bool, config: dict | None = None) -> None:
         self._rows[(user_id, type_key)] = UserNotificationPreference(
@@ -116,31 +92,10 @@ class FakeNotificationPreferencesRepo:
         return [row for (uid, _), row in self._rows.items() if uid == user_id]
 
     def find_by_user_id_and_type(self, user_id: UUID, type_key: str) -> UserNotificationPreference | None:
-        self.find_by_user_id_and_type_calls.append((user_id, type_key))
         return self._rows.get((user_id, type_key))
 
     def update(self, user_id, type_key, enabled, config):  # pragma: no cover - not exercised by this handler
         raise NotImplementedError
-
-
-class FakeDetermineSerTicketRequirement:
-    def __init__(self, required: bool = True) -> None:
-        self.required = required
-        self.calls: list[tuple[SerZone | None, UUID]] = []
-
-    def execute(self, zone: SerZone | None, vehicle_id: UUID, at=None) -> bool:
-        self.calls.append((zone, vehicle_id))
-        return self.required
-
-
-class FakeSerZoneRecheckGate:
-    def __init__(self, decision: SerZoneRecheckDecision | None = None) -> None:
-        self.decision = decision if decision is not None else SerZoneRecheckDecision(should_check=True, zone=None)
-        self.calls: list[tuple[VehicleLocationUpdated, float]] = []
-
-    def evaluate(self, event: VehicleLocationUpdated, movement_floor_meters: float) -> SerZoneRecheckDecision:
-        self.calls.append((event, movement_floor_meters))
-        return self.decision
 
 
 class FakeSendNotification:
@@ -175,6 +130,18 @@ class FakeVehicleShareRepo:
         return [s.vehicle_id for s in self.shares if s.user_id == user_id]
 
 
+class FakeNotificationAuditRepo:
+    def __init__(self) -> None:
+        self.saved: list[UserSerRequirementNotification] = []
+        self.fail_next = False
+
+    def save(self, notification: UserSerRequirementNotification) -> None:
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("audit write failed")
+        self.saved.append(notification)
+
+
 def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "1234ABC") -> Vehicle:
     return Vehicle(
         id=vehicle_id,
@@ -187,25 +154,21 @@ def _make_vehicle(vehicle_id: UUID, user_id: UUID, license_plate: str | None = "
     )
 
 
-def _make_ser_zone(zone_number: str = "163") -> SerZone:
-    return SerZone(
-        city_code="madrid",
-        zone_number=zone_number,
-        zone_type="Azul",
-        district="CENTRO",
-        spot_count=15,
-        geometry=_SQUARE,
-    )
-
-
-def _make_event(vehicle_id: UUID, lat: float, lng: float, now: datetime) -> VehicleLocationUpdated:
-    return VehicleLocationUpdated(
+def _make_event(
+    vehicle_id: UUID,
+    city_code: str | None = "madrid",
+    zone_number: str | None = "163",
+    lat: float = _MOVED_LAT,
+    lng: float = _MOVED_LNG,
+    activated_at: datetime | None = None,
+) -> SerTicketRequirementActivated:
+    return SerTicketRequirementActivated(
         vehicle_id=vehicle_id,
+        city_code=city_code,
+        zone_number=zone_number,
         latitude=lat,
         longitude=lng,
-        recorded_at=now,
-        received_at=now,
-        source="push",
+        activated_at=activated_at or datetime.now(UTC),
     )
 
 
@@ -214,20 +177,18 @@ class _Fixture:
         self.vehicle_repo = FakeVehicleRepo()
         self.preferences_repo = FakeUserPreferencesRepo()
         self.notification_preferences_repo = FakeNotificationPreferencesRepo()
-        self.determine_requirement = FakeDetermineSerTicketRequirement(required=True)
-        self.ser_zone_recheck_gate = FakeSerZoneRecheckGate()
         self.send_notification = FakeSendNotification()
         self.share_repo = FakeVehicleShareRepo()
+        self.notification_audit_repo = FakeNotificationAuditRepo()
 
     def build(self) -> SerTicketNotificationTriggerHandler:
         return SerTicketNotificationTriggerHandler(
             vehicle_repo=self.vehicle_repo,  # type: ignore[arg-type]
             user_preferences_repo=self.preferences_repo,  # type: ignore[arg-type]
             notification_preferences_repo=self.notification_preferences_repo,  # type: ignore[arg-type]
-            determine_ser_ticket_requirement=self.determine_requirement,  # type: ignore[arg-type]
-            ser_zone_recheck_gate=self.ser_zone_recheck_gate,  # type: ignore[arg-type]
-            send_notification=self.send_notification,  # type: ignore[arg-type]
             vehicle_share_repo=self.share_repo,  # type: ignore[arg-type]
+            send_notification=self.send_notification,  # type: ignore[arg-type]
+            notification_audit_repo=self.notification_audit_repo,  # type: ignore[arg-type]
         )
 
 
@@ -239,144 +200,36 @@ def test_skips_entirely_when_auto_create_ticket_is_enabled() -> None:
     fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert fx.send_notification.calls == []
-    assert fx.notification_preferences_repo.find_by_user_id_and_type_calls == []
-    assert fx.ser_zone_recheck_gate.calls == []
+    assert fx.notification_audit_repo.saved == []
 
 
-def test_disabled_preference_skips_before_calling_recheck_gate() -> None:
+def test_disabled_preference_skips_recipient() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
     fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=False)
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
-    assert fx.ser_zone_recheck_gate.calls == []
-    assert fx.determine_requirement.calls == []
     assert fx.send_notification.calls == []
+    assert fx.notification_audit_repo.saved == []
 
 
-def test_missing_preference_row_skips_before_calling_recheck_gate() -> None:
+def test_missing_preference_row_skips_recipient() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
     # no notification preference row at all
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.ser_zone_recheck_gate.calls == []
-    assert fx.send_notification.calls == []
-
-
-def test_ser_zone_recheck_gate_signals_no_check_needed() -> None:
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=False, zone=None)
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.determine_requirement.calls == []
-    assert fx.send_notification.calls == []
-
-
-def test_zone_unchanged_with_active_ticket_skips_via_gate() -> None:
-    """
-    The zone-unchanged skip (only valid while the vehicle holds an active
-    ParkingTicket — see design.md D5) is now the gate's own responsibility;
-    from the handler's perspective this is just should_check=False.
-    """
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=False, zone=None)
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.determine_requirement.calls == []
-    assert fx.send_notification.calls == []
-
-
-def test_stationary_vehicle_with_no_active_ticket_still_gets_rechecked() -> None:
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    zone = _make_ser_zone(zone_number="163")
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=True, zone=zone)
-    fx.determine_requirement.required = False
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.determine_requirement.calls == [(zone, vehicle_id)]
-    assert fx.send_notification.calls == []
-
-
-def test_skips_notification_when_ticket_not_required() -> None:
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=True, zone=None)
-    fx.determine_requirement.required = False
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert fx.send_notification.calls == []
-
-
-def test_determine_ser_ticket_requirement_is_called_with_vehicle_id() -> None:
-    """
-    DetermineSerTicketRequirement must be called with event.vehicle_id so a
-    matching per-vehicle exemption can suppress the requirement (see
-    vehicle-ser-parking-exemption spec.md).
-    """
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    zone = _make_ser_zone(zone_number="163")
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=True, zone=zone)
-    fx.determine_requirement.required = False
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.determine_requirement.calls == [(zone, vehicle_id)]
-
-
-def test_matching_vehicle_exemption_suppresses_notification() -> None:
-    """
-    When DetermineSerTicketRequirement returns False because of a matching
-    exemption, this handler must behave exactly like any other "no ticket
-    required" outcome — no notification.
-    """
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(
-        should_check=True, zone=_make_ser_zone(zone_number="163")
-    )
-    # A matching exemption means DetermineSerTicketRequirement itself
-    # returns False — this handler doesn't need to know why.
-    fx.determine_requirement.required = False
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.send_notification.calls == []
+    assert fx.notification_audit_repo.saved == []
 
 
 def test_sends_notification_with_correct_plate_and_zone_number() -> None:
@@ -385,13 +238,9 @@ def test_sends_notification_with_correct_plate_and_zone_number() -> None:
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id, license_plate="1234ABC"))
     fx.preferences_repo.set(user_id, None)
     fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(
-        should_check=True, zone=_make_ser_zone(zone_number="163")
-    )
-    fx.determine_requirement.required = True
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert len(fx.send_notification.calls) == 1
     called_user_id, message = fx.send_notification.calls[0]
@@ -402,24 +251,15 @@ def test_sends_notification_with_correct_plate_and_zone_number() -> None:
     assert message.location.lat == _MOVED_LAT
     assert message.location.lng == _MOVED_LNG
 
-
-def test_no_notification_when_ticket_required_but_zone_is_none() -> None:
-    """
-    Defensive branch: if DetermineSerTicketRequirement ever returned True for
-    a None zone, the handler must not proceed to build a notification that
-    needs zone.zone_number (would raise AttributeError) — it returns instead.
-    """
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(should_check=True, zone=None)
-    fx.determine_requirement.required = True
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert fx.send_notification.calls == []
+    assert len(fx.notification_audit_repo.saved) == 1
+    audit = fx.notification_audit_repo.saved[0]
+    assert audit.user_id == user_id
+    assert audit.vehicle_id == vehicle_id
+    assert audit.city_code == "madrid"
+    assert audit.zone_number == "163"
+    assert audit.latitude == _MOVED_LAT
+    assert audit.longitude == _MOVED_LNG
+    assert audit.requirement_activated_at == now
 
 
 def test_missing_vehicle_is_skipped_without_error() -> None:
@@ -427,49 +267,11 @@ def test_missing_vehicle_is_skipped_without_error() -> None:
     fx = _Fixture()  # no vehicle registered
     handler = fx.build()
 
-    result = handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    result = handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert result is None
-    assert fx.ser_zone_recheck_gate.calls == []
-    assert fx.determine_requirement.calls == []
     assert fx.send_notification.calls == []
-
-
-def test_effective_threshold_passed_to_gate_is_independent_from_location_moved() -> None:
-    """
-    Configuring a different threshold_m for ser_zone_ticket_required than
-    location_moved must not cross-talk: this handler only ever reads its
-    own (user_id, "ser_zone_ticket_required") row's config to compute the
-    movement_floor_meters it passes to SerZoneRecheckGate.evaluate, never
-    "location_moved"'s.
-    """
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    # location_moved has a huge threshold; ser_zone_ticket_required has a tiny one.
-    fx.notification_preferences_repo.set(user_id, "location_moved", enabled=True, config={"threshold_m": 100_000})
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True, config={"threshold_m": 5})
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert len(fx.ser_zone_recheck_gate.calls) == 1
-    _event, floor = fx.ser_zone_recheck_gate.calls[0]
-    assert floor == 5
-
-
-def test_effective_threshold_falls_back_to_default_when_config_unset() -> None:
-    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
-    fx = _Fixture()
-    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
-    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True, config={})
-    handler = fx.build()
-
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
-
-    assert len(fx.ser_zone_recheck_gate.calls) == 1
-    _event, floor = fx.ser_zone_recheck_gate.calls[0]
-    assert floor == resolve_effective_threshold({})
+    assert fx.notification_audit_repo.saved == []
 
 
 def test_message_localized_to_owner_notification_language() -> None:
@@ -478,13 +280,9 @@ def test_message_localized_to_owner_notification_language() -> None:
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id, license_plate="9999ZZZ"))
     fx.preferences_repo.set(user_id, "es")
     fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(
-        should_check=True, zone=_make_ser_zone(zone_number="163")
-    )
-    fx.determine_requirement.required = True
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert len(fx.send_notification.calls) == 1
     _, message = fx.send_notification.calls[0]
@@ -497,19 +295,115 @@ def test_message_falls_back_to_default_language_when_unset() -> None:
     vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
     fx = _Fixture()
     fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id, license_plate="9999ZZZ"))
-    # no preferences row at all
     fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
-    fx.ser_zone_recheck_gate.decision = SerZoneRecheckDecision(
-        should_check=True, zone=_make_ser_zone(zone_number="163")
-    )
-    fx.determine_requirement.required = True
     handler = fx.build()
 
-    handler.on_vehicle_location_updated(_make_event(vehicle_id, _MOVED_LAT, _MOVED_LNG, now))
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
 
     assert len(fx.send_notification.calls) == 1
     _, message = fx.send_notification.calls[0]
     assert message.text == "Your car with plate 9999ZZZ is in SER zone 163 — you need to create a parking ticket."
+
+
+def test_owner_and_sharee_both_receive_notification_when_enabled() -> None:
+    vehicle_id, owner_id, sharee_id, now = uuid4(), uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, owner_id))
+    fx.preferences_repo.set(owner_id, None)
+    fx.preferences_repo.set(sharee_id, None)
+    fx.notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True)
+    fx.notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=True)
+    fx.share_repo.save(
+        VehicleShare(
+            vehicle_id=vehicle_id,
+            user_id=sharee_id,
+            created_at=datetime.now(UTC),
+        )
+    )
+    handler = fx.build()
+
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
+
+    notified_user_ids = {uid for uid, _ in fx.send_notification.calls}
+    assert notified_user_ids == {owner_id, sharee_id}
+    assert len(fx.notification_audit_repo.saved) == 2
+
+
+def test_sharee_does_not_receive_notification_when_preference_disabled() -> None:
+    vehicle_id, owner_id, sharee_id, now = uuid4(), uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, owner_id))
+    fx.preferences_repo.set(owner_id, None)
+    fx.preferences_repo.set(sharee_id, None)
+    fx.notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True)
+    fx.notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=False)
+    fx.share_repo.save(
+        VehicleShare(
+            vehicle_id=vehicle_id,
+            user_id=sharee_id,
+            created_at=datetime.now(UTC),
+        )
+    )
+    handler = fx.build()
+
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
+
+    notified_user_ids = {uid for uid, _ in fx.send_notification.calls}
+    assert notified_user_ids == {owner_id}
+
+
+def test_owners_auto_create_ticket_suppresses_only_owner_path() -> None:
+    vehicle_id, owner_id, sharee_id, now = uuid4(), uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, owner_id))
+    fx.preferences_repo.set(owner_id, None, auto_create_ticket=True)
+    fx.preferences_repo.set(sharee_id, None)
+    fx.notification_preferences_repo.set(owner_id, _TYPE_KEY, enabled=True)
+    fx.notification_preferences_repo.set(sharee_id, _TYPE_KEY, enabled=True)
+    fx.share_repo.save(
+        VehicleShare(
+            vehicle_id=vehicle_id,
+            user_id=sharee_id,
+            created_at=datetime.now(UTC),
+        )
+    )
+    handler = fx.build()
+
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
+
+    notified_user_ids = {uid for uid, _ in fx.send_notification.calls}
+    assert notified_user_ids == {sharee_id}
+
+
+def test_no_notification_when_zone_number_is_none() -> None:
+    """
+    Defensive branch: if an activation event ever carries zone_number=None,
+    the handler must not build a notification that needs zone_number.
+    """
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    handler = fx.build()
+
+    handler.on_requirement_activated(_make_event(vehicle_id, zone_number=None, activated_at=now))
+
+    assert fx.send_notification.calls == []
+    assert fx.notification_audit_repo.saved == []
+
+
+def test_audit_failure_does_not_block_notification() -> None:
+    vehicle_id, user_id, now = uuid4(), uuid4(), datetime.now(UTC)
+    fx = _Fixture()
+    fx.vehicle_repo.add(_make_vehicle(vehicle_id, user_id))
+    fx.notification_preferences_repo.set(user_id, _TYPE_KEY, enabled=True)
+    fx.notification_audit_repo.fail_next = True
+    handler = fx.build()
+
+    handler.on_requirement_activated(_make_event(vehicle_id, activated_at=now))
+
+    assert len(fx.send_notification.calls) == 1
+    assert fx.notification_audit_repo.saved == []
 
 
 def test_no_ticket_provider_or_ticket_creation_code_path_is_exercised() -> None:

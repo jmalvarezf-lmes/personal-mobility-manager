@@ -3,8 +3,8 @@ Unit tests for ElParkingClient.
 
 HTTP calls are exercised via httpx.MockTransport so tests run without any
 real network access. Confirms every authenticated call uses HTTP Basic auth
-(blank username, access token as password) plus the ep-app-name/ep-app-version
-headers, and that logout no longer sends Authorization: Bearer.
+(blank username, access token as password) plus the ep-app-name/ep-app-version/
+ep-app-os headers, and that logout no longer sends Authorization: Bearer.
 """
 
 import json
@@ -59,6 +59,7 @@ def _assert_basic_auth(request: httpx.Request) -> None:
 def _assert_app_headers(request: httpx.Request) -> None:
     assert request.headers["ep-app-name"] == "elparking"
     assert request.headers["ep-app-version"] == _APP_VERSION
+    assert request.headers["ep-app-os"] == "web"
 
 
 # --- login() ---

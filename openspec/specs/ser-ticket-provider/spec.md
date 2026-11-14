@@ -158,7 +158,11 @@ The system SHALL define `SerProviderAuthenticationError` (raised when a provider
 ---
 
 ### Requirement: ElParkingSerTicketProvider implements login against the ElParking API
-The system SHALL provide `ElParkingSerTicketProvider`, an implementation of `SerTicketProviderPort`, whose `login` method calls ElParking's `POST /v1/logins` endpoint with `email`/`password` (and `uid`/`model` if present) from `credentials.data`, using header `ep-app-name: elparking` (hardcoded) and header `ep-app-version` sourced from the `ELPARKING_APP_VERSION` environment variable (default: `"26.2"`), since the app version is expected to evolve over time. On success, it SHALL return a `SerProviderSession` whose `data` contains exactly `access_token` (str) and `device_session_id` (int, from the response's `id` field) — no other fields from the response.
+The system SHALL provide `ElParkingSerTicketProvider`, an implementation of `SerTicketProviderPort`, whose `login` method calls ElParking's `POST /v1/logins` endpoint with `email`/`password` (and `uid`/`model` if present) from `credentials.data`, using headers `ep-app-name: elparking` (hardcoded), `ep-app-version` sourced from the `ELPARKING_APP_VERSION` environment variable (default: `"26.2"`), and `ep-app-os: web` (hardcoded). On success, it SHALL return a `SerProviderSession` whose `data` contains exactly `access_token` (str) and `device_session_id` (int, from the response's `id` field) — no other fields from the response.
+
+#### Scenario: ep-app-os is web on login
+- **WHEN** `login` is called
+- **THEN** the request to ElParking includes header `ep-app-os: web`
 
 #### Scenario: ep-app-version defaults to 26.2
 - **WHEN** `login` is called and `ELPARKING_APP_VERSION` is not set
@@ -393,7 +397,7 @@ The system SHALL add a "SER Providers" link to the existing account dropdown men
 ---
 
 ### Requirement: ElParkingClient centralizes ElParking HTTP calls with correct authentication
-The system SHALL provide `ElParkingClient`, an infrastructure helper wrapping every ElParking HTTP call (`login`, `logout`, list the user's vehicles, list SER towns, list a town's zones, fetch pricing/checksum steps, create a ticket). Every authenticated call (all except `login`) SHALL authenticate with HTTP Basic auth using a blank username and the session's `access_token` as the password, and SHALL include the `ep-app-name`/`ep-app-version` headers used by `login`.
+The system SHALL provide `ElParkingClient`, an infrastructure helper wrapping every ElParking HTTP call (`login`, `logout`, list the user's vehicles, list SER towns, list a town's zones, fetch pricing/checksum steps, create a ticket). Every call, including `login`, SHALL include the headers `ep-app-name: elparking`, `ep-app-version` sourced from `ELPARKING_APP_VERSION`, and `ep-app-os: web`. Every authenticated call (all except `login`) SHALL authenticate with HTTP Basic auth using a blank username and the session's `access_token` as the password, and SHALL include the same `ep-app-name`/`ep-app-version`/`ep-app-os` headers used by `login`.
 
 #### Scenario: Authenticated calls use HTTP Basic auth, not Bearer
 - **WHEN** `ElParkingClient` makes any authenticated call other than `login`
@@ -401,7 +405,11 @@ The system SHALL provide `ElParkingClient`, an infrastructure helper wrapping ev
 
 #### Scenario: Authenticated calls include the required app headers
 - **WHEN** `ElParkingClient` makes any authenticated call
-- **THEN** the request includes `ep-app-name` and `ep-app-version` headers with the same values `login` sends
+- **THEN** the request includes `ep-app-name`, `ep-app-version`, and `ep-app-os: web` headers with the same values `login` sends
+
+#### Scenario: Login includes the required app headers
+- **WHEN** `ElParkingClient.login` is called
+- **THEN** the request includes `ep-app-name`, `ep-app-version`, and `ep-app-os: web` headers
 
 ---
 

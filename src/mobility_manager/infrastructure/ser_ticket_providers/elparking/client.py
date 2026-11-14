@@ -9,9 +9,9 @@ elsewhere.
 
 Every authenticated call (all except login) uses HTTP Basic auth with a
 blank username and the session's access_token as the password — not an
-Authorization: Bearer header — plus the same ep-app-name/ep-app-version
-headers login() sends. This is the corrected auth scheme confirmed by the
-user for logout and every new endpoint added by this change; see
+Authorization: Bearer header — plus the same ep-app-name/ep-app-version/
+ep-app-os headers login() sends. This is the corrected auth scheme confirmed
+by the user for logout and every new endpoint added by this change; see
 provider.py's former (now removed) ASSUMPTION note for the pre-fix history.
 """
 
@@ -40,6 +40,11 @@ logger = logging.getLogger(__name__)
 # identifying as the ElParking client itself.
 _EP_APP_NAME = "elparking"
 
+# ep-app-os is also a fixed contract value: "web" tells ElParking to treat
+# this client as the web channel and skip version-checking, so we no longer
+# need to chase every mobile app release with a new ELPARKING_APP_VERSION.
+_EP_APP_OS = "web"
+
 _LOGIN_TIMEOUT_SECONDS = 15.0
 _LOGOUT_TIMEOUT_SECONDS = 15.0
 _DEFAULT_TIMEOUT_SECONDS = 15.0
@@ -63,8 +68,8 @@ class ElParkingClient:
         self._app_version = app_version
 
     def _auth_headers(self) -> dict[str, str]:
-        """Headers required on every call (including login) — ep-app-name/ep-app-version."""
-        return {"ep-app-name": _EP_APP_NAME, "ep-app-version": self._app_version}
+        """Headers required on every call (including login) — ep-app-name/ep-app-version/ep-app-os."""
+        return {"ep-app-name": _EP_APP_NAME, "ep-app-version": self._app_version, "ep-app-os": _EP_APP_OS}
 
     def _basic_auth(self, access_token: str) -> httpx.BasicAuth:
         """HTTP Basic auth with a blank username and `access_token` as the password."""
